@@ -64,9 +64,10 @@ There is no automatic real-device-to-mock fallback.
 
 ## Physical-link caveat
 
-At 20 frames/s, a 270-byte LVDS frame is 5,400 bytes/s. A UART-like 8-bit serial
-transport would require at least 54 kbaud before protocol and USB overhead. RS422
-command/telemetry links use 115200 baud with odd parity (`8O1`); the LVDS transport
-may use a vendor serial, DMA, UDP, or file-replay adapter. The transport trait stays
-independent of UART so those adapters can be added without changing the protocol or
-UI crates.
+At 20 frames/s, a 270-byte LVDS frame is 5,400 bytes/s. RS422 command/telemetry
+uses 115200 baud with odd parity (`8O1`). Scientific data arrives through an
+LVDS-to-UDP converter: the application binds the configured local UDP address and
+passes the received datagram payload bytes directly into the incremental LVDS frame
+decoder. A datagram may contain a full 270-byte frame, multiple consecutive frames,
+or a fragment; UDP datagram boundaries are not used as scientific-frame boundaries.
+The converter must emit raw LVDS protocol bytes with no proprietary packet header.

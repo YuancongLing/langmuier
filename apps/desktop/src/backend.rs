@@ -25,7 +25,7 @@ use langmuir_storage::{Hdf5Config, Hdf5Sink};
 use langmuir_transport::ReaderMetricsSnapshot;
 use langmuir_transport::{
     BackpressurePolicy, Connector, ReaderConfig, ReaderEvent, ReaderWorker, SerialConfig,
-    SerialConnector, WriteTicket, available_serial_ports,
+    SerialConnector, UdpConfig, UdpConnector, WriteTicket, available_serial_ports,
 };
 
 use crate::bridge::{
@@ -306,14 +306,14 @@ impl Controller {
                     if ports.is_empty() {
                         self.log(LogLevel::Warning, "未发现可用串口");
                     }
-                    self.emit_critical(BackendEvent::PortsUpdated {
-                        rs422: ports.clone(),
-                        lvds: ports,
-                    });
+                    self.emit_critical(BackendEvent::PortsUpdated { rs422: ports });
                 }
                 Err(error) => self.fault("串口枚举", error.to_string()),
             },
             UiRequest::Connect { link, port, baud } => self.connect(link, &port, baud),
+            UiRequest::BindLvdsUdp { bind_address, port } => {
+                self.bind_lvds_udp(&bind_address, port);
+            }
             UiRequest::Disconnect { link } => {
                 self.disconnect(link);
             }
@@ -387,6 +387,59 @@ impl Controller {
                 }
             }
             self.log(LogLevel::Info, format!("正在连接 {link}: {port} @ {baud}"));
+        }
+    }
+
+    fn bind_lvds_udp(&mut self, bind_address: &str, port: u16) {
+        if !self.disconnect(LinkKind::Lvds) {
+            self.fault("LVDS / UDP", "旧监听未能在期限内停止，已取消重新监听");
+            return;
+        }
+        let endpoint = format!("{bind_address}:{port}");
+        let socket_address = match endpoint.parse() {
+            Ok(address) => address,
+            Err(error) => {
+                self.fault("LVDS / UDP", format!("监听地址无效 {endpoint}: {error}"));
+                return;
+            }
+        };
+        let connector = UdpConnector::new(UdpConfig::new(socket_address));
+        let transport = match connector.connect() {
+            Ok(transport) => transport,
+            Err(error) => {
+                self.fault("LVDS / UDP", error.to_string());
+                self.emit_critical(BackendEvent::LinkChanged {
+                    link: LinkKind::Lvds,
+                    connected: false,
+                    detail: error.to_string(),
+                });
+                return;
+            }
+        };
+        let result = ReaderWorker::spawn(
+            transport,
+            LvdsStreamDecoder::new(),
+            ReaderConfig {
+                event_capacity: 2_048,
+                backpressure: BackpressurePolicy::Wait(Duration::from_millis(250)),
+                ..ReaderConfig::default()
+            },
+        );
+        match result {
+            Ok(worker) => {
+                self.lvds = Some(worker);
+                self.lvds_endpoint = format!("UDP {endpoint}");
+                self.last_lvds_fault = None;
+                self.log(LogLevel::Info, format!("正在监听 LVDS / UDP: {endpoint}"));
+            }
+            Err(error) => {
+                self.fault("LVDS / UDP", error.to_string());
+                self.emit_critical(BackendEvent::LinkChanged {
+                    link: LinkKind::Lvds,
+                    connected: false,
+                    detail: error.to_string(),
+                });
+            }
         }
     }
 

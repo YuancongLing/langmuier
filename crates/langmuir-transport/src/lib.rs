@@ -8,6 +8,7 @@ mod core_adapter;
 mod error;
 mod metrics;
 mod transport;
+mod udp;
 mod worker;
 
 #[cfg(test)]
@@ -25,6 +26,7 @@ pub use metrics::{DecodeDelta, ReaderMetrics, ReaderMetricsSnapshot};
 #[cfg(feature = "serial")]
 pub use serial::{SerialConfig, SerialConnector, SerialTransport, available_serial_ports};
 pub use transport::{Connector, Transport};
+pub use udp::{UdpConfig, UdpConnector, UdpTransport};
 pub use worker::{
     BackpressurePolicy, ReaderConfig, ReaderEvent, ReaderStatusSnapshot, ReaderWorker, StopReason,
     StreamDecoder, WorkerExit, WriteReceipt, WriteTicket,

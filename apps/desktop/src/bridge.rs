@@ -78,6 +78,12 @@ pub enum UiRequest {
         port: String,
         baud: u32,
     },
+    /// Bind the local endpoint receiving raw LVDS protocol bytes from the
+    /// LVDS-to-UDP converter.
+    BindLvdsUdp {
+        bind_address: String,
+        port: u16,
+    },
     Disconnect {
         link: LinkKind,
     },
@@ -95,7 +101,6 @@ pub enum UiRequest {
 pub enum BackendEvent {
     PortsUpdated {
         rs422: Vec<String>,
-        lvds: Vec<String>,
     },
     LinkChanged {
         link: LinkKind,

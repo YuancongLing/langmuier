@@ -43,6 +43,27 @@ struct ConnectionPanelState {
     metrics: Option<LinkMetricsSnapshot>,
 }
 
+#[derive(Debug)]
+struct LvdsUdpPanelState {
+    bind_address: String,
+    port: u16,
+    connected: bool,
+    detail: String,
+    metrics: Option<LinkMetricsSnapshot>,
+}
+
+impl Default for LvdsUdpPanelState {
+    fn default() -> Self {
+        Self {
+            bind_address: "0.0.0.0".to_owned(),
+            port: 5_000,
+            connected: false,
+            detail: "未监听".to_owned(),
+            metrics: None,
+        }
+    }
+}
+
 impl Default for ConnectionPanelState {
     fn default() -> Self {
         Self {
@@ -130,7 +151,7 @@ struct FaultEntry {
 pub struct LangmuirDesktopApp {
     bridge: Box<dyn BackendBridge>,
     rs422: ConnectionPanelState,
-    lvds: ConnectionPanelState,
+    lvds: LvdsUdpPanelState,
     acquisition_running: bool,
     command_family: CommandFamily,
     configuration_mode: ConfigurationMode,
@@ -168,10 +189,7 @@ impl LangmuirDesktopApp {
         let mut app = Self {
             bridge,
             rs422: ConnectionPanelState::default(),
-            lvds: ConnectionPanelState {
-                baud_rate: 8_000_000,
-                ..ConnectionPanelState::default()
-            },
+            lvds: LvdsUdpPanelState::default(),
             acquisition_running: false,
             command_family: CommandFamily::Telemetry,
             configuration_mode: ConfigurationMode::Frequency,
@@ -251,11 +269,9 @@ impl LangmuirDesktopApp {
 
     fn handle_backend_event(&mut self, event: BackendEvent) {
         match event {
-            BackendEvent::PortsUpdated { rs422, lvds } => {
+            BackendEvent::PortsUpdated { rs422 } => {
                 self.rs422.ports = rs422;
-                self.lvds.ports = lvds;
                 self.rs422.selected_port = 0;
-                self.lvds.selected_port = 0;
                 self.push_log(LogLevel::Info, "串口列表已刷新");
             }
             BackendEvent::LinkChanged {
@@ -263,12 +279,16 @@ impl LangmuirDesktopApp {
                 connected,
                 detail,
             } => {
-                let state = match link {
-                    LinkKind::Rs422 => &mut self.rs422,
-                    LinkKind::Lvds => &mut self.lvds,
-                };
-                state.connected = connected;
-                state.detail.clone_from(&detail);
+                match link {
+                    LinkKind::Rs422 => {
+                        self.rs422.connected = connected;
+                        self.rs422.detail.clone_from(&detail);
+                    }
+                    LinkKind::Lvds => {
+                        self.lvds.connected = connected;
+                        self.lvds.detail.clone_from(&detail);
+                    }
+                }
                 let status = if connected { "已连接" } else { "已断开" };
                 self.push_log(LogLevel::Info, format!("{link} {status}: {detail}"));
             }
@@ -292,14 +312,16 @@ impl LangmuirDesktopApp {
                 link,
                 connected,
                 metrics,
-            } => {
-                let state = match link {
-                    LinkKind::Rs422 => &mut self.rs422,
-                    LinkKind::Lvds => &mut self.lvds,
-                };
-                state.connected = connected;
-                state.metrics = Some(metrics);
-            }
+            } => match link {
+                LinkKind::Rs422 => {
+                    self.rs422.connected = connected;
+                    self.rs422.metrics = Some(metrics);
+                }
+                LinkKind::Lvds => {
+                    self.lvds.connected = connected;
+                    self.lvds.metrics = Some(metrics);
+                }
+            },
             BackendEvent::ScientificSamples {
                 channel_1_start_seconds,
                 channel_2_start_seconds,
@@ -999,33 +1021,19 @@ impl LangmuirDesktopApp {
         theme::card().show(ui, |ui| {
             ui.horizontal(|ui| {
                 status_dot(ui, self.lvds.connected);
-                ui.strong("LVDS");
-                let selected_port = self
-                    .lvds
-                    .ports
-                    .get(self.lvds.selected_port)
-                    .map_or("无可用串口", String::as_str);
+                ui.strong("LVDS / UDP");
                 ui.add_enabled_ui(!self.lvds.connected, |ui| {
-                    ComboBox::from_id_salt("lvds_toolbar_port")
-                        .selected_text(selected_port)
-                        .width(105.0)
-                        .show_ui(ui, |ui| {
-                            for (index, port) in self.lvds.ports.iter().enumerate() {
-                                ui.selectable_value(&mut self.lvds.selected_port, index, port);
-                            }
-                        });
-                    ComboBox::from_id_salt("lvds_toolbar_baud")
-                        .selected_text(self.lvds.baud_rate.to_string())
-                        .width(82.0)
-                        .show_ui(ui, |ui| {
-                            for baud in BAUD_RATES {
-                                ui.selectable_value(
-                                    &mut self.lvds.baud_rate,
-                                    baud,
-                                    baud.to_string(),
-                                );
-                            }
-                        });
+                    ui.label(RichText::new("本机").small().color(theme::TEXT_SECONDARY));
+                    ui.add_sized(
+                        [92.0, theme::CONTROL_HEIGHT],
+                        egui::TextEdit::singleline(&mut self.lvds.bind_address)
+                            .hint_text("0.0.0.0"),
+                    );
+                    ui.label(RichText::new("端口").small().color(theme::TEXT_SECONDARY));
+                    ui.add_sized(
+                        [64.0, theme::CONTROL_HEIGHT],
+                        egui::DragValue::new(&mut self.lvds.port).range(1..=u16::MAX),
+                    );
                 });
 
                 let connection_label = if self.lvds.connected {
@@ -1033,10 +1041,8 @@ impl LangmuirDesktopApp {
                 } else {
                     "连接"
                 };
-                let connection_enabled = self.lvds.connected || !self.lvds.ports.is_empty();
                 if ui
-                    .add_enabled(
-                        connection_enabled,
+                    .add(
                         egui::Button::new(connection_label)
                             .min_size(egui::vec2(50.0, theme::CONTROL_HEIGHT)),
                     )
@@ -1047,12 +1053,9 @@ impl LangmuirDesktopApp {
                             link: LinkKind::Lvds,
                         })
                     } else {
-                        self.lvds.ports.get(self.lvds.selected_port).map(|port| {
-                            UiRequest::Connect {
-                                link: LinkKind::Lvds,
-                                port: port.clone(),
-                                baud: self.lvds.baud_rate,
-                            }
+                        Some(UiRequest::BindLvdsUdp {
+                            bind_address: self.lvds.bind_address.trim().to_owned(),
+                            port: self.lvds.port,
                         })
                     };
                 }
@@ -1076,7 +1079,7 @@ impl LangmuirDesktopApp {
                         UiRequest::StartAcquisition
                     });
                 }
-                if ui.button("刷新").clicked() {
+                if ui.button("刷新串口").clicked() {
                     request = Some(UiRequest::RefreshPorts);
                 }
                 if ui.button("导出遥测 (CSV)").clicked() {
@@ -1112,6 +1115,11 @@ impl LangmuirDesktopApp {
                     );
                 }
             });
+            ui.label(
+                RichText::new("监听 UDP 负载：原始 270B LVDS 帧或其连续片段")
+                    .size(9.0)
+                    .color(theme::TEXT_MUTED),
+            );
         });
         if let Some(request) = request {
             self.submit(request);

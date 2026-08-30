@@ -7,8 +7,9 @@ orchestration layer. Protocol decoding stays in `langmuir-core`, serial I/O in
 
 ## Run
 
-Production mode is the default and enumerates and opens real serial ports. It
-stores LVDS captures in the portable pure-Rust `.lpd` binary format:
+Production mode is the default. RS422 control uses a real serial port; LVDS
+science data is received from an LVDS-to-UDP converter and stored in the
+portable pure-Rust `.lpd` binary format:
 
 ```bash
 cargo run --release -p langmuir-desktop
@@ -47,15 +48,15 @@ Compiling `mock` without `--mock` still starts the production backend. Passing
   LCD-style values, and typography scale.
 - `ui/fonts.rs`: validated cross-platform CJK font discovery and fallback.
 - `bridge.rs`: typed, non-blocking frontend/backend requests and events.
-- `backend.rs`: production controller, serial reader workers, binary/HDF5 batch
-  writer, and bounded asynchronous telemetry CSV export.
+- `backend.rs`: production controller, serial and UDP reader workers, binary/HDF5
+  batch writer, and bounded asynchronous telemetry CSV export.
 - `buffer.rs`: bounded plot history and min/max-envelope decimation.
 - `mock.rs`: feature-gated UI/plot simulator, compiled only by `mock`.
 
 ## Desktop presentation
 
 The native layout follows the original Python control center: a narrow RS422
-command sidebar, a compact LVDS/acquisition toolbar, a central scientific plot,
+command sidebar, a compact LVDS/UDP acquisition toolbar, a central scientific plot,
 a dedicated telemetry/instrument sidebar, and a bounded system log at the
 bottom. The theme uses the same white/slate surfaces, blue primary actions,
 green/red status badges, temperature bars, LCD-style values, and 4-by-4 command
@@ -77,6 +78,13 @@ height. Monospace remains limited to pure byte values and timestamps. Form rows
 use a common 30-pixel control height with explicit vertical centering; labels,
 combo boxes, numeric inputs, and checkbox indicators therefore share the same
 visual center line.
+
+The LVDS/UDP toolbar accepts a local bind address and port (default
+`0.0.0.0:5000`). Each UDP payload is treated as raw LVDS protocol bytes; one
+payload may contain one or more 270-byte frames, or a fragment of a frame. The
+stream decoder restores frame boundaries, validates each complete frame, then
+routes accepted frames to the plot and, while acquisition is running, to the
+capture writer. The UDP converter must not prepend a proprietary packet header.
 
 The UI never parses wire bytes and never writes HDF5 or CSV synchronously.
 Scientific capture waits up to 250 ms for bounded storage capacity, so a

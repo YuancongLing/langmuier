@@ -173,7 +173,8 @@ pub fn lvds_packet(frame_index: u32, timestamp_seconds: u32) -> Vec<u8> {
     frame[6] = 0xAA;
     frame[7..11].copy_from_slice(&timestamp_seconds.to_be_bytes());
     frame[11..15].copy_from_slice(&(frame_index % 1_000_000).to_be_bytes());
-    frame[15..17].copy_from_slice(&(frame_index as u16).to_be_bytes());
+    let sequence_bytes = frame_index.to_be_bytes();
+    frame[15..17].copy_from_slice(&sequence_bytes[2..]);
 
     let channel_1 = 2_048 + (frame_index % 100) as u16;
     let channel_2 = 20_000 + (frame_index % 100) as u16 * 2;

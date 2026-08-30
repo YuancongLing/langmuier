@@ -120,7 +120,6 @@ impl BackendBridge for MockBridge {
             UiRequest::RefreshPorts => {
                 self.events.push_back(BackendEvent::PortsUpdated {
                     rs422: vec!["MOCK-RS422".to_owned()],
-                    lvds: vec!["MOCK-LVDS".to_owned()],
                 });
             }
             UiRequest::Connect { link, port, baud } => {
@@ -129,6 +128,10 @@ impl BackendBridge for MockBridge {
                     LinkKind::Lvds => self.lvds_connected = true,
                 }
                 self.queue_link(link, true, format!("{port} @ {baud}"));
+            }
+            UiRequest::BindLvdsUdp { bind_address, port } => {
+                self.lvds_connected = true;
+                self.queue_link(LinkKind::Lvds, true, format!("UDP {bind_address}:{port}"));
             }
             UiRequest::Disconnect { link } => {
                 match link {
