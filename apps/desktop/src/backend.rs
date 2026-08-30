@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, VecDeque},
+    fmt::Write as _,
     fs::{self, OpenOptions},
     io::{BufWriter, Write},
     path::{Path, PathBuf},
@@ -1212,13 +1213,18 @@ fn write_telemetry_csv(path: &Path, rows: &VecDeque<TelemetrySnapshot>) -> std::
             row.adc_1_status,
             row.adc_2_status,
             row.lvds_status,
-            row.last_injected_command
-                .iter()
-                .map(|byte| format!("{byte:02X}"))
-                .collect::<String>(),
+            encode_hex_bytes(&row.last_injected_command),
         )?;
     }
     writer.flush()
+}
+
+fn encode_hex_bytes(bytes: &[u8]) -> String {
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(output, "{byte:02X}").expect("writing into String cannot fail");
+    }
+    output
 }
 
 #[cfg(test)]

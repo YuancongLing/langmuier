@@ -45,7 +45,9 @@ fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([1_360.0, 860.0])
-            .with_min_inner_size([1_000.0, 700.0]),
+            .with_min_inner_size([1_360.0, 860.0])
+            .with_max_inner_size([1_360.0, 860.0])
+            .with_resizable(false),
         ..eframe::NativeOptions::default()
     };
     eframe::run_native(

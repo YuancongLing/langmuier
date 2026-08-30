@@ -40,6 +40,15 @@ impl Rs422Telemetry {
     }
 }
 
+/// # Errors
+///
+/// Returns [`FrameError`] for malformed framing, unexpected fixed fields, or
+/// a checksum mismatch.
+///
+/// # Panics
+///
+/// Does not panic for arbitrary input. Internal fixed-size conversions are
+/// reached only after the frame length has been validated.
 pub fn decode_rs422_telemetry(frame: &[u8]) -> Result<Rs422Telemetry, FrameError> {
     if frame.len() != RS422_FRAME_LEN {
         return Err(FrameError::UnexpectedLength {

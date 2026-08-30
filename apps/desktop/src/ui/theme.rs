@@ -5,8 +5,8 @@ use eframe::egui::{
     Margin, Response, RichText, Sense, Stroke, TextStyle, Ui, Vec2,
 };
 
-pub const CONTROL_HEIGHT: f32 = 30.0;
-pub const FORM_LABEL_WIDTH: f32 = 46.0;
+pub const CONTROL_HEIGHT: f32 = 28.0;
+pub const FORM_LABEL_WIDTH: f32 = 42.0;
 
 pub const WHITE: Color32 = Color32::from_rgb(255, 255, 255);
 pub const PAGE: Color32 = Color32::from_rgb(248, 250, 252);
@@ -29,24 +29,24 @@ pub fn configure(context: &egui::Context) {
         style.text_styles = BTreeMap::from([
             (
                 TextStyle::Heading,
-                FontId::new(18.0, FontFamily::Proportional),
+                FontId::new(16.0, FontFamily::Proportional),
             ),
-            (TextStyle::Body, FontId::new(13.0, FontFamily::Proportional)),
+            (TextStyle::Body, FontId::new(12.0, FontFamily::Proportional)),
             (
                 TextStyle::Button,
-                FontId::new(13.0, FontFamily::Proportional),
+                FontId::new(12.0, FontFamily::Proportional),
             ),
             (
                 TextStyle::Small,
-                FontId::new(11.0, FontFamily::Proportional),
+                FontId::new(10.0, FontFamily::Proportional),
             ),
             (
                 TextStyle::Monospace,
-                FontId::new(12.0, FontFamily::Monospace),
+                FontId::new(11.0, FontFamily::Monospace),
             ),
         ]);
-        style.spacing.item_spacing = Vec2::new(8.0, 7.0);
-        style.spacing.button_padding = Vec2::new(12.0, 7.0);
+        style.spacing.item_spacing = Vec2::new(6.0, 5.0);
+        style.spacing.button_padding = Vec2::new(8.0, 5.0);
         style.spacing.interact_size.y = CONTROL_HEIGHT;
         style.spacing.combo_width = 150.0;
         style.override_text_valign = Some(Align::Center);
@@ -97,7 +97,7 @@ pub fn card() -> Frame {
         .fill(WHITE)
         .stroke(Stroke::new(1.0, BORDER))
         .corner_radius(10.0)
-        .inner_margin(Margin::same(10))
+        .inner_margin(Margin::same(8))
 }
 
 pub fn subtle_card() -> Frame {
@@ -105,28 +105,28 @@ pub fn subtle_card() -> Frame {
         .fill(SURFACE_ALT)
         .stroke(Stroke::new(1.0, BORDER))
         .corner_radius(8.0)
-        .inner_margin(Margin::same(8))
+        .inner_margin(Margin::same(6))
 }
 
 pub fn section_title(ui: &mut Ui, title: &str) {
-    ui.label(RichText::new(title).strong().color(PRIMARY_DARK).size(13.0));
+    ui.label(RichText::new(title).strong().color(PRIMARY_DARK).size(12.0));
 }
 
 pub fn status_badge(ui: &mut Ui, text: &str, color: Color32) {
     Frame::new()
         .fill(color)
         .corner_radius(12.0)
-        .inner_margin(Margin::symmetric(9, 3))
+        .inner_margin(Margin::symmetric(7, 2))
         .show(ui, |ui| {
-            ui.label(RichText::new(text).strong().color(WHITE).size(11.0));
+            ui.label(RichText::new(text).strong().color(WHITE).size(10.0));
         });
 }
 
 pub fn metric_box(ui: &mut Ui, title: &str, value: impl Into<String>, color: Color32) {
     ui.vertical_centered(|ui| {
-        ui.label(RichText::new(title).color(TEXT_SECONDARY).size(10.0));
-        let width = ui.available_width().max(52.0);
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 30.0), egui::Sense::hover());
+        ui.label(RichText::new(title).color(TEXT_SECONDARY).size(9.0));
+        let width = ui.available_width().max(42.0);
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 26.0), egui::Sense::hover());
         ui.painter().rect(
             rect,
             CornerRadius::same(6),
@@ -134,11 +134,11 @@ pub fn metric_box(ui: &mut Ui, title: &str, value: impl Into<String>, color: Col
             Stroke::new(1.0, BORDER),
             egui::StrokeKind::Inside,
         );
-        ui.painter().text(
+        ui.painter().with_clip_rect(rect).text(
             rect.center(),
             Align2::CENTER_CENTER,
             value.into(),
-            FontId::new(13.0, FontFamily::Monospace),
+            FontId::new(10.0, FontFamily::Monospace),
             color,
         );
     });
@@ -191,6 +191,6 @@ mod tests {
 
     #[test]
     fn functional_controls_share_one_row_height() {
-        assert!((CONTROL_HEIGHT - 30.0).abs() < f32::EPSILON);
+        assert!((CONTROL_HEIGHT - 28.0).abs() < f32::EPSILON);
     }
 }

@@ -1,9 +1,7 @@
 use std::{collections::VecDeque, time::Duration};
 
 use chrono::{DateTime, Local, Utc};
-use eframe::egui::{
-    self, Align, Color32, ComboBox, Grid, Layout, RichText, ScrollArea, Stroke, Ui,
-};
+use eframe::egui::{self, Align, Color32, ComboBox, Grid, Layout, RichText, Stroke, Ui};
 use egui_plot::{Legend, Line, Plot, PlotPoints};
 use langmuir_core::Command;
 
@@ -23,6 +21,12 @@ const MAX_DISPLAY_POINTS: usize = 2_000;
 const MAX_LOGS: usize = 500;
 const MAX_FAULTS: usize = 50;
 const EVENT_BUDGET_PER_FRAME: usize = 4_096;
+const APPLICATION_WIDTH: f32 = 1_360.0;
+const APPLICATION_HEIGHT: f32 = 860.0;
+const HEADER_HEIGHT: f32 = 52.0;
+const LOG_HEIGHT: f32 = 128.0;
+const COMMAND_SIDEBAR_WIDTH: f32 = 300.0;
+const TELEMETRY_SIDEBAR_WIDTH: f32 = 300.0;
 const BAUD_RATES: [u32; 14] = [
     8_000_000, 6_000_000, 4_000_000, 3_000_000, 2_000_000, 1_000_000, 921_600, 460_800, 230_400,
     115_200, 57_600, 38_400, 19_200, 9_600,
@@ -393,10 +397,6 @@ impl LangmuirDesktopApp {
         }
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "the connection card keeps selection, actions, and optional diagnostics together"
-    )]
     fn connection_card(
         ui: &mut Ui,
         link: LinkKind,
@@ -479,48 +479,24 @@ impl LangmuirDesktopApp {
             }
 
             if let Some(metrics) = state.metrics {
-                egui::CollapsingHeader::new("链路指标")
-                    .default_open(false)
-                    .show(ui, |ui| {
-                        Grid::new(("link_metrics", link.to_string()))
-                            .num_columns(2)
-                            .striped(true)
-                            .show(ui, |ui| {
-                                value_cell(ui, "接收字节", metrics.bytes_read.to_string());
-                                value_cell(ui, "解码帧", metrics.frames_decoded.to_string());
-                                ui.end_row();
-                                value_cell(ui, "拒绝帧", metrics.rejected_frames.to_string());
-                                value_cell(ui, "传输丢弃", metrics.events_dropped.to_string());
-                                ui.end_row();
-                                value_cell(
-                                    ui,
-                                    "显示丢弃",
-                                    metrics.ui_display_events_dropped.to_string(),
-                                );
-                                value_cell(
-                                    ui,
-                                    "队列峰值",
-                                    metrics.max_event_queue_depth.to_string(),
-                                );
-                                ui.end_row();
-                            });
-                        if metrics.checksum_failures > 0
-                            || metrics.length_failures > 0
-                            || metrics.queue_overflows > 0
-                            || metrics.io_errors > 0
-                        {
-                            ui.colored_label(
-                                theme::WARNING,
-                                format!(
-                                    "校验 {} · 长度 {} · 溢出 {} · I/O {}",
-                                    metrics.checksum_failures,
-                                    metrics.length_failures,
-                                    metrics.queue_overflows,
-                                    metrics.io_errors,
-                                ),
-                            );
-                        }
-                    });
+                let summary = format!(
+                    "RX {} · 帧 {} · 拒绝 {} · 丢弃 {}",
+                    metrics.bytes_read,
+                    metrics.frames_decoded,
+                    metrics.rejected_frames,
+                    metrics.events_dropped,
+                );
+                ui.add(
+                    egui::Label::new(RichText::new(&summary).size(9.0).color(theme::TEXT_MUTED))
+                        .truncate(),
+                )
+                .on_hover_text(format!(
+                    "{summary}\n校验失败: {}  长度失败: {}  队列溢出: {}  I/O 错误: {}",
+                    metrics.checksum_failures,
+                    metrics.length_failures,
+                    metrics.queue_overflows,
+                    metrics.io_errors,
+                ));
             }
         });
         request
@@ -602,12 +578,12 @@ impl LangmuirDesktopApp {
         let labels = [
             "H1", "H2", "SA", "RA", "L1", "L2", "CMD", "D1", "D2", "D3", "D4", "SUM",
         ];
-        let cell_width = ((ui.available_width() - 15.0) / 4.0).max(50.0);
+        let cell_width = ((ui.available_width() - 12.0) / 4.0).max(42.0);
         Grid::new("command_bytes")
             .num_columns(4)
             .min_col_width(cell_width)
             .max_col_width(cell_width)
-            .spacing([5.0, 5.0])
+            .spacing([4.0, 4.0])
             .show(ui, |ui| {
                 for (index, byte) in frame.iter().enumerate() {
                     let active = !raw_mode && self.command_byte_is_active(index);
@@ -624,14 +600,14 @@ impl LangmuirDesktopApp {
                     egui::Frame::new()
                         .fill(fill)
                         .stroke(Stroke::new(if active { 2.0 } else { 1.0 }, stroke))
-                        .corner_radius(10.0)
-                        .inner_margin(5.0)
+                        .corner_radius(6.0)
+                        .inner_margin(3.0)
                         .show(ui, |ui| {
-                            ui.set_width((cell_width - 10.0).max(40.0));
+                            ui.set_width((cell_width - 6.0).max(36.0));
                             ui.vertical_centered(|ui| {
                                 ui.label(
                                     RichText::new(labels[index])
-                                        .size(9.0)
+                                        .size(8.0)
                                         .strong()
                                         .color(text_color),
                                 );
@@ -639,7 +615,7 @@ impl LangmuirDesktopApp {
                                     ui.scope(|ui| {
                                         ui.visuals_mut().override_text_color = Some(text_color);
                                         ui.add_sized(
-                                            [42.0, 22.0],
+                                            [36.0, 20.0],
                                             egui::DragValue::new(&mut self.raw_command[index])
                                                 .range(0..=u8::MAX)
                                                 .hexadecimal(2, false, true),
@@ -649,14 +625,14 @@ impl LangmuirDesktopApp {
                                     ui.label(
                                         RichText::new(format!("{byte:02X}"))
                                             .monospace()
-                                            .size(15.0)
+                                            .size(12.0)
                                             .strong()
                                             .color(text_color),
                                     );
                                 }
                                 ui.label(
                                     RichText::new(format!("dec: {byte}"))
-                                        .size(8.0)
+                                        .size(7.0)
                                         .color(text_color.gamma_multiply(0.78)),
                                 );
                             });
@@ -685,10 +661,16 @@ impl LangmuirDesktopApp {
             ui.add_enabled_ui(!raw_mode, |ui| self.typed_command_controls(ui));
         });
         if raw_mode {
-            ui.colored_label(
-                Color32::from_rgb(220, 38, 38),
-                "原始模式：发送前不会自动修复帧头、长度或校验和",
-            );
+            let warning = "原始模式：发送前不会自动修复帧头、长度或校验和";
+            ui.add(
+                egui::Label::new(
+                    RichText::new(warning)
+                        .size(9.0)
+                        .color(Color32::from_rgb(220, 38, 38)),
+                )
+                .truncate(),
+            )
+            .on_hover_text(warning);
         }
 
         let typed_frame = command_bytes(self.command());
@@ -716,7 +698,7 @@ impl LangmuirDesktopApp {
         });
         ui.horizontal(|ui| {
             if ui
-                .add_sized([82.0, 32.0], egui::Button::new("重置"))
+                .add_sized([68.0, 28.0], egui::Button::new("重置"))
                 .clicked()
             {
                 self.command_family = CommandFamily::Telemetry;
@@ -735,7 +717,7 @@ impl LangmuirDesktopApp {
             let send_width = ui.available_width();
             if ui
                 .add_sized(
-                    [send_width, 32.0],
+                    [send_width, 28.0],
                     egui::Button::new(RichText::new("发送指令").strong().color(theme::WHITE))
                         .fill(theme::PRIMARY),
                 )
@@ -764,10 +746,6 @@ impl LangmuirDesktopApp {
         }
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "the compact telemetry sidebar mirrors the four visual groups in the Python UI"
-    )]
     fn telemetry_panel(&self, ui: &mut Ui) {
         let Some(data) = &self.telemetry else {
             theme::card().show(ui, |ui| {
@@ -885,36 +863,16 @@ impl LangmuirDesktopApp {
                     );
                 });
             });
-            Grid::new("fault_header")
-                .num_columns(3)
-                .striped(true)
-                .show(ui, |ui| {
-                    ui.strong("时间");
-                    ui.strong("类型");
-                    ui.strong("错误信息");
-                    ui.end_row();
-                });
-            ScrollArea::vertical()
-                .id_salt("faults")
-                .max_height(150.0)
-                .show(ui, |ui| {
-                    if self.faults.is_empty() {
-                        ui.label(RichText::new("暂无异常").small().color(theme::TEXT_MUTED));
-                    }
-                    for fault in &self.faults {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(RichText::new(&fault.time).monospace().size(10.0));
-                            ui.label(
-                                RichText::new(&fault.source)
-                                    .strong()
-                                    .size(10.0)
-                                    .color(theme::DANGER),
-                            );
-                            ui.label(RichText::new(&fault.message).size(10.0));
-                        });
-                        ui.separator();
-                    }
-                });
+            if let Some(fault) = self.faults.front() {
+                let summary = format!("[{}] {}: {}", fault.time, fault.source, fault.message);
+                ui.add(
+                    egui::Label::new(RichText::new(&summary).size(10.0).color(theme::DANGER))
+                        .truncate(),
+                )
+                .on_hover_text(summary);
+            } else {
+                ui.label(RichText::new("暂无异常").small().color(theme::TEXT_MUTED));
+            }
         });
     }
 
@@ -954,7 +912,7 @@ impl LangmuirDesktopApp {
         });
         let mut channel_1 = self.channel_1.decimated(MAX_DISPLAY_POINTS);
         let mut channel_2 = self.channel_2.decimated(MAX_DISPLAY_POINTS);
-        let available_plot_height = ui.available_height().max(220.0);
+        let available_plot_height = ui.available_height().max(180.0);
         match self.plot_layout {
             PlotLayout::Overlay => {
                 let channel_1_range = if self.overlay_normalized {
@@ -981,7 +939,7 @@ impl LangmuirDesktopApp {
                     .x_axis_formatter(|mark, range| {
                         format_plot_timestamp(mark.value, range.end() - range.start())
                     })
-                    .allow_scroll(true)
+                    .allow_scroll(false)
                     .allow_zoom(true)
                     .allow_boxed_zoom(true)
                     .show_background(true)
@@ -1011,7 +969,7 @@ impl LangmuirDesktopApp {
                         .x_axis_formatter(|mark, range| {
                             format_plot_timestamp(mark.value, range.end() - range.start())
                         })
-                        .allow_scroll(true)
+                        .allow_scroll(false)
                         .allow_zoom(true)
                         .allow_boxed_zoom(true)
                         .show_background(true)
@@ -1033,7 +991,7 @@ impl LangmuirDesktopApp {
                         .x_axis_formatter(|mark, range| {
                             format_plot_timestamp(mark.value, range.end() - range.start())
                         })
-                        .allow_scroll(true)
+                        .allow_scroll(false)
                         .allow_zoom(true)
                         .allow_boxed_zoom(true)
                         .show_background(true)
@@ -1058,7 +1016,7 @@ impl LangmuirDesktopApp {
     fn operations_panel(&mut self, ui: &mut Ui) {
         let mut request = None;
         theme::card().show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
+            ui.horizontal(|ui| {
                 status_dot(ui, self.lvds.connected);
                 ui.strong("LVDS");
                 let selected_port = self
@@ -1069,7 +1027,7 @@ impl LangmuirDesktopApp {
                 ui.add_enabled_ui(!self.lvds.connected, |ui| {
                     ComboBox::from_id_salt("lvds_toolbar_port")
                         .selected_text(selected_port)
-                        .width(125.0)
+                        .width(105.0)
                         .show_ui(ui, |ui| {
                             for (index, port) in self.lvds.ports.iter().enumerate() {
                                 ui.selectable_value(&mut self.lvds.selected_port, index, port);
@@ -1077,7 +1035,7 @@ impl LangmuirDesktopApp {
                         });
                     ComboBox::from_id_salt("lvds_toolbar_baud")
                         .selected_text(self.lvds.baud_rate.to_string())
-                        .width(95.0)
+                        .width(82.0)
                         .show_ui(ui, |ui| {
                             for baud in BAUD_RATES {
                                 ui.selectable_value(
@@ -1098,7 +1056,8 @@ impl LangmuirDesktopApp {
                 if ui
                     .add_enabled(
                         connection_enabled,
-                        egui::Button::new(connection_label).min_size(egui::vec2(58.0, 30.0)),
+                        egui::Button::new(connection_label)
+                            .min_size(egui::vec2(50.0, theme::CONTROL_HEIGHT)),
                     )
                     .clicked()
                 {
@@ -1124,7 +1083,7 @@ impl LangmuirDesktopApp {
                 };
                 if ui
                     .add_sized(
-                        [82.0, 30.0],
+                        [70.0, theme::CONTROL_HEIGHT],
                         egui::Button::new(RichText::new(action_text).strong().color(theme::WHITE))
                             .fill(action_color),
                     )
@@ -1189,46 +1148,39 @@ impl LangmuirDesktopApp {
                 );
             });
         });
-        ScrollArea::vertical()
-            .id_salt("logs")
-            .stick_to_bottom(true)
-            .show_rows(ui, 16.0, self.logs.len(), |ui, row_range| {
-                for row in row_range {
-                    let entry = &self.logs[row];
-                    let color = match entry.level {
-                        LogLevel::Info => theme::TEXT,
-                        LogLevel::Warning => theme::WARNING,
-                        LogLevel::Error => theme::DANGER,
-                    };
-                    let full_text = format!("[{}] {}", entry.time, entry.message);
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            RichText::new(format!("[{}]", entry.time))
-                                .monospace()
-                                .size(11.0)
-                                .color(color),
-                        );
-                        ui.add(
-                            egui::Label::new(RichText::new(&entry.message).size(11.0).color(color))
-                                .truncate(),
-                        )
-                        .on_hover_text(full_text);
-                    });
-                }
+        for entry in self.logs.iter().rev().take(4).rev() {
+            let color = match entry.level {
+                LogLevel::Info => theme::TEXT,
+                LogLevel::Warning => theme::WARNING,
+                LogLevel::Error => theme::DANGER,
+            };
+            let full_text = format!("[{}] {}", entry.time, entry.message);
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(format!("[{}]", entry.time))
+                        .monospace()
+                        .size(10.0)
+                        .color(color),
+                );
+                ui.add(
+                    egui::Label::new(RichText::new(&entry.message).size(10.0).color(color))
+                        .truncate(),
+                )
+                .on_hover_text(full_text);
             });
+        }
     }
 }
 
 impl eframe::App for LangmuirDesktopApp {
-    #[expect(
-        clippy::too_many_lines,
-        reason = "the top-level method declares the complete five-region instrument layout"
-    )]
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         self.drain_backend();
 
+        debug_assert!((ui.available_width() - APPLICATION_WIDTH).abs() < 1.0);
+        debug_assert!((ui.available_height() - APPLICATION_HEIGHT).abs() < 1.0);
+
         egui::Panel::top("application_header")
-            .exact_size(56.0)
+            .exact_size(HEADER_HEIGHT)
             .frame(
                 egui::Frame::new()
                     .fill(theme::WHITE)
@@ -1241,7 +1193,7 @@ impl eframe::App for LangmuirDesktopApp {
                         ui.label(
                             RichText::new("航天设备集成控制中心")
                                 .strong()
-                                .size(18.0)
+                                .size(16.0)
                                 .color(theme::TEXT),
                         );
                         ui.label(
@@ -1275,9 +1227,8 @@ impl eframe::App for LangmuirDesktopApp {
             });
 
         egui::Panel::left("command_sidebar")
-            .resizable(true)
-            .default_size(292.0)
-            .size_range(275.0..=320.0)
+            .resizable(false)
+            .exact_size(COMMAND_SIDEBAR_WIDTH)
             .frame(
                 egui::Frame::new()
                     .fill(theme::WHITE)
@@ -1285,23 +1236,16 @@ impl eframe::App for LangmuirDesktopApp {
                     .inner_margin(egui::Margin::same(8)),
             )
             .show(ui, |ui| {
-                ScrollArea::vertical()
-                    .id_salt("command_sidebar_scroll")
-                    .show(ui, |ui| {
-                        if let Some(request) =
-                            Self::connection_card(ui, LinkKind::Rs422, &mut self.rs422)
-                        {
-                            self.submit(request);
-                        }
-                        ui.add_space(8.0);
-                        self.command_panel(ui);
-                    });
+                if let Some(request) = Self::connection_card(ui, LinkKind::Rs422, &mut self.rs422) {
+                    self.submit(request);
+                }
+                ui.add_space(6.0);
+                self.command_panel(ui);
             });
 
         egui::Panel::right("telemetry_sidebar")
-            .resizable(true)
-            .default_size(260.0)
-            .size_range(230.0..=290.0)
+            .resizable(false)
+            .exact_size(TELEMETRY_SIDEBAR_WIDTH)
             .frame(
                 egui::Frame::new()
                     .fill(theme::PAGE)
@@ -1309,19 +1253,14 @@ impl eframe::App for LangmuirDesktopApp {
                     .inner_margin(egui::Margin::same(8)),
             )
             .show(ui, |ui| {
-                ScrollArea::vertical()
-                    .id_salt("telemetry_sidebar_scroll")
-                    .show(ui, |ui| {
-                        self.telemetry_panel(ui);
-                        ui.add_space(7.0);
-                        self.fault_panel(ui);
-                    });
+                self.telemetry_panel(ui);
+                ui.add_space(6.0);
+                self.fault_panel(ui);
             });
 
         egui::Panel::bottom("system_log")
-            .resizable(true)
-            .default_size(150.0)
-            .size_range(110.0..=240.0)
+            .resizable(false)
+            .exact_size(LOG_HEIGHT)
             .frame(
                 egui::Frame::new()
                     .fill(Color32::from_rgb(249, 250, 251))
@@ -1332,7 +1271,7 @@ impl eframe::App for LangmuirDesktopApp {
 
         egui::CentralPanel::default().show(ui, |ui| {
             self.operations_panel(ui);
-            ui.add_space(8.0);
+            ui.add_space(6.0);
             theme::card().show(ui, |ui| self.plot_panel(ui));
         });
 

@@ -63,6 +63,11 @@ impl ScientificFrame {
     }
 
     #[must_use]
+    /// # Panics
+    ///
+    /// Panics only if a manually constructed [`ScientificFrame`] contains a
+    /// channel-1 first sample greater than `u16::MAX`. Frames decoded by this
+    /// crate always satisfy that bound.
     pub fn raw_hex_prefix(&self) -> [u8; 2] {
         u16::try_from(self.channel_1[0])
             .expect("decoded LVDS sample always fits in 16 bits")
@@ -70,6 +75,15 @@ impl ScientificFrame {
     }
 }
 
+/// # Errors
+///
+/// Returns [`FrameError`] for malformed framing, unexpected fixed fields,
+/// invalid timestamp offsets, a checksum mismatch, or an out-of-range sample.
+///
+/// # Panics
+///
+/// Does not panic for arbitrary input. Internal fixed-size conversions are
+/// reached only after the frame length has been validated.
 pub fn decode_scientific_frame(frame: &[u8]) -> Result<ScientificFrame, FrameError> {
     if frame.len() != LVDS_FRAME_LEN {
         return Err(FrameError::UnexpectedLength {
