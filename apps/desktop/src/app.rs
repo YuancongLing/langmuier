@@ -589,8 +589,8 @@ impl LangmuirDesktopApp {
                 for (index, byte) in frame.iter().enumerate() {
                     let active = !raw_mode && self.command_byte_is_active(index);
                     let (fill, stroke, text_color) = match index {
-                        6 => (theme::PRIMARY, theme::PRIMARY, theme::WHITE),
-                        11 => (theme::DANGER, theme::DANGER, theme::WHITE),
+                        6 => (theme::PRIMARY, theme::PRIMARY, Color32::BLACK),
+                        11 => (theme::DANGER, theme::DANGER, Color32::BLACK),
                         _ if active => (
                             Color32::from_rgb(255, 247, 237),
                             Color32::from_rgb(249, 115, 22),
