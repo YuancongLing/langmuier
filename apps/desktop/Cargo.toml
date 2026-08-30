@@ -1,0 +1,28 @@
+[package]
+name = "langmuir-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = []
+hdf5 = ["langmuir-storage/hdf5"]
+hdf5-static = ["langmuir-storage/hdf5-static"]
+mock = ["langmuir-transport/mock"]
+
+[dependencies]
+chrono.workspace = true
+crossbeam-channel.workspace = true
+eframe.workspace = true
+egui_plot.workspace = true
+langmuir-core = { path = "../../crates/langmuir-core" }
+langmuir-storage = { path = "../../crates/langmuir-storage", default-features = false }
+langmuir-transport = { path = "../../crates/langmuir-transport" }
+skrifa.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

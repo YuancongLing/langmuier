@@ -1,0 +1,5 @@
+/target/
+/data/
+*.h5
+*.lpd
+.DS_Store

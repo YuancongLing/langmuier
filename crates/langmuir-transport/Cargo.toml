@@ -1,0 +1,30 @@
+[package]
+name = "langmuir-transport"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Bounded, stoppable byte transports for the Langmuir probe"
+
+[features]
+default = ["serial"]
+serial = ["dep:serialport"]
+mock = []
+
+[dependencies]
+crossbeam-channel.workspace = true
+langmuir-core = { path = "../langmuir-core" }
+parking_lot.workspace = true
+serialport = { workspace = true, optional = true }
+thiserror.workspace = true
+
+[dev-dependencies]
+langmuir-storage = { path = "../langmuir-storage" }
+tempfile.workspace = true
+
+[[example]]
+name = "replay_bench"
+required-features = ["mock"]
+
+[lints]
+workspace = true

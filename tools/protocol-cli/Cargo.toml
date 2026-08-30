@@ -1,0 +1,14 @@
+[package]
+name = "langmuir-protocol-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Headless protocol inspection utility for Langmuir probe frames"
+
+[dependencies]
+langmuir-core = { path = "../../crates/langmuir-core" }
+
+[lints]
+workspace = true
+

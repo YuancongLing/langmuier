@@ -1,0 +1,27 @@
+[package]
+name = "langmuir-storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Bounded batch storage service for Langmuir scientific frames"
+
+[features]
+default = []
+hdf5 = ["dep:hdf5", "dep:ndarray"]
+hdf5-static = ["hdf5", "hdf5/static", "hdf5/zlib"]
+mock = []
+
+[dependencies]
+crossbeam-channel.workspace = true
+langmuir-core = { path = "../langmuir-core" }
+parking_lot.workspace = true
+thiserror.workspace = true
+hdf5 = { package = "hdf5-metno", version = "0.14.0", optional = true }
+ndarray = { version = "0.17.1", optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
