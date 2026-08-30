@@ -2,17 +2,23 @@
 
 All multi-byte integers use network (big-endian) byte order.
 
-## RS422 telemetry response (64 bytes)
+## RS422 command and telemetry response
 
 ```text
-EB 90 | 3A | effective payload (58 B) | SUM8(payload) | 09 D7
+EB 90 | sender | receiver | length | type | data[1..4] | SUM8(type+data)
 ```
 
-The effective payload starts with instrument `04` and response type `12`. Parsed fields
-are absolute time (`u32`), local counter (`u32`), work mode (`u8`), scan frequency
-(`u8`), scan voltage (`u16`), command success/error counters, CPU/PCB temperatures,
-three `u16` magnetic-field values, and DDS/DAC/AUX/ADC status bytes. Raw values are not
-scaled or signed because the Python source contains no authoritative scaling contract.
+RS422 uses `115200` baud, 8 data bits, odd parity, one stop bit (`8O1`). The telemetry
+request is a 12-byte frame:
+
+```text
+EB 90 F0 55 00 06 11 9B 9B 9B 9B 7D
+```
+
+The probe answers only telemetry requests; control commands have no dedicated response.
+The 34-byte telemetry response uses sender `55`, receiver `F0`, length `001C`, type `1A`,
+and a one-byte additive checksum. It reports request/accepted/rejected counters, times,
+mode, frequency, voltage, device statuses, and the five-byte last injected command.
 
 ## LVDS scientific response (270 bytes)
 
@@ -34,20 +40,20 @@ must remain in `0..=65535`. The UTC seconds and microseconds identify the first 
 both channels. The implementation derives a 400-microsecond sample interval from the
 50-millisecond frame period and 125 samples per frame.
 
-## Uplink command (16 bytes)
+## Uplink control command (12 bytes)
 
 ```text
-EB 90 | 0A | 04 | command | data[8] | SUM8(bytes 3..12) | 09 D7
+EB 90 | F0 | 55 | 00 06 | command | data[4] | SUM8(command+data)
 ```
 
-Unused data bytes are `9B`.
+Unused data bytes are `9B`; the total frame length is 12 bytes.
 
 - `11`: telemetry request.
-- `22 55 value`: scan frequency.
-- `22 AA value`: work mode.
-- `22 BB value_hi value_lo`: scan voltage.
-- `33 55`: enable LVDS.
-- `33 AA`: disable LVDS.
+- `21 55 frequency`: triangle-wave mode and scan frequency.
+- `AA`: sine-wave mode.
+- `BB value_hi value_lo`: DC mode and scan voltage.
+- `31 55`: enable LVDS.
+- `AA`: disable LVDS (as listed in the supplied table).
 
 Unlike the Python decoder, the Rust decoder rejects wrong declared lengths, checksum or
 CRC failures, wrong fixed type/device values, invalid microsecond fields, and extra or

@@ -1,4 +1,5 @@
 /target/
+/target-release-*/
 /data/
 *.h5
 *.lpd

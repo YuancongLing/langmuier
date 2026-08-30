@@ -127,7 +127,7 @@ mod tests {
     #[test]
     fn command_cli_matches_python_default() {
         let output = run(&["command".to_owned(), "telemetry".to_owned()]).unwrap();
-        assert_eq!(output, "EB 90 0A 04 11 9B 9B 9B 9B 9B 9B 9B 9B ED 09 D7");
+        assert_eq!(output, "EB 90 F0 55 00 06 11 9B 9B 9B 9B 7D");
     }
 
     #[test]

@@ -64,8 +64,9 @@ There is no automatic real-device-to-mock fallback.
 
 ## Physical-link caveat
 
-At 20 frames/s, a 270-byte LVDS frame is 5,400 bytes/s. A UART-like 8N1 transport
-would require at least 54 kbaud before protocol and USB overhead, which is within the
-Python UI's former maximum selection of 921,600 baud. The transport trait is therefore
-kept independent of UART so a vendor LVDS, DMA, UDP, or file-replay adapter can be added
-without changing the protocol or UI crates.
+At 20 frames/s, a 270-byte LVDS frame is 5,400 bytes/s. A UART-like 8-bit serial
+transport would require at least 54 kbaud before protocol and USB overhead. RS422
+command/telemetry links use 115200 baud with odd parity (`8O1`); the LVDS transport
+may use a vendor serial, DMA, UDP, or file-replay adapter. The transport trait stays
+independent of UART so those adapters can be added without changing the protocol or
+UI crates.

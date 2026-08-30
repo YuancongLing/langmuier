@@ -83,7 +83,7 @@ pub enum UiRequest {
     },
     StartAcquisition,
     StopAcquisition,
-    SendCommand([u8; 16]),
+    SendCommand([u8; 12]),
     ExportCsv {
         suggested_name: String,
     },
@@ -121,7 +121,7 @@ pub enum BackendEvent {
         channel_1: Vec<f64>,
         channel_2: Vec<f64>,
     },
-    CommandSent([u8; 16]),
+    CommandSent([u8; 12]),
     CsvExported {
         path: String,
     },

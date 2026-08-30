@@ -24,7 +24,7 @@ impl SerialConfig {
             baud_rate,
             data_bits: DataBits::Eight,
             flow_control: FlowControl::None,
-            parity: Parity::None,
+            parity: Parity::Odd,
             stop_bits: StopBits::One,
             read_timeout: Duration::from_millis(25),
         }

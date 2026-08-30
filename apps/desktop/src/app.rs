@@ -134,7 +134,7 @@ pub struct LangmuirDesktopApp {
     voltage: u16,
     lvds_enabled: bool,
     command_edit_mode: CommandEditMode,
-    raw_command: [u8; 16],
+    raw_command: [u8; 12],
     telemetry: Option<TelemetrySnapshot>,
     channel_1: TimeSeriesBuffer,
     channel_2: TimeSeriesBuffer,
@@ -613,10 +613,9 @@ impl LangmuirDesktopApp {
             });
     }
 
-    fn command_bytes_grid(&mut self, ui: &mut Ui, frame: &[u8; 16], raw_mode: bool) {
+    fn command_bytes_grid(&mut self, ui: &mut Ui, frame: &[u8; 12], raw_mode: bool) {
         let labels = [
-            "H1", "H2", "LEN", "ID", "CMD", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "SUM",
-            "T1", "T2",
+            "H1", "H2", "SA", "RA", "L1", "L2", "CMD", "D1", "D2", "D3", "D4", "SUM",
         ];
         let cell_width = ((ui.available_width() - 15.0) / 4.0).max(50.0);
         Grid::new("command_bytes")
@@ -628,8 +627,8 @@ impl LangmuirDesktopApp {
                 for (index, byte) in frame.iter().enumerate() {
                     let active = !raw_mode && self.command_byte_is_active(index);
                     let (fill, stroke, text_color) = match index {
-                        4 => (theme::PRIMARY, theme::PRIMARY, theme::WHITE),
-                        13 => (theme::DANGER, theme::DANGER, theme::WHITE),
+                        6 => (theme::PRIMARY, theme::PRIMARY, theme::WHITE),
+                        11 => (theme::DANGER, theme::DANGER, theme::WHITE),
                         _ if active => (
                             Color32::from_rgb(255, 247, 237),
                             Color32::from_rgb(249, 115, 22),
@@ -685,7 +684,7 @@ impl LangmuirDesktopApp {
     }
 
     fn command_panel(&mut self, ui: &mut Ui) {
-        theme::section_title(ui, "16B 指令构造");
+        theme::section_title(ui, "12B 指令构造");
         let typed_before_toggle = command_bytes(self.command());
         let mut raw_mode = self.command_edit_mode == CommandEditMode::Raw;
         if theme::aligned_checkbox(ui, &mut raw_mode, "原始字节编辑").changed() {
@@ -703,7 +702,7 @@ impl LangmuirDesktopApp {
         if raw_mode {
             ui.colored_label(
                 Color32::from_rgb(220, 38, 38),
-                "原始模式：发送前不会自动修复帧头、长度、校验和或帧尾",
+                "原始模式：发送前不会自动修复帧头、长度或校验和",
             );
         }
 
@@ -769,14 +768,14 @@ impl LangmuirDesktopApp {
 
     fn command_byte_is_active(&self, index: usize) -> bool {
         match self.command_family {
-            CommandFamily::Telemetry => index == 4,
+            CommandFamily::Telemetry => index == 6,
             CommandFamily::Configuration => match self.configuration_mode {
                 ConfigurationMode::Frequency | ConfigurationMode::Mode => {
-                    matches!(index, 4..=6)
+                    matches!(index, 6..=8)
                 }
-                ConfigurationMode::Voltage => matches!(index, 4..=7),
+                ConfigurationMode::Voltage => matches!(index, 6..=8),
             },
-            CommandFamily::Lvds => matches!(index, 4..=5),
+            CommandFamily::Lvds => matches!(index, 6..=7),
         }
     }
 
@@ -1504,7 +1503,7 @@ fn overlay_channel_name(name: &str, range: Option<(f64, f64)>) -> String {
     }
 }
 
-fn hex_frame(frame: &[u8; 16]) -> String {
+fn hex_frame(frame: &[u8; 12]) -> String {
     frame
         .iter()
         .map(|byte| format!("{byte:02X}"))
@@ -1512,12 +1511,12 @@ fn hex_frame(frame: &[u8; 16]) -> String {
         .join(" ")
 }
 
-fn command_bytes(command: Command) -> [u8; 16] {
+fn command_bytes(command: Command) -> [u8; 12] {
     command.encode().into_bytes()
 }
 
-fn recalculate_checksum(frame: &mut [u8; 16]) {
-    frame[13] = frame[3..13]
+fn recalculate_checksum(frame: &mut [u8; 12]) {
+    frame[11] = frame[6..11]
         .iter()
         .fold(0_u8, |checksum, byte| checksum.wrapping_add(*byte));
 }
@@ -1578,12 +1577,11 @@ mod tests {
         frame[5] = 0xFE;
         let before = frame;
         recalculate_checksum(&mut frame);
-        let expected = frame[3..13]
+        let expected = frame[6..11]
             .iter()
             .fold(0_u8, |checksum, byte| checksum.wrapping_add(*byte));
-        assert_eq!(frame[13], expected);
-        assert_eq!(&frame[..13], &before[..13]);
-        assert_eq!(&frame[14..], &before[14..]);
+        assert_eq!(frame[11], expected);
+        assert_eq!(&frame[..11], &before[..11]);
     }
 
     #[test]

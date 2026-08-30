@@ -53,56 +53,69 @@ function Remove-Noise([System.Collections.Generic.List[byte]]$Buffer) {
     return $false
 }
 
+function Read-U32BigEndian([byte[]]$Bytes) {
+    return [uint32]::Parse(
+        (Convert-ToHex $Bytes).Replace(" ", ""),
+        [Globalization.NumberStyles]::HexNumber
+    )
+}
+
 function Parse-Frames([System.Collections.Generic.List[byte]]$Buffer) {
     while (Remove-Noise $Buffer) {
-        if ($Buffer.Count -lt 64) {
+        if ($Buffer.Count -lt 34) {
             return
         }
-        $frame = [byte[]]$Buffer.GetRange(0, 64).ToArray()
-        if ($frame[2] -ne 0x3A -or $frame[3] -ne 0x04 -or $frame[4] -ne 0x12 -or
-            $frame[62] -ne 0x09 -or $frame[63] -ne 0xD7) {
+        $frame = [byte[]]$Buffer.GetRange(0, 34).ToArray()
+        if ($frame[2] -ne 0x55 -or $frame[3] -ne 0xF0 -or
+            $frame[4] -ne 0x00 -or $frame[5] -ne 0x1C -or $frame[6] -ne 0x1A) {
             Write-Host ("RX candidate rejected: " + (Convert-ToHex $frame)) -ForegroundColor Yellow
             $Buffer.RemoveAt(0)
             continue
         }
 
         $sum = 0
-        for ($index = 3; $index -lt 61; $index++) {
+        for ($index = 6; $index -lt 33; $index++) {
             $sum = ($sum + [int]$frame[$index]) -band 0xFF
         }
-        if ($frame[61] -ne $sum) {
-            Write-Host ("RX checksum mismatch: expected {0:X2}, actual {1:X2}" -f $sum, $frame[61]) -ForegroundColor Red
+        if ($frame[33] -ne $sum) {
+            Write-Host ("RX checksum mismatch: expected {0:X2}, actual {1:X2}" -f $sum, $frame[33]) -ForegroundColor Red
             $Buffer.RemoveAt(0)
             continue
         }
 
-        $lastCommand = Convert-ToHex ([byte[]]$frame[34..42])
-        $absoluteTime = [uint32]::Parse((Convert-ToHex ([byte[]]$frame[7..10])).Replace(" ", ""), [Globalization.NumberStyles]::HexNumber)
-        $localTime = [uint32]::Parse((Convert-ToHex ([byte[]]$frame[11..14])).Replace(" ", ""), [Globalization.NumberStyles]::HexNumber)
-        Write-Host ("RX telemetry OK: accepted={0}, rejected={1}, absolute_time={2}, local_time={3}, last_command={4}" -f $frame[18], $frame[19], $absoluteTime, $localTime, $lastCommand) -ForegroundColor Green
+        $lastCommand = Convert-ToHex ([byte[]]$frame[28..32])
+        $absoluteTime = Read-U32BigEndian ([byte[]]$frame[10..13])
+        $localTime = Read-U32BigEndian ([byte[]]$frame[14..17])
+        $voltage = [uint16]::Parse(
+            (Convert-ToHex ([byte[]]$frame[20..21])).Replace(" ", ""),
+            [Globalization.NumberStyles]::HexNumber
+        )
+        Write-Host (
+            "RX telemetry OK: request_count={0}, accepted={1}, rejected={2}, absolute_time={3}, local_time={4}, mode=0x{5:X2}, frequency={6}, voltage={7}, lvds=0x{8:X2}, last_command={9}" -f `
+            $frame[7], $frame[8], $frame[9], $absoluteTime, $localTime, $frame[18], $frame[19], $voltage, $frame[27], $lastCommand
+        ) -ForegroundColor Green
         Write-Host ("RX raw: " + (Convert-ToHex $frame))
-        $Buffer.RemoveRange(0, 64)
+        $Buffer.RemoveRange(0, 34)
     }
 }
 
 $defaultRequest = [byte[]](
-    0xEB, 0x90, 0x0A, 0x04, 0x11,
-    0x9B, 0x9B, 0x9B, 0x9B, 0x9B, 0x9B, 0x9B, 0x9B,
-    0xED, 0x09, 0xD7
+    0xEB, 0x90, 0xF0, 0x55, 0x00, 0x06, 0x11,
+    0x9B, 0x9B, 0x9B, 0x9B, 0x7D
 )
 $request = if ([string]::IsNullOrWhiteSpace($CommandHex)) {
     $defaultRequest
 } else {
     Convert-FromHex $CommandHex
 }
-if ($request.Length -ne 16) {
-    throw "RS422 command must contain exactly 16 bytes, got $($request.Length)"
+if ($request.Length -ne 12) {
+    throw "RS422 V2.01 command must contain exactly 12 bytes, got $($request.Length)"
 }
 $buffer = [System.Collections.Generic.List[byte]]::new()
 $serial = [System.IO.Ports.SerialPort]::new(
     $Port,
     $BaudRate,
-    [System.IO.Ports.Parity]::None,
+    [System.IO.Ports.Parity]::Odd,
     8,
     [System.IO.Ports.StopBits]::One
 )

@@ -24,8 +24,8 @@ pub use model::{
     AcquisitionState, CommandCounters, CoreMetrics, DeviceState, LinkState, ScientificFrameSummary,
 };
 pub use rs422::{
-    MagneticField, RS422_DEVICE_ID, RS422_FRAME_LEN, RS422_PAYLOAD_LEN, RS422_TELEMETRY_TYPE,
-    Rs422Telemetry, decode_rs422_telemetry,
+    MagneticField, RS422_DEVICE_ID, RS422_FRAME_LEN, RS422_PAYLOAD_LEN, RS422_RECEIVER_ADDRESS,
+    RS422_SENDER_ADDRESS, RS422_TELEMETRY_TYPE, Rs422Telemetry, decode_rs422_telemetry,
 };
 
 /// Two-byte marker shared by all supported wire protocols.

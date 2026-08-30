@@ -145,28 +145,23 @@ impl Transport for MemoryTransport {
 }
 
 #[must_use]
-pub fn rs422_packet(sequence: u8, timestamp_seconds: u32) -> [u8; 64] {
-    let mut frame = [0_u8; 64];
-    frame[0..3].copy_from_slice(&[0xEB, 0x90, 0x3A]);
-    let effective = &mut frame[3..61];
-    effective[0] = 0x04;
-    effective[1] = 0x12;
-    effective[2] = 0x10 | (sequence & 0x7F);
-    effective[3..7].copy_from_slice(&timestamp_seconds.to_be_bytes());
-    effective[7..11].copy_from_slice(&u32::from(sequence).to_be_bytes());
-    effective[11] = [0x55, 0xAA, 0xBB][usize::from(sequence % 3)];
-    effective[12] = sequence % 100 + 1;
-    effective[13..15].copy_from_slice(&(u16::from(sequence) * 10).to_be_bytes());
-    effective[15] = sequence;
-    effective[16] = 0;
-    effective[17] = 35;
-    effective[18..20].copy_from_slice(&(25_000_u16 + u16::from(sequence)).to_be_bytes());
-    effective[20..22].copy_from_slice(&(25_100_u16 + u16::from(sequence)).to_be_bytes());
-    effective[22..24].copy_from_slice(&(25_200_u16 + u16::from(sequence)).to_be_bytes());
-    effective[24] = 30;
-    effective[25..31].fill(1);
-    frame[61] = checksum8(&frame[3..61]);
-    frame[62..64].copy_from_slice(&[0x09, 0xD7]);
+pub fn rs422_packet(sequence: u8, timestamp_seconds: u32) -> [u8; 34] {
+    let mut frame = [0_u8; 34];
+    frame[0..6].copy_from_slice(&[0xEB, 0x90, 0x55, 0xF0, 0x00, 0x1C]);
+    let effective = &mut frame[6..33];
+    effective[0] = 0x1A;
+    effective[1] = sequence;
+    effective[2] = sequence;
+    effective[3] = 0;
+    effective[4..8].copy_from_slice(&timestamp_seconds.to_be_bytes());
+    effective[8..12].copy_from_slice(&u32::from(sequence).to_be_bytes());
+    effective[12] = [0x55, 0xAA, 0xBB][usize::from(sequence % 3)];
+    effective[13] = sequence % 100 + 1;
+    effective[14..16].copy_from_slice(&(u16::from(sequence) * 10).to_be_bytes());
+    effective[16] = 35;
+    effective[17..22].fill(1);
+    effective[22..27].copy_from_slice(&[0x21, 0x55, sequence, 0x9B, 0x9B]);
+    frame[33] = checksum8(&frame[6..33]);
     frame
 }
 
@@ -205,10 +200,9 @@ mod tests {
     #[test]
     fn deterministic_packets_match_python_layout() {
         let telemetry = rs422_packet(7, 1_700_000_000);
-        assert_eq!(telemetry.len(), 64);
-        assert_eq!(&telemetry[..3], &[0xEB, 0x90, 0x3A]);
-        assert_eq!(telemetry[61], checksum8(&telemetry[3..61]));
-        assert_eq!(&telemetry[62..], &[0x09, 0xD7]);
+        assert_eq!(telemetry.len(), 34);
+        assert_eq!(&telemetry[..6], &[0xEB, 0x90, 0x55, 0xF0, 0x00, 0x1C]);
+        assert_eq!(telemetry[33], checksum8(&telemetry[6..33]));
 
         let scientific = lvds_packet(9, 1_700_000_000);
         assert_eq!(scientific.len(), 270);

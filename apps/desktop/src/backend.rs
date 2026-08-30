@@ -214,7 +214,7 @@ struct Controller {
     scientific_writer: Option<BatchWriter<ScientificFrame>>,
     acquisition_running: bool,
     telemetry_rows: VecDeque<TelemetrySnapshot>,
-    pending_commands: BTreeMap<u64, (WriteTicket, [u8; 16])>,
+    pending_commands: BTreeMap<u64, (WriteTicket, [u8; 12])>,
     last_rs422_metrics: Option<(bool, ReaderMetricsSnapshot)>,
     last_lvds_metrics: Option<(bool, ReaderMetricsSnapshot)>,
     last_rs422_metrics_emitted: Option<(bool, ReaderMetricsSnapshot, u64)>,
@@ -626,7 +626,7 @@ impl Controller {
         }
     }
 
-    fn send_command(&mut self, frame: [u8; 16]) {
+    fn send_command(&mut self, frame: [u8; 12]) {
         let Some(worker) = self.rs422.as_ref().filter(|_| self.rs422_connected) else {
             self.fault("RS422", "未连接，指令未发送");
             return;

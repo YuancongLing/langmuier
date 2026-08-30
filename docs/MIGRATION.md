@@ -1,6 +1,8 @@
 # Python-to-Rust migration notes
 
-The command and RS422 telemetry protocols remain compatible with `../python`.
+The command and RS422 telemetry protocols follow the supplied 2026-07-24
+single-machine specification. They are not wire-compatible with the earlier
+Python implementation's 16-byte/8N1 RS422 framing.
 The LVDS scientific protocol now uses the 2026-07-24 field table: 270-byte frames,
 125 samples per channel, one timestamp, packet sequence, signed one-byte deltas,
 and an additive checksum. The Rust decoder is stricter and rejects bad lengths, fixed
@@ -11,7 +13,7 @@ presenting corrupt data.
 
 - independent RS422 and LVDS port/baud selection and lifecycle;
 - typed telemetry, frequency, mode, voltage, and LVDS enable/disable commands;
-- an explicit raw 16-byte command editing mode for diagnostics;
+- an explicit raw 12-byte command editing mode for diagnostics;
 - telemetry/status display, command and fault logs, CSV export;
 - bounded live two-channel plots with overlay/split views;
 - start/stop scientific capture and explicit simulation.
