@@ -37,8 +37,9 @@ presenting corrupt data.
 - The Python LVDS decoder silently replaced a channel-1 UTC value outside 2000–2100
   with the host's current time. Rust preserves the received `u32` UTC value and rejects
   only invalid microseconds; it never substitutes host time into captured science data.
-- DDS `0` is rendered as the documented **stopped** state instead of being recorded as
-  a device fault. DDS `2` and unknown values remain fault conditions.
+- The current RS422 telemetry response defines raw status bytes for AD9833, DAC8563,
+  ADC1, ADC2, and LVDS, but does not define numerical normal/fault semantics. The UI
+  displays the received hexadecimal values and does not infer a fault from them.
 - Mock waveform values follow a repeatable sequence, while their timestamps intentionally
   use wall-clock time; the desktop simulator as a whole is therefore not bit-deterministic.
 

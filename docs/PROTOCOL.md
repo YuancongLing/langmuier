@@ -18,7 +18,9 @@ EB 90 F0 55 00 06 11 9B 9B 9B 9B 7D
 The probe answers only telemetry requests; control commands have no dedicated response.
 The 34-byte telemetry response uses sender `55`, receiver `F0`, length `001C`, type `1A`,
 and a one-byte additive checksum. It reports request/accepted/rejected counters, times,
-mode, frequency, voltage, device statuses, and the five-byte last injected command.
+mode, frequency, voltage, CPU temperature, AD9833/DAC8563/ADC1/ADC2/LVDS raw status
+bytes, and the five-byte last injected command. It does not include PCB temperature,
+magnetic field, DDS2, or an auxiliary status field.
 
 ## LVDS scientific response (270 bytes)
 

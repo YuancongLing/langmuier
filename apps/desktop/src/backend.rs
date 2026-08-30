@@ -1121,18 +1121,18 @@ fn telemetry_snapshot(telemetry: &Rs422Telemetry) -> TelemetrySnapshot {
         absolute_time_seconds: telemetry.absolute_time_seconds,
         local_time_seconds: telemetry.local_time_seconds,
         cpu_temperature_celsius: telemetry.cpu_temperature,
-        pcb_temperature_celsius: telemetry.pcb_temperature,
-        magnetic_x: telemetry.magnetic_field.x,
-        magnetic_y: telemetry.magnetic_field.y,
-        magnetic_z: telemetry.magnetic_field.z,
+        telemetry_request_count: telemetry.telemetry_request_count,
         accepted_commands: telemetry.accepted_command_count,
         rejected_commands: telemetry.rejected_command_count,
-        dds1_status: telemetry.dds1_status,
-        dds2_status: telemetry.dds2_status,
-        dac_status: telemetry.dac_status,
-        auxiliary_status: telemetry.auxiliary_status,
-        adc1_status: telemetry.adc1_status,
-        adc2_status: telemetry.adc2_status,
+        work_mode: telemetry.work_mode,
+        scan_frequency: telemetry.scan_frequency,
+        scan_voltage: telemetry.scan_voltage,
+        ad9833_status: telemetry.ad9833_status,
+        dac8563_status: telemetry.dac8563_status,
+        adc_1_status: telemetry.adc_1_status,
+        adc_2_status: telemetry.adc_2_status,
+        lvds_status: telemetry.lvds_status,
+        last_injected_command: telemetry.last_injected_command,
     }
 }
 
@@ -1192,7 +1192,7 @@ fn write_telemetry_csv(path: &Path, rows: &VecDeque<TelemetrySnapshot>) -> std::
     let mut writer = BufWriter::new(file);
     writeln!(
         writer,
-        "absolute_time_seconds,local_time_seconds,cpu_temperature_celsius,pcb_temperature_celsius,magnetic_x,magnetic_y,magnetic_z,accepted_commands,rejected_commands,dds1_status,dds2_status,dac_status,auxiliary_status,adc1_status,adc2_status"
+        "absolute_time_seconds,local_time_seconds,cpu_temperature_celsius,telemetry_request_count,accepted_command_count,rejected_command_count,work_mode,scan_frequency,scan_voltage,ad9833_status,dac8563_status,adc_1_status,adc_2_status,lvds_status,last_injected_command_hex"
     )?;
     for row in rows {
         writeln!(
@@ -1201,18 +1201,21 @@ fn write_telemetry_csv(path: &Path, rows: &VecDeque<TelemetrySnapshot>) -> std::
             row.absolute_time_seconds,
             row.local_time_seconds,
             row.cpu_temperature_celsius,
-            row.pcb_temperature_celsius,
-            row.magnetic_x,
-            row.magnetic_y,
-            row.magnetic_z,
+            row.telemetry_request_count,
             row.accepted_commands,
             row.rejected_commands,
-            row.dds1_status,
-            row.dds2_status,
-            row.dac_status,
-            row.auxiliary_status,
-            row.adc1_status,
-            row.adc2_status,
+            row.work_mode,
+            row.scan_frequency,
+            row.scan_voltage,
+            row.ad9833_status,
+            row.dac8563_status,
+            row.adc_1_status,
+            row.adc_2_status,
+            row.lvds_status,
+            row.last_injected_command
+                .iter()
+                .map(|byte| format!("{byte:02X}"))
+                .collect::<String>(),
         )?;
     }
     writer.flush()
@@ -1261,23 +1264,28 @@ mod tests {
             absolute_time_seconds: 1,
             local_time_seconds: 2,
             cpu_temperature_celsius: 3,
-            pcb_temperature_celsius: 4,
-            magnetic_x: 5,
-            magnetic_y: 6,
-            magnetic_z: 7,
+            telemetry_request_count: 7,
             accepted_commands: 8,
             rejected_commands: 9,
-            dds1_status: 1,
-            dds2_status: 1,
-            dac_status: 1,
-            auxiliary_status: 1,
-            adc1_status: 1,
-            adc2_status: 1,
+            work_mode: 0x55,
+            scan_frequency: 100,
+            scan_voltage: 5_000,
+            ad9833_status: 1,
+            dac8563_status: 1,
+            adc_1_status: 1,
+            adc_2_status: 1,
+            lvds_status: 1,
+            last_injected_command: [0x21, 0x55, 0x64, 0x9B, 0x9B],
         }]);
         let task = CsvExportTask::spawn(path.clone(), rows).unwrap();
         let exported = task.result.recv_timeout(Duration::from_secs(1)).unwrap();
         assert_eq!(exported.unwrap(), path);
         assert!(path.exists());
+        let csv = fs::read_to_string(path).unwrap();
+        assert!(csv.starts_with(
+            "absolute_time_seconds,local_time_seconds,cpu_temperature_celsius,telemetry_request_count"
+        ));
+        assert!(csv.contains("1,2,3,7,8,9,85,100,5000,1,1,1,1,1,2155649B9B"));
     }
 
     #[test]

@@ -360,51 +360,36 @@ impl LangmuirDesktopApp {
         let previous = self.telemetry.as_ref();
         let statuses = [
             (
-                "DDS1",
-                snapshot.dds1_status,
-                previous.map(|item| item.dds1_status),
+                "AD9833",
+                snapshot.ad9833_status,
+                previous.map(|item| item.ad9833_status),
             ),
             (
-                "DDS2",
-                snapshot.dds2_status,
-                previous.map(|item| item.dds2_status),
-            ),
-            (
-                "DAC",
-                snapshot.dac_status,
-                previous.map(|item| item.dac_status),
+                "DAC8563",
+                snapshot.dac8563_status,
+                previous.map(|item| item.dac8563_status),
             ),
             (
                 "ADC1",
-                snapshot.adc1_status,
-                previous.map(|item| item.adc1_status),
+                snapshot.adc_1_status,
+                previous.map(|item| item.adc_1_status),
             ),
             (
                 "ADC2",
-                snapshot.adc2_status,
-                previous.map(|item| item.adc2_status),
+                snapshot.adc_2_status,
+                previous.map(|item| item.adc_2_status),
             ),
             (
-                "辅助",
-                snapshot.auxiliary_status,
-                previous.map(|item| item.auxiliary_status),
+                "LVDS",
+                snapshot.lvds_status,
+                previous.map(|item| item.lvds_status),
             ),
         ];
         for (name, status, previous_status) in statuses {
-            let is_dds = matches!(name, "DDS1" | "DDS2");
             if previous_status == Some(status) {
                 continue;
             }
-            if is_dds && status == 0 {
-                self.push_log(LogLevel::Warning, format!("{name}: 停止 (0x00)"));
-            } else if (is_dds && status > 1) || (!is_dds && status != 1) {
-                let detail = if is_dds && status == 2 {
-                    "故障"
-                } else {
-                    "状态异常"
-                };
-                self.push_fault(name, format!("{detail} (0x{status:02X})"));
-            }
+            self.push_log(LogLevel::Info, format!("{name} 状态码: 0x{status:02X}"));
         }
     }
 
@@ -801,8 +786,8 @@ impl LangmuirDesktopApp {
         };
 
         theme::card().show(ui, |ui| {
-            theme::section_title(ui, "时钟系统");
-            ui.columns(2, |columns| {
+            theme::section_title(ui, "时间与工作参数");
+            ui.columns(3, |columns| {
                 theme::metric_box(
                     &mut columns[0],
                     "下位机时间",
@@ -811,55 +796,44 @@ impl LangmuirDesktopApp {
                 );
                 theme::metric_box(
                     &mut columns[1],
-                    "本地系统时间",
-                    Local::now().format("%H:%M:%S").to_string(),
-                    theme::TEXT,
-                );
-            });
-            ui.add_space(5.0);
-            theme::metric_box(
-                ui,
-                "自守时计数 (ms)",
-                format!("{:010}", data.local_time_seconds),
-                theme::TEXT,
-            );
-        });
-
-        ui.add_space(7.0);
-        theme::card().show(ui, |ui| {
-            theme::section_title(ui, "环境温度与磁场");
-            temperature_bar(ui, "CPU 温度", data.cpu_temperature_celsius, theme::PRIMARY);
-            temperature_bar(
-                ui,
-                "PCB 温度",
-                data.pcb_temperature_celsius,
-                Color32::from_rgb(20, 184, 166),
-            );
-            ui.label(
-                RichText::new("空间磁场 (nT)")
-                    .small()
-                    .color(theme::TEXT_SECONDARY),
-            );
-            ui.columns(3, |columns| {
-                theme::metric_box(
-                    &mut columns[0],
-                    "X",
-                    data.magnetic_x.to_string(),
-                    theme::PRIMARY,
-                );
-                theme::metric_box(
-                    &mut columns[1],
-                    "Y",
-                    data.magnetic_y.to_string(),
+                    "自守时时间 (s)",
+                    data.local_time_seconds.to_string(),
                     theme::PRIMARY,
                 );
                 theme::metric_box(
                     &mut columns[2],
-                    "Z",
-                    data.magnetic_z.to_string(),
+                    "遥测请求计数",
+                    data.telemetry_request_count.to_string(),
                     theme::PRIMARY,
                 );
             });
+            ui.add_space(5.0);
+            ui.columns(3, |columns| {
+                theme::metric_box(
+                    &mut columns[0],
+                    "工作模式",
+                    work_mode_name(data.work_mode),
+                    theme::PRIMARY,
+                );
+                theme::metric_box(
+                    &mut columns[1],
+                    "扫描频率",
+                    data.scan_frequency.to_string(),
+                    theme::PRIMARY,
+                );
+                theme::metric_box(
+                    &mut columns[2],
+                    "扫描电压",
+                    data.scan_voltage.to_string(),
+                    theme::PRIMARY,
+                );
+            });
+        });
+
+        ui.add_space(7.0);
+        theme::card().show(ui, |ui| {
+            theme::section_title(ui, "温度");
+            temperature_bar(ui, "CPU 温度", data.cpu_temperature_celsius, theme::PRIMARY);
         });
 
         ui.add_space(7.0);
@@ -886,14 +860,14 @@ impl LangmuirDesktopApp {
                 .num_columns(2)
                 .spacing([10.0, 6.0])
                 .show(ui, |ui| {
-                    dds_status_cell(ui, "DDS1", data.dds1_status);
-                    dds_status_cell(ui, "DDS2", data.dds2_status);
+                    protocol_status_cell(ui, "AD9833", data.ad9833_status);
+                    protocol_status_cell(ui, "DAC8563", data.dac8563_status);
                     ui.end_row();
-                    binary_status_cell(ui, "DAC", data.dac_status);
-                    binary_status_cell(ui, "辅助", data.auxiliary_status);
+                    protocol_status_cell(ui, "ADC1", data.adc_1_status);
+                    protocol_status_cell(ui, "ADC2", data.adc_2_status);
                     ui.end_row();
-                    binary_status_cell(ui, "ADC1", data.adc1_status);
-                    binary_status_cell(ui, "ADC2", data.adc2_status);
+                    protocol_status_cell(ui, "LVDS", data.lvds_status);
+                    value_cell(ui, "上一条注入指令", hex_bytes(&data.last_injected_command));
                     ui.end_row();
                 });
         });
@@ -1407,33 +1381,31 @@ fn value_cell(ui: &mut Ui, label: &str, value: String) {
     });
 }
 
-fn dds_status_cell(ui: &mut Ui, label: &str, status: u8) {
-    let (text, color) = match status {
-        0 => ("停止", theme::TEXT_SECONDARY),
-        1 => ("运行", theme::SUCCESS),
-        2 => ("故障", theme::DANGER),
-        _ => ("未知", theme::WARNING),
-    };
+fn protocol_status_cell(ui: &mut Ui, label: &str, status: u8) {
+    let value = format!("0x{status:02X}");
     ui.horizontal(|ui| {
         ui.label(RichText::new(label).small().color(theme::TEXT_SECONDARY));
-        theme::status_badge(ui, text, color);
+        theme::status_badge(ui, &value, theme::PRIMARY);
     })
     .response
-    .on_hover_text(format!("状态码 0x{status:02X}"));
+    .on_hover_text("协议仅定义状态码字段，未给出各数值的正常/故障语义");
 }
 
-fn binary_status_cell(ui: &mut Ui, label: &str, status: u8) {
-    let (text, color) = if status == 1 {
-        ("正常", theme::SUCCESS)
-    } else {
-        ("异常", theme::DANGER)
-    };
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(label).small().color(theme::TEXT_SECONDARY));
-        theme::status_badge(ui, text, color);
-    })
-    .response
-    .on_hover_text(format!("状态码 0x{status:02X}"));
+fn work_mode_name(mode: u8) -> String {
+    match mode {
+        0x55 => "三角波 (0x55)".to_owned(),
+        0xAA => "正弦波 (0xAA)".to_owned(),
+        0xBB => "直流 DC (0xBB)".to_owned(),
+        _ => format!("未知 (0x{mode:02X})"),
+    }
+}
+
+fn hex_bytes(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|byte| format!("{byte:02X}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn temperature_bar(ui: &mut Ui, label: &str, temperature: u8, color: Color32) {
@@ -1563,7 +1535,9 @@ fn format_plot_timestamp(seconds: f64, visible_seconds: f64) -> String {
 mod tests {
     use langmuir_core::Command;
 
-    use super::{command_bytes, normalize_plot_points, recalculate_checksum};
+    use super::{
+        command_bytes, hex_bytes, normalize_plot_points, recalculate_checksum, work_mode_name,
+    };
 
     #[test]
     fn entering_raw_mode_starts_from_the_typed_command() {
@@ -1582,6 +1556,19 @@ mod tests {
             .fold(0_u8, |checksum, byte| checksum.wrapping_add(*byte));
         assert_eq!(frame[11], expected);
         assert_eq!(&frame[..11], &before[..11]);
+    }
+
+    #[test]
+    fn work_modes_use_protocol_values() {
+        assert_eq!(work_mode_name(0x55), "三角波 (0x55)");
+        assert_eq!(work_mode_name(0xAA), "正弦波 (0xAA)");
+        assert_eq!(work_mode_name(0xBB), "直流 DC (0xBB)");
+        assert_eq!(work_mode_name(0), "未知 (0x00)");
+    }
+
+    #[test]
+    fn injected_command_is_rendered_as_hex_bytes() {
+        assert_eq!(hex_bytes(&[0x21, 0x55, 0x64, 0x9B, 0x9B]), "21 55 64 9B 9B");
     }
 
     #[test]

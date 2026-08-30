@@ -6,7 +6,7 @@ Coverage includes:
 
 - golden RS422, LVDS, and command vectors;
 - every decoded field and big-endian boundary;
-- checksum/CRC, header, tail, declared-length, type, and device failures;
+- checksum, header, declared-length, type, and address failures;
 - fragmented input at arbitrary byte boundaries, concatenated frames, leading noise,
   corrupt frames, and byte-wise stream input;
 - bounded-channel behavior and clean worker shutdown;
