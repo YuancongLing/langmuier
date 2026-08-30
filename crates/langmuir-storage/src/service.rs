@@ -309,6 +309,26 @@ impl<T: Send + 'static> BatchWriter<T> {
     /// Returns sink, timeout, channel, or worker panic errors. A timed-out
     /// worker is detached rather than blocking the caller indefinitely.
     pub fn shutdown(mut self) -> Result<WriterExit, StorageError> {
+        self.shutdown_with_timeout(self.control_timeout)
+    }
+
+    /// Stops acceptance, drains, and closes with a caller-selected deadline.
+    ///
+    /// # Errors
+    ///
+    /// Returns sink, timeout, channel, or worker panic errors. A timed-out
+    /// worker is detached rather than blocking the caller indefinitely.
+    pub fn shutdown_timeout(mut self, timeout: Duration) -> Result<WriterExit, StorageError> {
+        if timeout.is_zero() {
+            return Err(StorageError::InvalidConfiguration(
+                "shutdown timeout must be non-zero".to_owned(),
+            ));
+        }
+        self.shutdown_with_timeout(timeout)
+    }
+
+    fn shutdown_with_timeout(&mut self, timeout: Duration) -> Result<WriterExit, StorageError> {
+        self.control_timeout = timeout;
         let deadline = Instant::now() + self.control_timeout;
         let gate = self.submit_gate.lock();
         self.accepting.store(false, Ordering::Release);

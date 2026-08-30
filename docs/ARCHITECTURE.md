@@ -51,9 +51,10 @@ Connection and acquisition are explicit states. Shutdown order is:
 4. stop the RS422 reader and the CSV export task;
 5. report any lifecycle error without allowing a non-cooperative driver to hang UI exit.
 
-If the producer cannot join or its accepted-event queue cannot drain within the bounded
-deadline, the capture is closed with a neighboring `.incomplete` marker containing the
-timestamp and reason. The UI never reports that path as a complete drain.
+If the producer cannot join, its accepted-event queue cannot drain within the bounded
+deadline, or storage fails, the capture is finalized when possible and a neighboring
+`.incomplete` marker is written with the timestamp and reason. The UI never reports
+that path as a complete drain. Desktop storage shutdown is bounded to three seconds.
 
 The manual **Stop acquisition** boundary includes the LVDS events already present when
 the request is handled; the physical link stays connected and later frames are ignored

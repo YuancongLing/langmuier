@@ -40,6 +40,7 @@ const METRICS_INTERVAL: Duration = Duration::from_millis(500);
 const STORAGE_SUBMIT_TIMEOUT: Duration = Duration::from_millis(250);
 const BACKEND_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const READER_STOP_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
+const STORAGE_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const CSV_TASK_DROP_TIMEOUT: Duration = Duration::from_millis(500);
 const MAX_TELEMETRY_ROWS: usize = 100_000;
 const MAX_READER_EVENTS_PER_TICK: usize = 1_024;
@@ -325,7 +326,10 @@ impl Controller {
     }
 
     fn connect(&mut self, link: LinkKind, port: &str, baud: u32) {
-        self.disconnect(link);
+        if !self.disconnect(link) {
+            self.fault(link.to_string(), "旧连接未能在期限内停止，已取消重连");
+            return;
+        }
         let connector = SerialConnector::new(SerialConfig::new(port.to_owned(), baud));
         let transport = match connector.connect() {
             Ok(transport) => transport,
@@ -383,7 +387,7 @@ impl Controller {
         }
     }
 
-    fn disconnect(&mut self, link: LinkKind) {
+    fn disconnect(&mut self, link: LinkKind) -> bool {
         let result = match link {
             LinkKind::Rs422 => {
                 self.rs422_connected = false;
@@ -402,7 +406,7 @@ impl Controller {
                 result
             }
         };
-        if let Some(Err(error)) = result {
+        if let Some(Err(error)) = &result {
             self.fault(link.to_string(), error.to_string());
         }
         self.emit_critical(BackendEvent::LinkChanged {
@@ -410,6 +414,7 @@ impl Controller {
             connected: false,
             detail: "未连接".to_owned(),
         });
+        result.is_none_or(|value| value.is_ok())
     }
 
     fn start_acquisition(&mut self) {
@@ -432,7 +437,13 @@ impl Controller {
                     return;
                 }
             };
-            match BatchWriter::start(sink, StorageServiceConfig::default()) {
+            match BatchWriter::start(
+                sink,
+                StorageServiceConfig {
+                    control_timeout: STORAGE_SHUTDOWN_TIMEOUT,
+                    ..StorageServiceConfig::default()
+                },
+            ) {
                 Ok(writer) => {
                     self.scientific_writer = Some(writer);
                     self.capture_path = Some(path.clone());
@@ -456,7 +467,13 @@ impl Controller {
                     return;
                 }
             };
-            match BatchWriter::start(sink, StorageServiceConfig::default()) {
+            match BatchWriter::start(
+                sink,
+                StorageServiceConfig {
+                    control_timeout: STORAGE_SHUTDOWN_TIMEOUT,
+                    ..StorageServiceConfig::default()
+                },
+            ) {
                 Ok(writer) => {
                     self.scientific_writer = Some(writer);
                     self.capture_path = Some(path.clone());
@@ -473,11 +490,29 @@ impl Controller {
     }
 
     fn stop_acquisition(&mut self) {
+        self.stop_acquisition_with_reason(None);
+    }
+
+    fn stop_acquisition_incomplete(&mut self, reason: impl Into<String>) {
+        self.stop_acquisition_with_reason(Some(reason.into()));
+    }
+
+    fn stop_acquisition_with_reason(&mut self, reason: Option<String>) {
         self.acquisition_running = false;
+        let capture_path = self.capture_path.clone();
+        let mut incomplete_reason = reason;
         if let Some(writer) = self.scientific_writer.take()
-            && let Err(error) = writer.shutdown()
+            && let Err(error) = writer.shutdown_timeout(STORAGE_SHUTDOWN_TIMEOUT)
         {
-            self.fault("科学数据存储", error.to_string());
+            let message = error.to_string();
+            self.fault("科学数据存储", &message);
+            if incomplete_reason.is_none() {
+                incomplete_reason = Some(format!("存储关闭失败: {message}"));
+            }
+        }
+        if let (Some(path), Some(reason)) = (capture_path.as_deref(), incomplete_reason.as_deref())
+        {
+            self.mark_capture_incomplete(path, reason);
         }
         self.capture_path = None;
         self.emit_critical(BackendEvent::AcquisitionChanged { running: false });
@@ -647,7 +682,7 @@ impl Controller {
     fn drain_lvds(&mut self) {
         self.drain_lvds_limit(MAX_READER_EVENTS_PER_TICK);
         if self.acquisition_running && !self.lvds_connected {
-            self.stop_acquisition();
+            self.stop_acquisition_incomplete("LVDS reader stopped before acquisition completed");
         }
     }
 
@@ -718,8 +753,9 @@ impl Controller {
         };
         let submit_result = writer.submit_timeout(frame, STORAGE_SUBMIT_TIMEOUT);
         if let Err(error) = submit_result {
-            self.fault("科学数据存储", error.to_string());
-            self.stop_acquisition();
+            let message = error.to_string();
+            self.fault("科学数据存储", &message);
+            self.stop_acquisition_incomplete(format!("科学数据未能写入: {message}"));
             return;
         }
         if let Some(display) = display {
@@ -782,7 +818,10 @@ impl Controller {
                 self.drain_lvds_all();
                 self.lvds_connected = false;
                 if self.acquisition_running {
-                    self.stop_acquisition();
+                    self.stop_acquisition_incomplete(format!(
+                        "LVDS reader stopped: {:?}",
+                        exit.reason
+                    ));
                 }
                 self.emit_critical(BackendEvent::LinkChanged {
                     link: LinkKind::Lvds,
@@ -793,7 +832,7 @@ impl Controller {
             if status.panicked && self.last_lvds_fault.as_deref() != Some("worker panic") {
                 self.drain_lvds_all();
                 if self.acquisition_running {
-                    self.stop_acquisition();
+                    self.stop_acquisition_incomplete("LVDS reader panicked");
                 }
                 self.last_lvds_fault = Some("worker panic".to_owned());
                 self.fault("LVDS", "读取线程异常终止");
@@ -860,7 +899,7 @@ impl Controller {
             storage_failed = true;
         }
         if storage_failed && self.acquisition_running {
-            self.stop_acquisition();
+            self.stop_acquisition_incomplete("科学数据 writer 异常停止");
         }
     }
 

@@ -101,7 +101,8 @@ fn parse_hex(input: &str) -> Result<Vec<u8>, String> {
         .as_bytes()
         .chunks_exact(2)
         .map(|pair| {
-            let text = std::str::from_utf8(pair).expect("ASCII hex pair");
+            let text = std::str::from_utf8(pair)
+                .map_err(|_| "hex input must contain only ASCII digits".to_owned())?;
             u8::from_str_radix(text, 16).map_err(|_| format!("invalid hex byte: {text}"))
         })
         .collect()
@@ -133,6 +134,7 @@ mod tests {
     fn parses_readable_hex_and_rejects_partial_byte() {
         assert_eq!(parse_hex("0xEB 90_0A").unwrap(), [0xEB, 0x90, 0x0A]);
         assert!(parse_hex("ABC").is_err());
+        assert!(parse_hex("€€").is_err());
     }
 
     #[test]

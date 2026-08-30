@@ -81,8 +81,10 @@ visual center line.
 The UI never parses wire bytes and never writes HDF5 or CSV synchronously.
 Scientific capture waits up to 250 ms for bounded storage capacity, so a
 momentary full queue does not discard the current frame. A longer stall raises
-a fault and stops the capture explicitly; the resulting file is an interrupted
-capture rather than being presented as absolutely lossless. Plot updates use a
+a fault, writes a neighboring `.incomplete` marker, and stops the capture
+explicitly; the resulting file is an interrupted capture rather than being
+presented as absolutely lossless. Storage shutdown is bounded to three seconds
+in the desktop backend. Plot updates use a
 separate bounded event queue where display-only samples may be dropped.
 The critical UI event queue is also bounded; after an extreme UI stall, old
 events are counted and summarized instead of consuming unbounded memory. Link
