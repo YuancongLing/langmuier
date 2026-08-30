@@ -313,7 +313,9 @@ impl Controller {
                 Err(error) => self.fault("串口枚举", error.to_string()),
             },
             UiRequest::Connect { link, port, baud } => self.connect(link, &port, baud),
-            UiRequest::Disconnect { link } => self.disconnect(link),
+            UiRequest::Disconnect { link } => {
+                self.disconnect(link);
+            }
             UiRequest::StartAcquisition => self.start_acquisition(),
             UiRequest::StopAcquisition => self.stop_acquisition_at_ui_boundary(),
             UiRequest::SendCommand(frame) => self.send_command(frame),
