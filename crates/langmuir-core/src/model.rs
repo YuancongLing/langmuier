@@ -32,8 +32,8 @@ pub struct CommandCounters {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScientificFrameSummary {
-    pub channel_1_time: Timestamp,
-    pub channel_2_time: Timestamp,
+    pub timestamp: Timestamp,
+    pub sequence: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -101,14 +101,11 @@ mod tests {
         assert_eq!(state.latest_telemetry, Some(telemetry));
 
         let summary = ScientificFrameSummary {
-            channel_1_time: Timestamp {
+            timestamp: Timestamp {
                 utc_seconds: 1,
                 microseconds: 2,
             },
-            channel_2_time: Timestamp {
-                utc_seconds: 3,
-                microseconds: 4,
-            },
+            sequence: 7,
         };
         state.apply_scientific_summary(summary);
         assert_eq!(state.latest_scientific, Some(summary));
@@ -122,7 +119,7 @@ mod tests {
             ..StreamMetrics::default()
         };
         metrics.synchronize_streams(StreamMetrics::default(), lvds);
-        assert_eq!(metrics.scientific_samples_decoded, 6_000);
+        assert_eq!(metrics.scientific_samples_decoded, 750);
         metrics.commands_encoded = u64::MAX;
         metrics.record_command_encoded();
         assert_eq!(metrics.commands_encoded, u64::MAX);

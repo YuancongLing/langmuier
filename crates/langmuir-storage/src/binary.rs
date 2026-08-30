@@ -8,14 +8,14 @@ use thiserror::Error;
 use crate::BatchSink;
 
 pub const BINARY_MAGIC: [u8; 8] = *b"LMPROBE\0";
-pub const BINARY_VERSION: u16 = 1;
+pub const BINARY_VERSION: u16 = 2;
 pub const BINARY_HEADER_LEN: u16 = 32;
 pub const BINARY_ENDIAN_MARKER: u32 = 0x0102_0304;
-pub const BINARY_SAMPLE_COUNT: u32 = 1_000;
-pub const BINARY_FRAME_LEN: u32 = 4 * 4 + 2 * BINARY_SAMPLE_COUNT * 4;
+pub const BINARY_SAMPLE_COUNT: u32 = 125;
+pub const BINARY_FRAME_LEN: u32 = 4 * 2 + 2 + 2 * BINARY_SAMPLE_COUNT * 4;
 pub const BINARY_FLAGS: u32 = 1;
 
-const _: () = assert!(SAMPLE_COUNT == 1_000);
+const _: () = assert!(SAMPLE_COUNT == 125);
 
 #[derive(Clone, Debug)]
 pub struct BinaryConfig {
@@ -137,10 +137,9 @@ impl BatchSink<ScientificFrame> for BinarySink {
         let writer = self.writer.as_mut().ok_or(BinaryError::Closed)?;
         let mut encoded = Vec::with_capacity(frames.len() * BINARY_FRAME_LEN as usize);
         for frame in frames {
-            encoded.extend_from_slice(&frame.channel_1_time.utc_seconds.to_le_bytes());
-            encoded.extend_from_slice(&frame.channel_1_time.microseconds.to_le_bytes());
-            encoded.extend_from_slice(&frame.channel_2_time.utc_seconds.to_le_bytes());
-            encoded.extend_from_slice(&frame.channel_2_time.microseconds.to_le_bytes());
+            encoded.extend_from_slice(&frame.timestamp.utc_seconds.to_le_bytes());
+            encoded.extend_from_slice(&frame.timestamp.microseconds.to_le_bytes());
+            encoded.extend_from_slice(&frame.sequence.to_le_bytes());
             for sample in frame.channel_1.iter() {
                 encoded.extend_from_slice(&sample.to_le_bytes());
             }
@@ -210,14 +209,11 @@ mod tests {
             channel_2[sample_index] = 1_000_000 + index * 10_000 + sample;
         }
         ScientificFrame {
-            channel_1_time: Timestamp {
+            timestamp: Timestamp {
                 utc_seconds: 1_700_000_000 + index,
                 microseconds: 123_456,
             },
-            channel_2_time: Timestamp {
-                utc_seconds: 1_700_000_001 + index,
-                microseconds: 654_321,
-            },
+            sequence: u16::try_from(index).unwrap(),
             channel_1,
             channel_2,
         }
@@ -238,11 +234,14 @@ mod tests {
         let mut bytes = Vec::new();
         File::open(path).unwrap().read_to_end(&mut bytes).unwrap();
         assert_eq!(&bytes[..8], &BINARY_MAGIC);
-        assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 1);
+        assert_eq!(
+            u16::from_le_bytes(bytes[8..10].try_into().unwrap()),
+            BINARY_VERSION
+        );
         assert_eq!(u16::from_le_bytes(bytes[10..12].try_into().unwrap()), 32);
         assert_eq!(le_u32(&bytes, 12), BINARY_ENDIAN_MARKER);
         assert_eq!(le_u32(&bytes, 16), BINARY_SAMPLE_COUNT);
-        assert_eq!(le_u32(&bytes, 20), 10);
+        assert_eq!(le_u32(&bytes, 20), SAMPLE_INTERVAL_MICROS);
         assert_eq!(le_u32(&bytes, 24), BINARY_FRAME_LEN);
         assert_eq!(le_u32(&bytes, 28), BINARY_FLAGS);
         assert_eq!(bytes.len(), 32 + 2 * BINARY_FRAME_LEN as usize);
@@ -250,15 +249,17 @@ mod tests {
         let first = BINARY_HEADER_LEN as usize;
         assert_eq!(le_u32(&bytes, first), 1_700_000_000);
         assert_eq!(le_u32(&bytes, first + 4), 123_456);
-        assert_eq!(le_u32(&bytes, first + 8), 1_700_000_001);
-        assert_eq!(le_u32(&bytes, first + 12), 654_321);
-        assert_eq!(le_u32(&bytes, first + 16), 0);
-        assert_eq!(le_u32(&bytes, first + 16 + 999 * 4), 999);
-        assert_eq!(le_u32(&bytes, first + 16 + SAMPLE_COUNT * 4), 1_000_000);
+        assert_eq!(
+            u16::from_le_bytes(bytes[first + 8..first + 10].try_into().unwrap()),
+            0
+        );
+        assert_eq!(le_u32(&bytes, first + 10), 0);
+        assert_eq!(le_u32(&bytes, first + 10 + 124 * 4), 124);
+        assert_eq!(le_u32(&bytes, first + 10 + SAMPLE_COUNT * 4), 1_000_000);
 
         let second = first + BINARY_FRAME_LEN as usize;
         assert_eq!(le_u32(&bytes, second), 1_700_000_001);
-        assert_eq!(le_u32(&bytes, second + 16), 10_000);
+        assert_eq!(le_u32(&bytes, second + 10), 10_000);
     }
 
     #[test]

@@ -29,7 +29,7 @@ the explicit `mock` feature:
 cargo test -p langmuir-transport --features mock
 ```
 
-The feature-gated headless replay benchmark exercises real 6,026-byte LVDS
+The feature-gated headless replay benchmark exercises real 270-byte LVDS
 packets through fragmentation, decoding, bounded queues, and `BinarySink`:
 
 ```text

@@ -8,9 +8,9 @@ use crate::bridge::{
     BackendBridge, BackendEvent, BridgeError, LinkKind, LogLevel, TelemetrySnapshot, UiRequest,
 };
 
-const MOCK_FRAME_INTERVAL: Duration = Duration::from_millis(10);
-const MOCK_SAMPLES_PER_FRAME: u32 = 1_000;
-const SAMPLE_INTERVAL_SECONDS: f64 = 0.000_01;
+const MOCK_FRAME_INTERVAL: Duration = Duration::from_millis(50);
+const MOCK_SAMPLES_PER_FRAME: u32 = 125;
+const SAMPLE_INTERVAL_SECONDS: f64 = 0.0004;
 
 pub struct MockBridge {
     events: VecDeque<BackendEvent>,
@@ -214,13 +214,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn overdue_mock_clock_catches_up_at_one_hundred_hertz() {
+    fn overdue_mock_clock_catches_up_at_twenty_hertz() {
         let mut bridge = MockBridge::new();
         bridge.events.clear();
         bridge.acquisition_running = true;
         let now = Instant::now();
         bridge.next_frame = now
-            .checked_sub(Duration::from_millis(35))
+            .checked_sub(Duration::from_millis(175))
             .expect("the test instant supports a short subtraction");
 
         let mut scientific_frames = 0;

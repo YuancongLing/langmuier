@@ -172,55 +172,30 @@ pub fn rs422_packet(sequence: u8, timestamp_seconds: u32) -> [u8; 64] {
 
 #[must_use]
 pub fn lvds_packet(frame_index: u32, timestamp_seconds: u32) -> Vec<u8> {
-    const FRAME_LEN: usize = 6026;
+    const FRAME_LEN: usize = 270;
     let mut frame = vec![0_u8; FRAME_LEN];
-    frame[0..4].copy_from_slice(&[0xEB, 0x90, 0x17, 0x82]);
-    frame[4] = 0xAA;
-    frame[5] = 0x04;
-    frame[6..10].copy_from_slice(&timestamp_seconds.to_be_bytes());
-    frame[10..14].copy_from_slice(&(frame_index % 1_000_000).to_be_bytes());
-    frame[14..18].copy_from_slice(&timestamp_seconds.to_be_bytes());
-    frame[18..22].copy_from_slice(&(frame_index % 1_000_000).to_be_bytes());
+    frame[0..6].copy_from_slice(&[0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07]);
+    frame[6] = 0xAA;
+    frame[7..11].copy_from_slice(&timestamp_seconds.to_be_bytes());
+    frame[11..15].copy_from_slice(&(frame_index % 1_000_000).to_be_bytes());
+    frame[15..17].copy_from_slice(&(frame_index as u16).to_be_bytes());
 
-    for sample in 0..1000_u32 {
-        let sample_index = frame_index.wrapping_mul(1000).wrapping_add(sample);
-        let channel_1 = 2048 + sample_index % 3000;
-        let channel_2 = 20_000 + sample_index.wrapping_mul(3) % 30_000;
-        let offset = 22 + sample as usize * 6;
-        write_u24_be(&mut frame[offset..offset + 3], channel_1);
-        write_u24_be(&mut frame[offset + 3..offset + 6], channel_2);
+    let channel_1 = 2_048 + (frame_index % 100) as u16;
+    let channel_2 = 20_000 + (frame_index % 100) as u16 * 2;
+    frame[17..19].copy_from_slice(&channel_1.to_be_bytes());
+    frame[19..21].copy_from_slice(&channel_2.to_be_bytes());
+    for sample in 1..125_u16 {
+        let offset = 17 + 4 + usize::from(sample - 1) * 2;
+        frame[offset] = 1;
+        frame[offset + 1] = 3;
     }
-    let crc = crc16_ccitt_false(&frame[4..6022]);
-    frame[6022..6024].copy_from_slice(&crc.to_be_bytes());
-    frame[6024..6026].copy_from_slice(&[0x09, 0xD7]);
+    frame[269] = checksum8(&frame[6..269]);
     frame
 }
 
 #[must_use]
 pub fn checksum8(bytes: &[u8]) -> u8 {
     bytes.iter().fold(0_u8, |sum, byte| sum.wrapping_add(*byte))
-}
-
-#[must_use]
-pub fn crc16_ccitt_false(bytes: &[u8]) -> u16 {
-    let mut crc = 0xFFFF_u16;
-    for byte in bytes {
-        crc ^= u16::from(*byte) << 8;
-        for _ in 0..8 {
-            crc = if crc & 0x8000 != 0 {
-                (crc << 1) ^ 0x1021
-            } else {
-                crc << 1
-            };
-        }
-    }
-    crc
-}
-
-fn write_u24_be(output: &mut [u8], value: u32) {
-    output[0] = u8::try_from((value >> 16) & 0xFF).expect("masked to one byte");
-    output[1] = u8::try_from((value >> 8) & 0xFF).expect("masked to one byte");
-    output[2] = u8::try_from(value & 0xFF).expect("masked to one byte");
 }
 
 #[cfg(test)]
@@ -236,12 +211,8 @@ mod tests {
         assert_eq!(&telemetry[62..], &[0x09, 0xD7]);
 
         let scientific = lvds_packet(9, 1_700_000_000);
-        assert_eq!(scientific.len(), 6026);
-        assert_eq!(&scientific[..4], &[0xEB, 0x90, 0x17, 0x82]);
-        assert_eq!(
-            u16::from_be_bytes([scientific[6022], scientific[6023]]),
-            crc16_ccitt_false(&scientific[4..6022])
-        );
-        assert_eq!(&scientific[6024..], &[0x09, 0xD7]);
+        assert_eq!(scientific.len(), 270);
+        assert_eq!(&scientific[..6], &[0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07]);
+        assert_eq!(scientific[269], checksum8(&scientific[6..269]));
     }
 }

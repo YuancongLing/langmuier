@@ -1,9 +1,11 @@
 # Python-to-Rust migration notes
 
-The wire protocol is unchanged: command, RS422 telemetry, and LVDS scientific
-frames use the same bytes and field meanings as `../python`. The Rust decoder is
-stricter and rejects bad lengths, fixed fields, checksums, CRCs, invalid microseconds,
-truncation, and trailing bytes instead of presenting corrupt data.
+The command and RS422 telemetry protocols remain compatible with `../python`.
+The LVDS scientific protocol now uses the 2026-07-24 field table: 270-byte frames,
+125 samples per channel, one timestamp, packet sequence, signed one-byte deltas,
+and an additive checksum. The Rust decoder is stricter and rejects bad lengths, fixed
+fields, checksums, invalid microseconds, truncation, and trailing bytes instead of
+presenting corrupt data.
 
 ## Operator behavior retained
 
@@ -26,7 +28,7 @@ truncation, and trailing bytes instead of presenting corrupt data.
   from silently controlling scientific-data integrity.
 - The simulator requires both the compile-time `mock` feature and the `--mock`
   runtime flag. A hardware error never falls back to simulation.
-- The desktop simulator exercises UI workflows at the Python mock's 100 Hz rate.
+- The desktop simulator exercises UI workflows at the protocol's 20 Hz rate.
   Exact wire decoding, transport fragmentation, and file persistence are exercised
   by the separate headless replay test/benchmark so test code does not enter the
   production backend.
@@ -40,7 +42,7 @@ truncation, and trailing bytes instead of presenting corrupt data.
 
 ## Storage compatibility
 
-HDF5 mode writes `t1_base` (`float64`), `y1_channel` (`int32`, N x 1000), and
-`y2_channel` (`int32`, N x 1000), matching the optimized Python logger. The native
+HDF5 mode writes `t1_base` (`float64`), `sequence` (`uint16`), `y1_channel`
+(`int32`, N x 125), and `y2_channel` (`int32`, N x 125). The native
 `.lpd` layout is documented in `crates/langmuir-storage/README.md`; downstream
 Python/HDF5 consumers must either enable HDF5 mode or add an `.lpd` reader.

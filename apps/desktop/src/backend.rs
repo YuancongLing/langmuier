@@ -732,8 +732,8 @@ impl Controller {
             None
         } else {
             Some(BackendEvent::ScientificSamples {
-                channel_1_start_seconds: frame.channel_1_time.as_seconds_f64(),
-                channel_2_start_seconds: frame.channel_2_time.as_seconds_f64(),
+                channel_1_start_seconds: frame.channel_1_base_seconds(),
+                channel_2_start_seconds: frame.channel_2_base_seconds(),
                 sample_interval_seconds: f64::from(SAMPLE_INTERVAL_MICROS) / 1_000_000.0,
                 channel_1: frame
                     .channel_1

@@ -52,6 +52,12 @@ pub enum FrameError {
         actual: u64,
         valid_range: &'static str,
     },
+    SampleOutOfRange {
+        protocol: Protocol,
+        channel: u8,
+        index: usize,
+        value: i64,
+    },
 }
 
 impl std::fmt::Display for FrameError {
@@ -106,6 +112,15 @@ impl std::fmt::Display for FrameError {
             } => write!(
                 formatter,
                 "{protocol} {field} value {actual} is outside {valid_range}"
+            ),
+            Self::SampleOutOfRange {
+                protocol,
+                channel,
+                index,
+                value,
+            } => write!(
+                formatter,
+                "{protocol} channel {channel} sample {index} reconstructs to {value}, outside 0..=65535"
             ),
         }
     }

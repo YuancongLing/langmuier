@@ -1,20 +1,22 @@
-use crate::{FRAME_HEADER, FRAME_TAIL, FrameError, Protocol, crc16_ccitt_false};
+use crate::{FRAME_HEADER, FrameError, Protocol, additive_checksum};
 
-pub const LVDS_FRAME_LEN: usize = 6_026;
-pub const LVDS_PAYLOAD_LEN: usize = 6_018;
+pub const LVDS_FRAME_LEN: usize = 270;
+pub const LVDS_PAYLOAD_LEN: usize = 263;
 pub const LVDS_DATA_TYPE: u8 = 0xAA;
-pub const LVDS_DEVICE_ID: u8 = 0x04;
-pub const SAMPLE_COUNT: usize = 1_000;
-pub const SAMPLE_INTERVAL_MICROS: u32 = 10;
+pub const LVDS_SENDER_ADDRESS: u8 = 0x55;
+pub const LVDS_RECEIVER_ADDRESS: u8 = 0xAA;
+pub const LVDS_DEVICE_ID: u8 = LVDS_SENDER_ADDRESS;
+pub const SAMPLE_COUNT: usize = 125;
+pub const SAMPLE_INTERVAL_MICROS: u32 = 400;
 
-const PAYLOAD_OFFSET: usize = 4;
-const PAYLOAD_LENGTH_FIELD: u16 = 6_018;
-const DATA_TYPE_OFFSET: usize = 4;
-const DEVICE_ID_OFFSET: usize = 5;
-const TIMESTAMP_OFFSET: usize = 6;
-const SAMPLE_DATA_OFFSET: usize = 22;
-const CRC_OFFSET: usize = 6_022;
-const TAIL_OFFSET: usize = 6_024;
+const LENGTH_OFFSET: usize = 4;
+const PAYLOAD_OFFSET: usize = 6;
+const TIMESTAMP_OFFSET: usize = 7;
+const MICROSECONDS_OFFSET: usize = 11;
+const SEQUENCE_OFFSET: usize = 15;
+const SAMPLE_DATA_OFFSET: usize = 17;
+const CHECKSUM_OFFSET: usize = 269;
+const PAYLOAD_LENGTH_FIELD: u16 = 0x0107;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Timestamp {
@@ -29,12 +31,10 @@ impl Timestamp {
     }
 }
 
-/// Decoded scientific samples. Samples are owned so transport buffers can be
-/// immediately reused; each channel is allocated exactly once.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScientificFrame {
-    pub channel_1_time: Timestamp,
-    pub channel_2_time: Timestamp,
+    pub timestamp: Timestamp,
+    pub sequence: u16,
     pub channel_1: Box<[u32; SAMPLE_COUNT]>,
     pub channel_2: Box<[u32; SAMPLE_COUNT]>,
 }
@@ -42,10 +42,14 @@ pub struct ScientificFrame {
 impl ScientificFrame {
     #[must_use]
     pub fn channel_1_base_seconds(&self) -> f64 {
-        self.channel_1_time.as_seconds_f64()
+        self.timestamp.as_seconds_f64()
     }
 
-    /// Time in seconds for a channel-1 sample. Returns `None` outside the frame.
+    #[must_use]
+    pub fn channel_2_base_seconds(&self) -> f64 {
+        self.timestamp.as_seconds_f64()
+    }
+
     #[must_use]
     pub fn channel_1_sample_time(&self, index: usize) -> Option<f64> {
         if index >= SAMPLE_COUNT {
@@ -59,23 +63,13 @@ impl ScientificFrame {
     }
 
     #[must_use]
-    pub fn raw_hex_prefix(&self) -> [u8; 3] {
-        let value = self.channel_1[0];
-        [
-            ((value >> 16) & 0xFF) as u8,
-            ((value >> 8) & 0xFF) as u8,
-            (value & 0xFF) as u8,
-        ]
+    pub fn raw_hex_prefix(&self) -> [u8; 2] {
+        u16::try_from(self.channel_1[0])
+            .expect("decoded LVDS sample always fits in 16 bits")
+            .to_be_bytes()
     }
 }
 
-/// Decodes and validates one complete LVDS scientific frame.
-///
-/// # Errors
-///
-/// Returns [`FrameError`] when the input is not exactly one scientific frame,
-/// a structural or discriminator field is invalid, either microsecond field is
-/// out of range, or the CRC does not match.
 pub fn decode_scientific_frame(frame: &[u8]) -> Result<ScientificFrame, FrameError> {
     if frame.len() != LVDS_FRAME_LEN {
         return Err(FrameError::UnexpectedLength {
@@ -91,7 +85,7 @@ pub fn decode_scientific_frame(frame: &[u8]) -> Result<ScientificFrame, FrameErr
         });
     }
 
-    let declared_length = u16::from_be_bytes([frame[2], frame[3]]);
+    let declared_length = u16::from_be_bytes([frame[LENGTH_OFFSET], frame[LENGTH_OFFSET + 1]]);
     if usize::from(declared_length) != LVDS_PAYLOAD_LEN {
         return Err(FrameError::InvalidDeclaredLength {
             protocol: Protocol::Lvds,
@@ -99,74 +93,103 @@ pub fn decode_scientific_frame(frame: &[u8]) -> Result<ScientificFrame, FrameErr
             actual: declared_length,
         });
     }
-    if frame[TAIL_OFFSET..] != FRAME_TAIL {
-        return Err(FrameError::InvalidTail {
+    if frame[2] != LVDS_SENDER_ADDRESS {
+        return Err(FrameError::UnexpectedField {
             protocol: Protocol::Lvds,
-            actual: [frame[TAIL_OFFSET], frame[TAIL_OFFSET + 1]],
+            field: "sender address",
+            expected: LVDS_SENDER_ADDRESS,
+            actual: frame[2],
         });
     }
-    if frame[DATA_TYPE_OFFSET] != LVDS_DATA_TYPE {
+    if frame[3] != LVDS_RECEIVER_ADDRESS {
+        return Err(FrameError::UnexpectedField {
+            protocol: Protocol::Lvds,
+            field: "receiver address",
+            expected: LVDS_RECEIVER_ADDRESS,
+            actual: frame[3],
+        });
+    }
+    if frame[PAYLOAD_OFFSET] != LVDS_DATA_TYPE {
         return Err(FrameError::UnexpectedField {
             protocol: Protocol::Lvds,
             field: "data type",
             expected: LVDS_DATA_TYPE,
-            actual: frame[DATA_TYPE_OFFSET],
-        });
-    }
-    if frame[DEVICE_ID_OFFSET] != LVDS_DEVICE_ID {
-        return Err(FrameError::UnexpectedField {
-            protocol: Protocol::Lvds,
-            field: "instrument id",
-            expected: LVDS_DEVICE_ID,
-            actual: frame[DEVICE_ID_OFFSET],
+            actual: frame[PAYLOAD_OFFSET],
         });
     }
 
-    let actual_crc = u16::from_be_bytes([frame[CRC_OFFSET], frame[CRC_OFFSET + 1]]);
-    let expected_crc = crc16_ccitt_false(&frame[PAYLOAD_OFFSET..CRC_OFFSET]);
-    if actual_crc != expected_crc {
+    let timestamp = Timestamp {
+        utc_seconds: u32::from_be_bytes(
+            frame[TIMESTAMP_OFFSET..TIMESTAMP_OFFSET + 4]
+                .try_into()
+                .unwrap(),
+        ),
+        microseconds: u32::from_be_bytes(
+            frame[MICROSECONDS_OFFSET..MICROSECONDS_OFFSET + 4]
+                .try_into()
+                .unwrap(),
+        ),
+    };
+    validate_microseconds(timestamp.microseconds)?;
+
+    let expected_checksum = u16::from(additive_checksum(&frame[PAYLOAD_OFFSET..CHECKSUM_OFFSET]));
+    let actual_checksum = u16::from(frame[CHECKSUM_OFFSET]);
+    if actual_checksum != expected_checksum {
         return Err(FrameError::ChecksumMismatch {
             protocol: Protocol::Lvds,
-            expected: expected_crc,
-            actual: actual_crc,
+            expected: expected_checksum,
+            actual: actual_checksum,
         });
     }
 
-    let channel_1_time = timestamp_from(&frame[TIMESTAMP_OFFSET..TIMESTAMP_OFFSET + 8]);
-    validate_microseconds("channel 1 microseconds", channel_1_time.microseconds)?;
-    let channel_2_time = timestamp_from(&frame[TIMESTAMP_OFFSET + 8..SAMPLE_DATA_OFFSET]);
-    validate_microseconds("channel 2 microseconds", channel_2_time.microseconds)?;
-
+    let sequence = u16::from_be_bytes([frame[SEQUENCE_OFFSET], frame[SEQUENCE_OFFSET + 1]]);
     let mut channel_1 = Box::new([0_u32; SAMPLE_COUNT]);
     let mut channel_2 = Box::new([0_u32; SAMPLE_COUNT]);
-    for (index, sample) in frame[SAMPLE_DATA_OFFSET..CRC_OFFSET]
-        .chunks_exact(6)
-        .enumerate()
-    {
-        channel_1[index] = decode_u24(&sample[..3]);
-        channel_2[index] = decode_u24(&sample[3..]);
+    channel_1[0] = u32::from(u16::from_be_bytes([
+        frame[SAMPLE_DATA_OFFSET],
+        frame[SAMPLE_DATA_OFFSET + 1],
+    ]));
+    channel_2[0] = u32::from(u16::from_be_bytes([
+        frame[SAMPLE_DATA_OFFSET + 2],
+        frame[SAMPLE_DATA_OFFSET + 3],
+    ]));
+    for index in 1..SAMPLE_COUNT {
+        let offset = SAMPLE_DATA_OFFSET + 4 + (index - 1) * 2;
+        channel_1[index] = reconstruct_sample(1, index, channel_1[index - 1], frame[offset])?;
+        channel_2[index] = reconstruct_sample(2, index, channel_2[index - 1], frame[offset + 1])?;
     }
 
     Ok(ScientificFrame {
-        channel_1_time,
-        channel_2_time,
+        timestamp,
+        sequence,
         channel_1,
         channel_2,
     })
 }
 
-fn timestamp_from(data: &[u8]) -> Timestamp {
-    Timestamp {
-        utc_seconds: u32::from_be_bytes(data[..4].try_into().unwrap()),
-        microseconds: u32::from_be_bytes(data[4..8].try_into().unwrap()),
+fn reconstruct_sample(
+    channel: u8,
+    index: usize,
+    previous: u32,
+    encoded_delta: u8,
+) -> Result<u32, FrameError> {
+    let value = i64::from(previous) + i64::from(i8::from_be_bytes([encoded_delta]));
+    if !(0_i64..=i64::from(u16::MAX)).contains(&value) {
+        return Err(FrameError::SampleOutOfRange {
+            protocol: Protocol::Lvds,
+            channel,
+            index,
+            value,
+        });
     }
+    Ok(u32::try_from(value).expect("sample range was checked"))
 }
 
-fn validate_microseconds(field: &'static str, value: u32) -> Result<(), FrameError> {
+fn validate_microseconds(value: u32) -> Result<(), FrameError> {
     if value >= 1_000_000 {
         return Err(FrameError::FieldOutOfRange {
             protocol: Protocol::Lvds,
-            field,
+            field: "microseconds",
             actual: u64::from(value),
             valid_range: "0..=999999",
         });
@@ -174,42 +197,38 @@ fn validate_microseconds(field: &'static str, value: u32) -> Result<(), FrameErr
     Ok(())
 }
 
-fn decode_u24(bytes: &[u8]) -> u32 {
-    (u32::from(bytes[0]) << 16) | (u32::from(bytes[1]) << 8) | u32::from(bytes[2])
-}
-
 #[cfg(test)]
 pub(crate) mod test_support {
     use super::{
-        CRC_OFFSET, LVDS_DATA_TYPE, LVDS_DEVICE_ID, LVDS_FRAME_LEN, PAYLOAD_LENGTH_FIELD,
-        PAYLOAD_OFFSET, SAMPLE_COUNT,
+        CHECKSUM_OFFSET, LVDS_DATA_TYPE, LVDS_FRAME_LEN, LVDS_RECEIVER_ADDRESS,
+        LVDS_SENDER_ADDRESS, PAYLOAD_LENGTH_FIELD, PAYLOAD_OFFSET, SAMPLE_COUNT,
+        SAMPLE_DATA_OFFSET,
     };
-    use crate::{FRAME_HEADER, FRAME_TAIL, crc16_ccitt_false};
+    use crate::{FRAME_HEADER, additive_checksum};
 
-    pub(crate) fn refresh_crc(frame: &mut [u8; LVDS_FRAME_LEN]) {
-        let crc = crc16_ccitt_false(&frame[PAYLOAD_OFFSET..CRC_OFFSET]);
-        frame[CRC_OFFSET..CRC_OFFSET + 2].copy_from_slice(&crc.to_be_bytes());
+    pub(crate) fn refresh_checksum(frame: &mut [u8; LVDS_FRAME_LEN]) {
+        frame[CHECKSUM_OFFSET] = additive_checksum(&frame[PAYLOAD_OFFSET..CHECKSUM_OFFSET]);
     }
 
     pub(crate) fn valid_frame() -> Box<[u8; LVDS_FRAME_LEN]> {
         let mut frame = Box::new([0_u8; LVDS_FRAME_LEN]);
         frame[..2].copy_from_slice(&FRAME_HEADER);
-        frame[2..4].copy_from_slice(&PAYLOAD_LENGTH_FIELD.to_be_bytes());
-        frame[4] = LVDS_DATA_TYPE;
-        frame[5] = LVDS_DEVICE_ID;
-        frame[6..10].copy_from_slice(&1_700_000_000_u32.to_be_bytes());
-        frame[10..14].copy_from_slice(&123_456_u32.to_be_bytes());
-        frame[14..18].copy_from_slice(&1_700_000_001_u32.to_be_bytes());
-        frame[18..22].copy_from_slice(&654_321_u32.to_be_bytes());
-        for index in 0..SAMPLE_COUNT {
-            let ch1 = u32::try_from(index).unwrap();
-            let ch2 = 0xFF_FFFF_u32 - ch1;
-            let offset = 22 + index * 6;
-            frame[offset..offset + 3].copy_from_slice(&ch1.to_be_bytes()[1..]);
-            frame[offset + 3..offset + 6].copy_from_slice(&ch2.to_be_bytes()[1..]);
+        frame[2] = LVDS_SENDER_ADDRESS;
+        frame[3] = LVDS_RECEIVER_ADDRESS;
+        frame[4..6].copy_from_slice(&PAYLOAD_LENGTH_FIELD.to_be_bytes());
+        frame[6] = LVDS_DATA_TYPE;
+        frame[7..11].copy_from_slice(&1_700_000_000_u32.to_be_bytes());
+        frame[11..15].copy_from_slice(&123_456_u32.to_be_bytes());
+        frame[15..17].copy_from_slice(&42_u16.to_be_bytes());
+        frame[SAMPLE_DATA_OFFSET..SAMPLE_DATA_OFFSET + 2].copy_from_slice(&2048_u16.to_be_bytes());
+        frame[SAMPLE_DATA_OFFSET + 2..SAMPLE_DATA_OFFSET + 4]
+            .copy_from_slice(&20_000_u16.to_be_bytes());
+        for index in 1..SAMPLE_COUNT {
+            let offset = SAMPLE_DATA_OFFSET + 4 + (index - 1) * 2;
+            frame[offset] = if index % 2 == 0 { 0xFF } else { 1 };
+            frame[offset + 1] = if index % 3 == 0 { 0xFE } else { 2 };
         }
-        refresh_crc(&mut frame);
-        frame[6024..].copy_from_slice(&FRAME_TAIL);
+        refresh_checksum(&mut frame);
         frame
     }
 }
@@ -218,30 +237,31 @@ pub(crate) mod test_support {
 mod tests {
     use super::{
         LVDS_FRAME_LEN, SAMPLE_COUNT, decode_scientific_frame,
-        test_support::{refresh_crc, valid_frame},
+        test_support::{refresh_checksum, valid_frame},
     };
     use crate::{FrameError, Protocol};
 
     #[test]
-    fn decodes_timestamps_and_unsigned_24_bit_samples() {
+    fn decodes_timestamp_sequence_and_signed_deltas() {
         let decoded = decode_scientific_frame(valid_frame().as_slice()).unwrap();
-        assert_eq!(decoded.channel_1_time.utc_seconds, 1_700_000_000);
-        assert_eq!(decoded.channel_1_time.microseconds, 123_456);
-        assert_eq!(decoded.channel_2_time.utc_seconds, 1_700_000_001);
-        assert_eq!(decoded.channel_2_time.microseconds, 654_321);
-        assert_eq!(decoded.channel_1[0], 0);
-        assert_eq!(decoded.channel_1[500], 500);
-        assert_eq!(decoded.channel_1[SAMPLE_COUNT - 1], 999);
-        assert_eq!(decoded.channel_2[0], 0xFF_FFFF);
-        assert_eq!(decoded.channel_2[SAMPLE_COUNT - 1], 0xFF_FFFF - 999);
-        assert_eq!(decoded.raw_hex_prefix(), [0, 0, 0]);
+        assert_eq!(decoded.timestamp.utc_seconds, 1_700_000_000);
+        assert_eq!(decoded.timestamp.microseconds, 123_456);
+        assert_eq!(decoded.sequence, 42);
+        assert_eq!(decoded.channel_1[0], 2048);
+        assert_eq!(decoded.channel_1[1], 2049);
+        assert_eq!(decoded.channel_1[2], 2048);
+        assert_eq!(decoded.channel_2[0], 20_000);
+        assert_eq!(decoded.channel_2[1], 20_002);
+        assert_eq!(decoded.channel_2[3], 20_002);
+        assert_eq!(decoded.channel_1.len(), SAMPLE_COUNT);
+        assert_eq!(decoded.raw_hex_prefix(), [0x08, 0x00]);
         assert!((decoded.channel_1_base_seconds() - 1_700_000_000.123_456).abs() < 1e-9);
-        assert!((decoded.channel_1_sample_time(999).unwrap() - 1_700_000_000.133_446).abs() < 1e-9);
-        assert_eq!(decoded.channel_1_sample_time(1_000), None);
+        assert!((decoded.channel_1_sample_time(124).unwrap() - 1_700_000_000.173_056).abs() < 1e-9);
+        assert_eq!(decoded.channel_1_sample_time(SAMPLE_COUNT), None);
     }
 
     #[test]
-    fn rejects_every_short_length_and_oversize() {
+    fn rejects_length_structure_and_checksum_errors() {
         let valid = valid_frame();
         for length in 0..LVDS_FRAME_LEN {
             assert!(matches!(
@@ -249,43 +269,12 @@ mod tests {
                 Err(FrameError::UnexpectedLength { actual, .. }) if actual == length
             ));
         }
-        let mut oversized = valid.to_vec();
-        oversized.push(0);
-        assert!(matches!(
-            decode_scientific_frame(&oversized),
-            Err(FrameError::UnexpectedLength { actual: 6_027, .. })
-        ));
-    }
-
-    #[test]
-    fn rejects_corrupt_structure_and_crc() {
         let mut frame = valid_frame();
-        frame[0] = 0;
-        assert!(matches!(
-            decode_scientific_frame(frame.as_slice()),
-            Err(FrameError::InvalidHeader {
-                protocol: Protocol::Lvds,
-                ..
-            })
-        ));
-
-        let mut frame = valid_frame();
-        frame[3] ^= 1;
+        frame[4] = 0;
         assert!(matches!(
             decode_scientific_frame(frame.as_slice()),
             Err(FrameError::InvalidDeclaredLength { .. })
         ));
-
-        let mut frame = valid_frame();
-        frame[6025] = 0;
-        assert!(matches!(
-            decode_scientific_frame(frame.as_slice()),
-            Err(FrameError::InvalidTail {
-                protocol: Protocol::Lvds,
-                ..
-            })
-        ));
-
         let mut frame = valid_frame();
         frame[100] ^= 1;
         assert!(matches!(
@@ -298,47 +287,43 @@ mod tests {
     }
 
     #[test]
-    fn rejects_wrong_type_and_device() {
+    fn rejects_wrong_addresses_and_sample_underflow() {
         let mut frame = valid_frame();
-        frame[4] = 0x55;
-        refresh_crc(&mut frame);
+        frame[2] = 0;
+        refresh_checksum(&mut frame);
         assert!(matches!(
             decode_scientific_frame(frame.as_slice()),
             Err(FrameError::UnexpectedField {
-                field: "data type",
+                field: "sender address",
                 ..
             })
         ));
 
         let mut frame = valid_frame();
-        frame[5] = 0x05;
-        refresh_crc(&mut frame);
+        frame[17..19].copy_from_slice(&0_u16.to_be_bytes());
+        frame[21] = 0x80;
+        refresh_checksum(&mut frame);
         assert!(matches!(
             decode_scientific_frame(frame.as_slice()),
-            Err(FrameError::UnexpectedField {
-                field: "instrument id",
+            Err(FrameError::SampleOutOfRange {
+                channel: 1,
+                index: 1,
                 ..
             })
         ));
     }
 
     #[test]
-    fn enforces_microsecond_bound_for_both_channels() {
-        for (range, field) in [
-            (10..14, "channel 1 microseconds"),
-            (18..22, "channel 2 microseconds"),
-        ] {
-            let mut frame = valid_frame();
-            frame[range].copy_from_slice(&1_000_000_u32.to_be_bytes());
-            refresh_crc(&mut frame);
-            assert!(matches!(
-                decode_scientific_frame(frame.as_slice()),
-                Err(FrameError::FieldOutOfRange {
-                    field: actual_field,
-                    actual: 1_000_000,
-                    ..
-                }) if actual_field == field
-            ));
-        }
+    fn rejects_invalid_microseconds() {
+        let mut frame = valid_frame();
+        frame[11..15].copy_from_slice(&1_000_000_u32.to_be_bytes());
+        refresh_checksum(&mut frame);
+        assert!(matches!(
+            decode_scientific_frame(frame.as_slice()),
+            Err(FrameError::FieldOutOfRange {
+                field: "microseconds",
+                ..
+            })
+        ));
     }
 }

@@ -61,6 +61,7 @@ pub struct Hdf5Sink {
     path: PathBuf,
     file: Option<File>,
     time_dataset: Option<Dataset>,
+    sequence_dataset: Option<Dataset>,
     channel_1_dataset: Option<Dataset>,
     channel_2_dataset: Option<Dataset>,
     committed_frames: Option<Attribute>,
@@ -87,43 +88,55 @@ impl Hdf5Sink {
             })?;
         }
         let file = File::create_excl(&config.path)?;
-        let datasets = (|| -> Result<(Dataset, Dataset, Dataset, Attribute), ::hdf5::Error> {
-            let time_dataset = file
-                .new_dataset::<f64>()
-                .shape((0..,))
-                .chunk((config.chunk_frames,))
-                .create("t1_base")?;
+        let datasets =
+            (|| -> Result<(Dataset, Dataset, Dataset, Dataset, Attribute), ::hdf5::Error> {
+                let time_dataset = file
+                    .new_dataset::<f64>()
+                    .shape((0..,))
+                    .chunk((config.chunk_frames,))
+                    .create("t1_base")?;
+                let sequence_dataset = file
+                    .new_dataset::<u16>()
+                    .shape((0..,))
+                    .chunk((config.chunk_frames,))
+                    .create("sequence")?;
 
-            let channel_1_builder = file
-                .new_dataset::<i32>()
-                .shape((0.., SAMPLE_COUNT))
-                .chunk((config.chunk_frames, SAMPLE_COUNT));
-            let channel_1_builder = match config.compression_level {
-                Some(level) => channel_1_builder.deflate(level),
-                None => channel_1_builder,
-            };
-            let channel_1_dataset = channel_1_builder.create("y1_channel")?;
+                let channel_1_builder = file
+                    .new_dataset::<i32>()
+                    .shape((0.., SAMPLE_COUNT))
+                    .chunk((config.chunk_frames, SAMPLE_COUNT));
+                let channel_1_builder = match config.compression_level {
+                    Some(level) => channel_1_builder.deflate(level),
+                    None => channel_1_builder,
+                };
+                let channel_1_dataset = channel_1_builder.create("y1_channel")?;
 
-            let channel_2_builder = file
-                .new_dataset::<i32>()
-                .shape((0.., SAMPLE_COUNT))
-                .chunk((config.chunk_frames, SAMPLE_COUNT));
-            let channel_2_builder = match config.compression_level {
-                Some(level) => channel_2_builder.deflate(level),
-                None => channel_2_builder,
-            };
-            let channel_2_dataset = channel_2_builder.create("y2_channel")?;
-            let committed_frames = file.new_attr::<u64>().create("committed_frames")?;
-            committed_frames.write_scalar(&0_u64)?;
-            Ok((
-                time_dataset,
-                channel_1_dataset,
-                channel_2_dataset,
-                committed_frames,
-            ))
-        })();
-        let (time_dataset, channel_1_dataset, channel_2_dataset, committed_frames) = match datasets
-        {
+                let channel_2_builder = file
+                    .new_dataset::<i32>()
+                    .shape((0.., SAMPLE_COUNT))
+                    .chunk((config.chunk_frames, SAMPLE_COUNT));
+                let channel_2_builder = match config.compression_level {
+                    Some(level) => channel_2_builder.deflate(level),
+                    None => channel_2_builder,
+                };
+                let channel_2_dataset = channel_2_builder.create("y2_channel")?;
+                let committed_frames = file.new_attr::<u64>().create("committed_frames")?;
+                committed_frames.write_scalar(&0_u64)?;
+                Ok((
+                    time_dataset,
+                    sequence_dataset,
+                    channel_1_dataset,
+                    channel_2_dataset,
+                    committed_frames,
+                ))
+            })();
+        let (
+            time_dataset,
+            sequence_dataset,
+            channel_1_dataset,
+            channel_2_dataset,
+            committed_frames,
+        ) = match datasets {
             Ok(datasets) => datasets,
             Err(source) => {
                 drop(file);
@@ -139,6 +152,7 @@ impl Hdf5Sink {
             path: config.path,
             file: Some(file),
             time_dataset: Some(time_dataset),
+            sequence_dataset: Some(sequence_dataset),
             channel_1_dataset: Some(channel_1_dataset),
             channel_2_dataset: Some(channel_2_dataset),
             committed_frames: Some(committed_frames),
@@ -168,6 +182,7 @@ impl BatchSink<ScientificFrame> for Hdf5Sink {
             .iter()
             .map(ScientificFrame::channel_1_base_seconds)
             .collect();
+        let sequences: Vec<u16> = frames.iter().map(|frame| frame.sequence).collect();
         let mut channel_1 = Vec::with_capacity(frames.len() * SAMPLE_COUNT);
         let mut channel_2 = Vec::with_capacity(frames.len() * SAMPLE_COUNT);
         for frame in frames {
@@ -192,14 +207,17 @@ impl BatchSink<ScientificFrame> for Hdf5Sink {
         let start = self.frames_written;
         let end = start + frames.len();
         let time_dataset = self.time_dataset.as_ref().ok_or(Hdf5Error::Closed)?;
+        let sequence_dataset = self.sequence_dataset.as_ref().ok_or(Hdf5Error::Closed)?;
         let channel_1_dataset = self.channel_1_dataset.as_ref().ok_or(Hdf5Error::Closed)?;
         let channel_2_dataset = self.channel_2_dataset.as_ref().ok_or(Hdf5Error::Closed)?;
         let committed_frames = self.committed_frames.as_ref().ok_or(Hdf5Error::Closed)?;
         let commit = (|| -> Result<(), ::hdf5::Error> {
             time_dataset.resize((end,))?;
+            sequence_dataset.resize((end,))?;
             channel_1_dataset.resize((end, SAMPLE_COUNT))?;
             channel_2_dataset.resize((end, SAMPLE_COUNT))?;
             time_dataset.write_slice(&times, start..end)?;
+            sequence_dataset.write_slice(&sequences, start..end)?;
             channel_1_dataset.write_slice(channel_1.view(), (start..end, ..))?;
             channel_2_dataset.write_slice(channel_2.view(), (start..end, ..))?;
             committed_frames.write_scalar(
@@ -210,6 +228,7 @@ impl BatchSink<ScientificFrame> for Hdf5Sink {
         if let Err(source) = commit {
             let rollback = rollback_shapes(
                 time_dataset,
+                sequence_dataset,
                 channel_1_dataset,
                 channel_2_dataset,
                 committed_frames,
@@ -230,6 +249,7 @@ impl BatchSink<ScientificFrame> for Hdf5Sink {
         let file = self.file.take().ok_or(Hdf5Error::Closed)?;
         file.flush()?;
         self.time_dataset.take();
+        self.sequence_dataset.take();
         self.channel_1_dataset.take();
         self.channel_2_dataset.take();
         self.committed_frames.take();
@@ -240,6 +260,7 @@ impl BatchSink<ScientificFrame> for Hdf5Sink {
 
 fn rollback_shapes(
     time_dataset: &Dataset,
+    sequence_dataset: &Dataset,
     channel_1_dataset: &Dataset,
     channel_2_dataset: &Dataset,
     committed_frames: &Attribute,
@@ -248,6 +269,9 @@ fn rollback_shapes(
     let mut failures = Vec::new();
     if let Err(error) = time_dataset.resize((frames,)) {
         failures.push(format!("t1_base: {error}"));
+    }
+    if let Err(error) = sequence_dataset.resize((frames,)) {
+        failures.push(format!("sequence: {error}"));
     }
     if let Err(error) = channel_1_dataset.resize((frames, SAMPLE_COUNT)) {
         failures.push(format!("y1_channel: {error}"));
@@ -301,14 +325,11 @@ mod tests {
             channel_2[sample] = 1_000_000 + index * 1000 + sample_u32;
         }
         ScientificFrame {
-            channel_1_time: Timestamp {
+            timestamp: Timestamp {
                 utc_seconds: 1_700_000_000 + index,
                 microseconds: 123_456,
             },
-            channel_2_time: Timestamp {
-                utc_seconds: 1_700_000_000 + index,
-                microseconds: 123_456,
-            },
+            sequence: u16::try_from(index).unwrap(),
             channel_1,
             channel_2,
         }
@@ -337,19 +358,21 @@ mod tests {
 
         let file = File::open(path).unwrap();
         let times = file.dataset("t1_base").unwrap();
+        let sequences = file.dataset("sequence").unwrap();
         let channel_1 = file.dataset("y1_channel").unwrap();
         let channel_2 = file.dataset("y2_channel").unwrap();
         let committed_frames = file.attr("committed_frames").unwrap();
         assert_eq!(times.shape(), [3]);
+        assert_eq!(sequences.shape(), [3]);
         assert_eq!(channel_1.shape(), [3, SAMPLE_COUNT]);
         assert_eq!(channel_2.shape(), [3, SAMPLE_COUNT]);
         assert_eq!(committed_frames.read_scalar::<u64>().unwrap(), 3);
         let values = channel_1.read_2d::<i32>().unwrap();
         assert_eq!(values[[0, 0]], 0);
-        assert_eq!(values[[2, 999]], 2_999);
+        assert_eq!(values[[2, 124]], 2_124);
         let values = channel_2.read_2d::<i32>().unwrap();
         assert_eq!(values[[0, 0]], 1_000_000);
-        assert_eq!(values[[2, 999]], 1_002_999);
+        assert_eq!(values[[2, 124]], 1_002_124);
     }
 
     #[test]

@@ -16,7 +16,7 @@ use crate::{
     ui::{fonts, theme},
 };
 
-// 100 frames/s × 1,000 samples/frame × 10 s, plus modest scheduling headroom.
+// 20 frames/s × 125 samples/frame × 10 s, plus modest scheduling headroom.
 const PLOT_CAPACITY: usize = 1_100_000;
 const PLOT_WINDOW_SECONDS: f64 = 10.0;
 const MAX_DISPLAY_POINTS: usize = 2_000;

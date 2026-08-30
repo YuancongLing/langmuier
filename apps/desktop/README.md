@@ -27,7 +27,7 @@ cargo run --release -p langmuir-desktop --features hdf5-static
 
 Frontend interaction and plotting simulation is compiled and selected
 independently. Its monotonic scheduler catches up every elapsed 10 ms tick, so
-it runs at the Python application's 100 Hz frame cadence even when the UI
+it runs at the protocol's 20 Hz frame cadence even when the UI
 repaints more slowly, but intentionally bypasses the wire decoder, serial
 transport, and persistence
 pipeline, so it is not an end-to-end hardware simulation. Both the feature and

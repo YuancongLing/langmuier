@@ -16,8 +16,9 @@ pub use command::{COMMAND_FRAME_LEN, Command, CommandFrame};
 pub use error::{FrameError, Protocol};
 pub use framing::{DecodeBatch, LvdsStreamDecoder, Rs422StreamDecoder, StreamMetrics};
 pub use lvds::{
-    LVDS_DATA_TYPE, LVDS_DEVICE_ID, LVDS_FRAME_LEN, LVDS_PAYLOAD_LEN, SAMPLE_COUNT,
-    SAMPLE_INTERVAL_MICROS, ScientificFrame, Timestamp, decode_scientific_frame,
+    LVDS_DATA_TYPE, LVDS_DEVICE_ID, LVDS_FRAME_LEN, LVDS_PAYLOAD_LEN, LVDS_RECEIVER_ADDRESS,
+    LVDS_SENDER_ADDRESS, SAMPLE_COUNT, SAMPLE_INTERVAL_MICROS, ScientificFrame, Timestamp,
+    decode_scientific_frame,
 };
 pub use model::{
     AcquisitionState, CommandCounters, CoreMetrics, DeviceState, LinkState, ScientificFrameSummary,

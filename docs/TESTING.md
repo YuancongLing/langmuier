@@ -16,7 +16,7 @@ Coverage includes:
   the real LVDS decoder and reader worker to `BinarySink`, including `.lpd` readback;
 - Python-compatible HDF5 dataset names, shapes, and values when an HDF5 build
   dependency is available and the feature is selected;
-- feature-gated 100 Hz desktop UI simulation when both the `mock` feature and
+- feature-gated 20 Hz desktop UI simulation when both the `mock` feature and
   `--mock` flag are selected (this UI simulator is not the wire-pipeline test);
 - CJK fallback selection, TTC face validation, representative Chinese glyph
   coverage in both font families, and Python-palette theme contracts;
@@ -40,7 +40,7 @@ cargo test -p langmuir-storage --features hdf5
 cargo test -p langmuir-storage --features hdf5-static
 ```
 
-For a repeatable headless throughput measurement using complete 6,026-byte packets,
+For a repeatable headless throughput measurement using complete 270-byte packets,
 fragmentation, both bounded worker queues, and real `.lpd` writes:
 
 ```bash

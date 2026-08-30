@@ -107,13 +107,10 @@ fn fragmented_lvds_wire_reaches_binary_storage_without_loss() {
             + usize::try_from(frame_index).unwrap() * usize::try_from(BINARY_FRAME_LEN).unwrap();
         assert_eq!(le_u32(&bytes, frame_offset), 1_700_000_000 + frame_index);
         assert_eq!(le_u32(&bytes, frame_offset + 4), frame_index);
+        assert_eq!(le_u32(&bytes, frame_offset + 10), 2_048 + frame_index % 100);
         assert_eq!(
-            le_u32(&bytes, frame_offset + 16),
-            2_048 + frame_index * 1_000 % 3_000
-        );
-        assert_eq!(
-            le_u32(&bytes, frame_offset + 16 + SAMPLE_COUNT * 4),
-            20_000 + (frame_index * 1_000).wrapping_mul(3) % 30_000
+            le_u32(&bytes, frame_offset + 10 + SAMPLE_COUNT * 4),
+            20_000 + (frame_index % 100) * 2
         );
     }
 }

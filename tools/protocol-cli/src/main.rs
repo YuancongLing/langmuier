@@ -36,9 +36,9 @@ fn run(arguments: &[String]) -> Result<String, String> {
             let bytes = fs::read(path).map_err(|error| format!("cannot read {path}: {error}"))?;
             let frame = decode_scientific_frame(&bytes).map_err(|error| error.to_string())?;
             Ok(format!(
-                "ch1_time={:?}\nch2_time={:?}\nch1_first={}\nch2_first={}\nsamples={}",
-                frame.channel_1_time,
-                frame.channel_2_time,
+                "timestamp={:?}\nsequence={}\nch1_first={}\nch2_first={}\nsamples={}",
+                frame.timestamp,
+                frame.sequence,
                 frame.channel_1[0],
                 frame.channel_2[0],
                 frame.channel_1.len()

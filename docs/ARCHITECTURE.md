@@ -28,10 +28,10 @@ backend -> bounded critical/display channels -> UI state -> decimated plots
 
 ## Throughput and backpressure
 
-Each decoded scientific frame owns two boxed 1,000-sample arrays and moves into the
+Each decoded scientific frame owns two boxed 125-sample arrays and moves into the
 storage queue without a sample-array clone. A floating-point display copy is allocated
 only when the small display queue has room. Per-sample timestamp arrays are never stored:
-timestamps are reconstructed from the base time and fixed 10 microsecond interval.
+timestamps are reconstructed from the base time and fixed 400 microsecond interval.
 
 Storage is the loss-sensitive path. Submission waits for a bounded interval; if storage
 cannot keep up, the failure is surfaced and capture is stopped instead of silently
@@ -64,8 +64,8 @@ There is no automatic real-device-to-mock fallback.
 
 ## Physical-link caveat
 
-At 100 frames/s, a 6,026-byte LVDS frame is 602,600 bytes/s. A UART-like 8N1 transport
-would require at least 6.026 Mbaud before protocol and USB overhead, which exceeds the
+At 20 frames/s, a 270-byte LVDS frame is 5,400 bytes/s. A UART-like 8N1 transport
+would require at least 54 kbaud before protocol and USB overhead, which is within the
 Python UI's former maximum selection of 921,600 baud. The transport trait is therefore
 kept independent of UART so a vendor LVDS, DMA, UDP, or file-replay adapter can be added
 without changing the protocol or UI crates.
