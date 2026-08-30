@@ -27,6 +27,7 @@ const HEADER_HEIGHT: f32 = 52.0;
 const LOG_HEIGHT: f32 = 128.0;
 const COMMAND_SIDEBAR_WIDTH: f32 = 300.0;
 const TELEMETRY_SIDEBAR_WIDTH: f32 = 300.0;
+const COMMAND_EDITOR_HEIGHT: f32 = 132.0;
 const BAUD_RATES: [u32; 14] = [
     8_000_000, 6_000_000, 4_000_000, 3_000_000, 2_000_000, 1_000_000, 921_600, 460_800, 230_400,
     115_200, 57_600, 38_400, 19_200, 9_600,
@@ -630,11 +631,6 @@ impl LangmuirDesktopApp {
                                             .color(text_color),
                                     );
                                 }
-                                ui.label(
-                                    RichText::new(format!("dec: {byte}"))
-                                        .size(7.0)
-                                        .color(text_color.gamma_multiply(0.78)),
-                                );
                             });
                         });
                     if index % 4 == 3 {
@@ -658,43 +654,48 @@ impl LangmuirDesktopApp {
         }
 
         theme::subtle_card().show(ui, |ui| {
-            ui.add_enabled_ui(!raw_mode, |ui| self.typed_command_controls(ui));
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), COMMAND_EDITOR_HEIGHT),
+                Layout::top_down(Align::Min),
+                |ui| {
+                    if raw_mode {
+                        let raw_frame = self.raw_command;
+                        self.command_bytes_grid(ui, &raw_frame, true);
+                        ui.add_space(2.0);
+                        ui.label(
+                            RichText::new("原始模式：直接编辑 12 字节；不会自动修复校验和")
+                                .size(9.0)
+                                .color(Color32::from_rgb(220, 38, 38)),
+                        );
+                    } else {
+                        self.typed_command_controls(ui);
+                    }
+                },
+            );
         });
-        if raw_mode {
-            let warning = "原始模式：发送前不会自动修复帧头、长度或校验和";
-            ui.add(
-                egui::Label::new(
-                    RichText::new(warning)
-                        .size(9.0)
-                        .color(Color32::from_rgb(220, 38, 38)),
-                )
-                .truncate(),
-            )
-            .on_hover_text(warning);
-        }
-
-        let typed_frame = command_bytes(self.command());
-        let frame = if raw_mode {
-            self.raw_command
-        } else {
-            typed_frame
-        };
-        self.command_bytes_grid(ui, &frame, raw_mode);
 
         let displayed_frame = if raw_mode {
             self.raw_command
         } else {
-            typed_frame
+            command_bytes(self.command())
         };
-        theme::subtle_card().show(ui, |ui| {
-            ui.horizontal_centered(|ui| {
-                ui.label(
-                    RichText::new(hex_frame(&displayed_frame))
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new("待发送")
+                    .size(9.0)
+                    .color(theme::TEXT_SECONDARY),
+            );
+            let preview = hex_frame(&displayed_frame);
+            ui.add(
+                egui::Label::new(
+                    RichText::new(&preview)
                         .monospace()
-                        .size(10.0)
+                        .size(9.0)
                         .color(theme::PRIMARY),
-                );
-            });
+                )
+                .truncate(),
+            )
+            .on_hover_text(preview);
         });
         ui.horizontal(|ui| {
             if ui
@@ -714,22 +715,23 @@ impl LangmuirDesktopApp {
             if raw_mode && ui.button("重算 SUM").clicked() {
                 recalculate_checksum(&mut self.raw_command);
             }
-            let send_width = ui.available_width();
-            if ui
-                .add_sized(
-                    [send_width, 28.0],
-                    egui::Button::new(RichText::new("发送指令").strong().color(theme::WHITE))
-                        .fill(theme::PRIMARY),
-                )
-                .clicked()
-            {
-                let frame = if raw_mode {
-                    self.raw_command
-                } else {
-                    command_bytes(self.command())
-                };
-                self.submit(UiRequest::SendCommand(frame));
-            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui
+                    .add_sized(
+                        [104.0, 28.0],
+                        egui::Button::new(RichText::new("发送指令").strong().color(theme::WHITE))
+                            .fill(theme::PRIMARY),
+                    )
+                    .clicked()
+                {
+                    let frame = if raw_mode {
+                        self.raw_command
+                    } else {
+                        command_bytes(self.command())
+                    };
+                    self.submit(UiRequest::SendCommand(frame));
+                }
+            });
         });
     }
 
@@ -765,47 +767,25 @@ impl LangmuirDesktopApp {
 
         theme::card().show(ui, |ui| {
             theme::section_title(ui, "时间与工作参数");
-            ui.columns(3, |columns| {
-                theme::metric_box(
-                    &mut columns[0],
-                    "下位机时间",
-                    format_timestamp(data.absolute_time_seconds),
-                    theme::PRIMARY,
-                );
-                theme::metric_box(
-                    &mut columns[1],
-                    "自守时时间 (s)",
-                    data.local_time_seconds.to_string(),
-                    theme::PRIMARY,
-                );
-                theme::metric_box(
-                    &mut columns[2],
-                    "遥测请求计数",
-                    data.telemetry_request_count.to_string(),
-                    theme::PRIMARY,
-                );
-            });
-            ui.add_space(5.0);
-            ui.columns(3, |columns| {
-                theme::metric_box(
-                    &mut columns[0],
-                    "工作模式",
-                    work_mode_name(data.work_mode),
-                    theme::PRIMARY,
-                );
-                theme::metric_box(
-                    &mut columns[1],
-                    "扫描频率",
-                    data.scan_frequency.to_string(),
-                    theme::PRIMARY,
-                );
-                theme::metric_box(
-                    &mut columns[2],
-                    "扫描电压",
-                    data.scan_voltage.to_string(),
-                    theme::PRIMARY,
-                );
-            });
+            Grid::new("telemetry_parameters")
+                .num_columns(2)
+                .min_col_width(120.0)
+                .spacing([8.0, 4.0])
+                .show(ui, |ui| {
+                    telemetry_value_cell(
+                        ui,
+                        "下位机时间",
+                        format_timestamp(data.absolute_time_seconds),
+                    );
+                    telemetry_value_cell(ui, "自守时 (s)", data.local_time_seconds.to_string());
+                    ui.end_row();
+                    telemetry_value_cell(ui, "遥测计数", data.telemetry_request_count.to_string());
+                    telemetry_value_cell(ui, "工作模式", work_mode_name(data.work_mode));
+                    ui.end_row();
+                    telemetry_value_cell(ui, "扫描频率", data.scan_frequency.to_string());
+                    telemetry_value_cell(ui, "扫描电压", data.scan_voltage.to_string());
+                    ui.end_row();
+                });
         });
 
         ui.add_space(7.0);
@@ -836,7 +816,8 @@ impl LangmuirDesktopApp {
             ui.separator();
             Grid::new("device_status_grid")
                 .num_columns(2)
-                .spacing([10.0, 6.0])
+                .min_col_width(120.0)
+                .spacing([8.0, 4.0])
                 .show(ui, |ui| {
                     protocol_status_cell(ui, "AD9833", data.ad9833_status);
                     protocol_status_cell(ui, "DAC8563", data.dac8563_status);
@@ -845,7 +826,7 @@ impl LangmuirDesktopApp {
                     protocol_status_cell(ui, "ADC2", data.adc_2_status);
                     ui.end_row();
                     protocol_status_cell(ui, "LVDS", data.lvds_status);
-                    value_cell(ui, "上一条注入指令", hex_bytes(&data.last_injected_command));
+                    telemetry_value_cell(ui, "上一条指令", hex_bytes(&data.last_injected_command));
                     ui.end_row();
                 });
         });
@@ -1306,13 +1287,14 @@ fn header_link_status(ui: &mut Ui, label: &str, active: bool) {
     );
 }
 
-fn value_cell(ui: &mut Ui, label: &str, value: String) {
+fn telemetry_value_cell(ui: &mut Ui, label: &str, value: String) {
     ui.horizontal(|ui| {
-        ui.label(RichText::new(label).small().color(theme::TEXT_SECONDARY));
+        ui.label(RichText::new(label).size(9.0).color(theme::TEXT_SECONDARY));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.label(
                 RichText::new(value)
                     .monospace()
+                    .size(10.0)
                     .strong()
                     .color(theme::PRIMARY),
             );

@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use eframe::egui::{
-    self, Align, Align2, Checkbox, Color32, CornerRadius, FontFamily, FontId, Frame, Label, Layout,
-    Margin, Response, RichText, Sense, Stroke, TextStyle, Ui, Vec2,
+    self, Align, Checkbox, Color32, CornerRadius, FontFamily, FontId, Frame, Label, Layout, Margin,
+    Response, RichText, Sense, Stroke, TextStyle, Ui, Vec2,
 };
 
 pub const CONTROL_HEIGHT: f32 = 28.0;
@@ -120,28 +120,6 @@ pub fn status_badge(ui: &mut Ui, text: &str, color: Color32) {
         .show(ui, |ui| {
             ui.label(RichText::new(text).strong().color(WHITE).size(10.0));
         });
-}
-
-pub fn metric_box(ui: &mut Ui, title: &str, value: impl Into<String>, color: Color32) {
-    ui.vertical_centered(|ui| {
-        ui.label(RichText::new(title).color(TEXT_SECONDARY).size(9.0));
-        let width = ui.available_width().max(42.0);
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 26.0), egui::Sense::hover());
-        ui.painter().rect(
-            rect,
-            CornerRadius::same(6),
-            SURFACE_ALT,
-            Stroke::new(1.0, BORDER),
-            egui::StrokeKind::Inside,
-        );
-        ui.painter().with_clip_rect(rect).text(
-            rect.center(),
-            Align2::CENTER_CENTER,
-            value.into(),
-            FontId::new(10.0, FontFamily::Monospace),
-            color,
-        );
-    });
 }
 
 pub fn form_label(ui: &mut Ui, text: &str, enabled: bool) {
