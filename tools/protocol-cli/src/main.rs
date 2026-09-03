@@ -1,8 +1,15 @@
 use std::env;
-use std::fs;
+use std::fs::{self, File, OpenOptions};
+use std::io::{BufWriter, Write};
+use std::net::{SocketAddr, UdpSocket};
+use std::path::Path;
 use std::process::ExitCode;
+use std::time::{Duration, Instant};
 
-use langmuir_core::{Command, decode_rs422_telemetry, decode_scientific_frame};
+use langmuir_core::{
+    Command, DEPLOYED_LVDS_RAW_FRAME_LEN, UdpLvdsReassembler, decode_rs422_telemetry,
+    decode_scientific_frame, parse_udp_lvds_datagram,
+};
 
 fn main() -> ExitCode {
     let arguments: Vec<_> = env::args().skip(1).collect();
@@ -44,8 +51,133 @@ fn run(arguments: &[String]) -> Result<String, String> {
                 frame.channel_1.len()
             ))
         }
+        "receive-udp-lvds" => receive_udp_lvds(&arguments[1..]),
         _ => Err(format!("unknown action: {action}")),
     }
+}
+
+#[allow(clippy::too_many_lines)]
+fn receive_udp_lvds(arguments: &[String]) -> Result<String, String> {
+    let bind_address = parse_socket_address(arguments.first(), "bind address")?;
+    let source_address = parse_socket_address(arguments.get(1), "source address")?;
+    let frame_count: usize = parse_number(arguments.get(2), "frame count")?;
+    if frame_count == 0 {
+        return Err("frame count must be non-zero".to_owned());
+    }
+    let output_path = arguments.get(3).ok_or("missing output file path")?;
+    let timeout_seconds: u64 = match arguments.get(4) {
+        Some(value) => parse_number(Some(value), "timeout seconds")?,
+        None => 10,
+    };
+    if timeout_seconds == 0 {
+        return Err("timeout seconds must be non-zero".to_owned());
+    }
+
+    let output = Path::new(output_path);
+    if output.exists() {
+        return Err(format!("output file already exists: {}", output.display()));
+    }
+    if let Some(parent) = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
+    }
+    let index_path = format!("{output_path}.index.csv");
+    if Path::new(&index_path).exists() {
+        return Err(format!("index file already exists: {index_path}"));
+    }
+
+    let socket = UdpSocket::bind(bind_address)
+        .map_err(|error| format!("cannot bind {bind_address}: {error}"))?;
+    socket
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .map_err(|error| format!("cannot set UDP read timeout: {error}"))?;
+    let output_file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(output)
+        .map_err(|error| format!("cannot create {}: {error}", output.display()))?;
+    let index_file = File::create_new(&index_path)
+        .map_err(|error| format!("cannot create {index_path}: {error}"))?;
+    let mut output_writer = BufWriter::new(output_file);
+    let mut index_writer = BufWriter::new(index_file);
+    writeln!(index_writer, "frame_sequence,offset_bytes,frame_bytes")
+        .map_err(|error| format!("cannot write {index_path}: {error}"))?;
+
+    let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
+    let mut buffer = vec![0_u8; 65_535];
+    let mut reassembler = UdpLvdsReassembler::default();
+    let mut received_datagrams = 0_u64;
+    let mut rejected_datagrams = 0_u64;
+    let mut completed_frames = 0_usize;
+    let mut output_offset = 0_u64;
+
+    while completed_frames < frame_count && Instant::now() < deadline {
+        let (bytes, source) = match socket.recv_from(&mut buffer) {
+            Ok(result) => result,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                ) =>
+            {
+                continue;
+            }
+            Err(error) => return Err(format!("UDP receive failed: {error}")),
+        };
+        if source != source_address {
+            continue;
+        }
+        received_datagrams = received_datagrams.saturating_add(1);
+        let Ok(datagram) = parse_udp_lvds_datagram(&buffer[..bytes]) else {
+            rejected_datagrams = rejected_datagrams.saturating_add(1);
+            continue;
+        };
+        if usize::try_from(datagram.header.frame_length).ok() != Some(DEPLOYED_LVDS_RAW_FRAME_LEN) {
+            rejected_datagrams = rejected_datagrams.saturating_add(1);
+            continue;
+        }
+        let Ok(frame) = reassembler.push(&buffer[..bytes]) else {
+            rejected_datagrams = rejected_datagrams.saturating_add(1);
+            continue;
+        };
+        let Some(frame) = frame else {
+            continue;
+        };
+
+        debug_assert_eq!(frame.bytes.len(), DEPLOYED_LVDS_RAW_FRAME_LEN);
+        output_writer
+            .write_all(&frame.bytes)
+            .map_err(|error| format!("cannot write {}: {error}", output.display()))?;
+        writeln!(
+            index_writer,
+            "{},{},{}",
+            frame.frame_sequence,
+            output_offset,
+            frame.bytes.len()
+        )
+        .map_err(|error| format!("cannot write {index_path}: {error}"))?;
+        output_offset = output_offset
+            .saturating_add(u64::try_from(frame.bytes.len()).expect("frame length fits in u64"));
+        completed_frames += 1;
+    }
+    output_writer
+        .flush()
+        .map_err(|error| format!("cannot flush {}: {error}", output.display()))?;
+    index_writer
+        .flush()
+        .map_err(|error| format!("cannot flush {index_path}: {error}"))?;
+
+    if completed_frames != frame_count {
+        return Err(format!(
+            "timed out after {timeout_seconds}s: completed {completed_frames}/{frame_count} frames, received {received_datagrams} matching UDP datagrams, rejected {rejected_datagrams}"
+        ));
+    }
+    Ok(format!(
+        "reassembled {completed_frames} LVDS frames ({output_offset} bytes, {DEPLOYED_LVDS_RAW_FRAME_LEN} bytes/frame) from {received_datagrams} UDP datagrams; index={index_path}"
+    ))
 }
 
 fn encode_command(arguments: &[String]) -> Result<String, String> {
@@ -85,6 +217,13 @@ where
     T::try_from(parsed).map_err(|_| format!("{name} is out of range: {value}"))
 }
 
+fn parse_socket_address(value: Option<&String>, name: &str) -> Result<SocketAddr, String> {
+    let value = value.ok_or_else(|| format!("missing {name}"))?;
+    value
+        .parse()
+        .map_err(|_| format!("invalid {name}: {value}"))
+}
+
 fn parse_hex(input: &str) -> Result<Vec<u8>, String> {
     let compact: String = input
         .chars()
@@ -117,7 +256,7 @@ fn format_hex(bytes: &[u8]) -> String {
 }
 
 fn usage() -> &'static str {
-    "usage:\n  langmuir-protocol-cli command telemetry\n  langmuir-protocol-cli command frequency <u8>\n  langmuir-protocol-cli command mode <u8>\n  langmuir-protocol-cli command voltage <u16>\n  langmuir-protocol-cli command lvds <on|off>\n  langmuir-protocol-cli decode-rs422 <hex>\n  langmuir-protocol-cli decode-lvds <binary-file>"
+    "usage:\n  langmuir-protocol-cli command telemetry\n  langmuir-protocol-cli command frequency <u8>\n  langmuir-protocol-cli command mode <u8>\n  langmuir-protocol-cli command voltage <u16>\n  langmuir-protocol-cli command lvds <on|off>\n  langmuir-protocol-cli decode-rs422 <hex>\n  langmuir-protocol-cli decode-lvds <binary-file>\n  langmuir-protocol-cli receive-udp-lvds <bind-ip:port> <source-ip:port> <frame-count> <output-file> [timeout-seconds]"
 }
 
 #[cfg(test)]

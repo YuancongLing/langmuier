@@ -3,6 +3,25 @@ use std::fmt;
 #[cfg(test)]
 use crossbeam_channel::{Receiver, Sender, TrySendError, bounded};
 
+pub const TELEMETRY_POLL_INTERVAL_MIN_MILLIS: u32 = 100;
+pub const TELEMETRY_POLL_INTERVAL_MAX_MILLIS: u32 = 60_000;
+pub const TELEMETRY_POLL_INTERVAL_DEFAULT_MILLIS: u32 = 1_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TelemetryPollingState {
+    pub active: bool,
+    pub interval_millis: u32,
+}
+
+impl Default for TelemetryPollingState {
+    fn default() -> Self {
+        Self {
+            active: false,
+            interval_millis: TELEMETRY_POLL_INTERVAL_DEFAULT_MILLIS,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkKind {
     Rs422,
@@ -68,6 +87,7 @@ pub struct BackendStateSnapshot {
     pub lvds_connected: bool,
     pub lvds_detail: String,
     pub acquisition_running: bool,
+    pub telemetry_polling: TelemetryPollingState,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,8 +98,9 @@ pub enum UiRequest {
         port: String,
         baud: u32,
     },
-    /// Bind the local endpoint receiving raw LVDS protocol bytes from the
-    /// LVDS-to-UDP converter.
+    /// Bind the deployed UDP/LVDS receiver. It preserves datagram boundaries,
+    /// filters the configured source endpoint, and reassembles raw 269-byte
+    /// LVDS frames before any science-data decoding.
     BindLvdsUdp {
         bind_address: String,
         port: u16,
@@ -89,6 +110,10 @@ pub enum UiRequest {
     },
     StartAcquisition,
     StopAcquisition,
+    SetTelemetryPolling {
+        enabled: bool,
+        interval_millis: u32,
+    },
     SendCommand([u8; 12]),
     ExportCsv {
         suggested_name: String,
@@ -109,6 +134,10 @@ pub enum BackendEvent {
     },
     AcquisitionChanged {
         running: bool,
+    },
+    TelemetryPollingChanged {
+        active: bool,
+        interval_millis: u32,
     },
     /// Reliable, coalesced state published outside the bounded critical-event
     /// history. It repairs UI state after old critical events are evicted.

@@ -79,12 +79,16 @@ use a common 30-pixel control height with explicit vertical centering; labels,
 combo boxes, numeric inputs, and checkbox indicators therefore share the same
 visual center line.
 
-The LVDS/UDP toolbar accepts a local bind address and port (default
-`0.0.0.0:5000`). Each UDP payload is treated as raw LVDS protocol bytes; one
-payload may contain one or more 270-byte frames, or a fragment of a frame. The
-stream decoder restores frame boundaries, validates each complete frame, then
-routes accepted frames to the plot and, while acquisition is running, to the
-capture writer. The UDP converter must not prepend a proprietary packet header.
+The current deployed UDP converter sends a 24-byte fragment wrapper plus a 269-byte
+LVDS raw frame after reassembly. The desktop toolbar defaults to
+`192.168.1.100:1534`, accepts only `192.168.1.128:1534`, preserves UDP datagram
+boundaries, and reassembles by frame sequence and byte offset. The frame and rejection
+counters confirm live network reception. The reassembled payload is decoded as
+`EB 90 | 55 | AA | 01 07 | AA | UTC | microseconds | data[252] | CRC16`, then routed
+to scientific capture and plots. The UDP wrapper sequence is used as the stored sequence
+tag because the LVDS body does not contain a packet-sequence field. The CRC-16 parameters
+are CCITT-FALSE (`0x1021`, `0xFFFF`, no reflection, no xorout); live rejection remains
+disabled until the lower computer confirms the exact CRC coverage call site.
 
 The UI never parses wire bytes and never writes HDF5 or CSV synchronously.
 Scientific capture waits up to 250 ms for bounded storage capacity, so a

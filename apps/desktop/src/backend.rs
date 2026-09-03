@@ -2,7 +2,8 @@ use std::{
     collections::{BTreeMap, VecDeque},
     fmt::Write as _,
     fs::{self, OpenOptions},
-    io::{BufWriter, Write},
+    io::{BufWriter, ErrorKind, Write},
+    net::{SocketAddr, UdpSocket},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
@@ -15,7 +16,9 @@ use std::{
 use chrono::Local;
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TrySendError, bounded};
 use langmuir_core::{
-    LvdsStreamDecoder, Rs422StreamDecoder, Rs422Telemetry, SAMPLE_INTERVAL_MICROS, ScientificFrame,
+    Command, DEPLOYED_LVDS_RAW_FRAME_LEN, LvdsStreamDecoder, Rs422StreamDecoder, Rs422Telemetry,
+    SAMPLE_INTERVAL_MICROS, ScientificFrame, UdpLvdsReassembler,
+    decode_scientific_frame_with_sequence, parse_udp_lvds_datagram,
 };
 use langmuir_storage::{BatchWriter, StorageEvent, StorageServiceConfig};
 #[cfg(not(any(feature = "hdf5", feature = "hdf5-static")))]
@@ -25,12 +28,13 @@ use langmuir_storage::{Hdf5Config, Hdf5Sink};
 use langmuir_transport::ReaderMetricsSnapshot;
 use langmuir_transport::{
     BackpressurePolicy, Connector, ReaderConfig, ReaderEvent, ReaderWorker, SerialConfig,
-    SerialConnector, UdpConfig, UdpConnector, WriteTicket, available_serial_ports,
+    SerialConnector, WriteTicket, available_serial_ports,
 };
 
 use crate::bridge::{
     BackendBridge, BackendEvent, BackendStateSnapshot, BridgeError, LinkKind, LinkMetricsSnapshot,
-    LogLevel, TelemetrySnapshot, UiRequest,
+    LogLevel, TELEMETRY_POLL_INTERVAL_MAX_MILLIS, TELEMETRY_POLL_INTERVAL_MIN_MILLIS,
+    TelemetrySnapshot, UiRequest,
 };
 
 const BRIDGE_REQUEST_CAPACITY: usize = 128;
@@ -45,6 +49,124 @@ const STORAGE_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const CSV_TASK_DROP_TIMEOUT: Duration = Duration::from_millis(500);
 const MAX_TELEMETRY_ROWS: usize = 100_000;
 const MAX_READER_EVENTS_PER_TICK: usize = 1_024;
+const DEPLOYED_LVDS_UDP_SOURCE: &str = "192.168.1.128:1534";
+
+#[derive(Debug, Clone, Copy)]
+struct TelemetryPolling {
+    interval: Duration,
+    next_due: Instant,
+}
+
+impl TelemetryPolling {
+    fn new(interval: Duration, now: Instant) -> Self {
+        Self {
+            interval,
+            next_due: now,
+        }
+    }
+
+    fn is_due(self, now: Instant) -> bool {
+        now >= self.next_due
+    }
+
+    fn record_send(&mut self, now: Instant) {
+        // A paused controller must resume at one interval from the actual send,
+        // rather than burst a backlog of stale telemetry requests.
+        self.next_due = now.checked_add(self.interval).unwrap_or(now);
+    }
+
+    fn interval_millis(self) -> u32 {
+        u32::try_from(self.interval.as_millis()).unwrap_or(u32::MAX)
+    }
+}
+
+/// Datagram-aware receiver for the deployed LVDS-to-UDP converter. The desktop
+/// controller owns it directly so neither packet boundaries nor source addresses
+/// are lost before LVDS fragment reassembly.
+struct UdpLvdsReceiver {
+    socket: UdpSocket,
+    expected_source: SocketAddr,
+    reassembler: UdpLvdsReassembler,
+    metrics: ReaderMetricsSnapshot,
+    buffer: Vec<u8>,
+}
+
+impl UdpLvdsReceiver {
+    fn bind(bind_address: SocketAddr, expected_source: SocketAddr) -> std::io::Result<Self> {
+        let socket = UdpSocket::bind(bind_address)?;
+        socket.set_nonblocking(true)?;
+        Ok(Self {
+            socket,
+            expected_source,
+            reassembler: UdpLvdsReassembler::default(),
+            metrics: ReaderMetricsSnapshot::default(),
+            buffer: vec![0_u8; 65_535],
+        })
+    }
+
+    fn drain(
+        &mut self,
+        limit: usize,
+        mut on_frame: impl FnMut(ScientificFrame),
+    ) -> std::io::Result<()> {
+        for _ in 0..limit {
+            let (bytes, source) = match self.socket.recv_from(&mut self.buffer) {
+                Ok(result) => result,
+                Err(error) if matches!(error.kind(), ErrorKind::WouldBlock) => break,
+                Err(error) => {
+                    self.metrics.io_errors = self.metrics.io_errors.saturating_add(1);
+                    return Err(error);
+                }
+            };
+            if source != self.expected_source {
+                continue;
+            }
+            self.metrics.read_calls = self.metrics.read_calls.saturating_add(1);
+            self.metrics.bytes_read = self
+                .metrics
+                .bytes_read
+                .saturating_add(u64::try_from(bytes).expect("UDP datagram length fits in u64"));
+
+            let Ok(datagram) = parse_udp_lvds_datagram(&self.buffer[..bytes]) else {
+                self.metrics.rejected_frames = self.metrics.rejected_frames.saturating_add(1);
+                continue;
+            };
+            if usize::try_from(datagram.header.frame_length).ok()
+                != Some(DEPLOYED_LVDS_RAW_FRAME_LEN)
+            {
+                self.metrics.rejected_frames = self.metrics.rejected_frames.saturating_add(1);
+                continue;
+            }
+            match self.reassembler.push(&self.buffer[..bytes]) {
+                Ok(Some(frame)) => {
+                    let sequence = u16::try_from(frame.frame_sequence & u32::from(u16::MAX))
+                        .expect("masked UDP frame sequence fits in u16");
+                    match decode_scientific_frame_with_sequence(&frame.bytes, sequence) {
+                        Ok(frame) => {
+                            self.metrics.frames_decoded =
+                                self.metrics.frames_decoded.saturating_add(1);
+                            on_frame(frame);
+                        }
+                        Err(_) => {
+                            self.metrics.rejected_frames =
+                                self.metrics.rejected_frames.saturating_add(1);
+                        }
+                    }
+                }
+                Ok(None) => {}
+                Err(_) => {
+                    self.metrics.rejected_frames = self.metrics.rejected_frames.saturating_add(1);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    const fn metrics(&self) -> ReaderMetricsSnapshot {
+        self.metrics
+    }
+}
 
 enum ControllerRequest {
     Ui(UiRequest),
@@ -205,6 +327,7 @@ struct Controller {
     lvds_display_dropped: AtomicU64,
     rs422: Option<ReaderWorker<Rs422Telemetry>>,
     lvds: Option<ReaderWorker<ScientificFrame>>,
+    lvds_udp: Option<UdpLvdsReceiver>,
     rs422_connected: bool,
     lvds_connected: bool,
     rs422_endpoint: String,
@@ -214,6 +337,7 @@ struct Controller {
     last_storage_fault: Option<String>,
     scientific_writer: Option<BatchWriter<ScientificFrame>>,
     acquisition_running: bool,
+    telemetry_polling: Option<TelemetryPolling>,
     telemetry_rows: VecDeque<TelemetrySnapshot>,
     pending_commands: BTreeMap<u64, (WriteTicket, [u8; 12])>,
     last_rs422_metrics: Option<(bool, ReaderMetricsSnapshot)>,
@@ -243,6 +367,7 @@ impl Controller {
             lvds_display_dropped: AtomicU64::new(0),
             rs422: None,
             lvds: None,
+            lvds_udp: None,
             rs422_connected: false,
             lvds_connected: false,
             rs422_endpoint: String::new(),
@@ -252,6 +377,7 @@ impl Controller {
             last_storage_fault: None,
             scientific_writer: None,
             acquisition_running: false,
+            telemetry_polling: None,
             telemetry_rows: VecDeque::new(),
             pending_commands: BTreeMap::new(),
             last_rs422_metrics: None,
@@ -285,8 +411,10 @@ impl Controller {
                     }
                 }
             }
+            self.poll_telemetry_request(Instant::now());
             self.drain_rs422();
             self.drain_lvds();
+            self.drain_udp_lvds();
             self.poll_reader_statuses();
             self.sample_reader_metrics();
             self.drain_command_acks();
@@ -319,7 +447,13 @@ impl Controller {
             }
             UiRequest::StartAcquisition => self.start_acquisition(),
             UiRequest::StopAcquisition => self.stop_acquisition_at_ui_boundary(),
-            UiRequest::SendCommand(frame) => self.send_command(frame),
+            UiRequest::SetTelemetryPolling {
+                enabled,
+                interval_millis,
+            } => self.set_telemetry_polling(enabled, interval_millis),
+            UiRequest::SendCommand(frame) => {
+                let _ = self.send_command(frame);
+            }
             UiRequest::ExportCsv { suggested_name } => self.export_csv(&suggested_name),
             #[cfg(feature = "mock")]
             UiRequest::InjectMockFault => {
@@ -403,9 +537,15 @@ impl Controller {
                 return;
             }
         };
-        let connector = UdpConnector::new(UdpConfig::new(socket_address));
-        let transport = match connector.connect() {
-            Ok(transport) => transport,
+        let expected_source = match DEPLOYED_LVDS_UDP_SOURCE.parse() {
+            Ok(address) => address,
+            Err(error) => {
+                self.fault("LVDS / UDP", format!("固定源地址无效: {error}"));
+                return;
+            }
+        };
+        let receiver = match UdpLvdsReceiver::bind(socket_address, expected_source) {
+            Ok(receiver) => receiver,
             Err(error) => {
                 self.fault("LVDS / UDP", error.to_string());
                 self.emit_critical(BackendEvent::LinkChanged {
@@ -416,42 +556,34 @@ impl Controller {
                 return;
             }
         };
-        let result = ReaderWorker::spawn(
-            transport,
-            LvdsStreamDecoder::new(),
-            ReaderConfig {
-                event_capacity: 2_048,
-                backpressure: BackpressurePolicy::Wait(Duration::from_millis(250)),
-                ..ReaderConfig::default()
-            },
+        self.lvds_udp = Some(receiver);
+        self.lvds_connected = true;
+        self.lvds_endpoint = format!("UDP {endpoint} <- {expected_source}");
+        self.last_lvds_fault = None;
+        self.last_lvds_metrics = None;
+        self.last_lvds_metrics_emitted = None;
+        self.emit_critical(BackendEvent::LinkChanged {
+            link: LinkKind::Lvds,
+            connected: true,
+            detail: self.lvds_endpoint.clone(),
+        });
+        self.log(
+            LogLevel::Info,
+            format!("正在监听 LVDS / UDP: {endpoint}，仅接收 {expected_source}"),
         );
-        match result {
-            Ok(worker) => {
-                self.lvds = Some(worker);
-                self.lvds_endpoint = format!("UDP {endpoint}");
-                self.last_lvds_fault = None;
-                self.log(LogLevel::Info, format!("正在监听 LVDS / UDP: {endpoint}"));
-            }
-            Err(error) => {
-                self.fault("LVDS / UDP", error.to_string());
-                self.emit_critical(BackendEvent::LinkChanged {
-                    link: LinkKind::Lvds,
-                    connected: false,
-                    detail: error.to_string(),
-                });
-            }
-        }
     }
 
     fn disconnect(&mut self, link: LinkKind) -> bool {
         let result = match link {
             LinkKind::Rs422 => {
+                self.stop_telemetry_polling();
                 self.rs422_connected = false;
                 self.rs422_endpoint.clear();
                 self.last_rs422_fault = None;
                 self.rs422.take().map(ReaderWorker::shutdown)
             }
             LinkKind::Lvds => {
+                self.lvds_udp.take();
                 let result = self.stop_lvds_reader_and_drain();
                 if self.acquisition_running || self.scientific_writer.is_some() {
                     self.stop_acquisition();
@@ -459,6 +591,8 @@ impl Controller {
                 self.lvds_connected = false;
                 self.lvds_endpoint.clear();
                 self.last_lvds_fault = None;
+                self.last_lvds_metrics = None;
+                self.last_lvds_metrics_emitted = None;
                 result
             }
         };
@@ -680,16 +814,84 @@ impl Controller {
         }
     }
 
-    fn send_command(&mut self, frame: [u8; 12]) {
+    fn set_telemetry_polling(&mut self, enabled: bool, interval_millis: u32) {
+        if !enabled {
+            self.stop_telemetry_polling();
+            return;
+        }
+        if !(TELEMETRY_POLL_INTERVAL_MIN_MILLIS..=TELEMETRY_POLL_INTERVAL_MAX_MILLIS)
+            .contains(&interval_millis)
+        {
+            self.fault(
+                "循环遥测",
+                format!(
+                    "循环周期必须在 {TELEMETRY_POLL_INTERVAL_MIN_MILLIS}..={TELEMETRY_POLL_INTERVAL_MAX_MILLIS} ms"
+                ),
+            );
+            return;
+        }
+        if !self.rs422_connected {
+            self.fault("循环遥测", "RS422 未连接，不能启动循环请求");
+            self.emit_critical(BackendEvent::TelemetryPollingChanged {
+                active: false,
+                interval_millis,
+            });
+            return;
+        }
+
+        let now = Instant::now();
+        self.telemetry_polling = Some(TelemetryPolling::new(
+            Duration::from_millis(u64::from(interval_millis)),
+            now,
+        ));
+        self.poll_telemetry_request(now);
+        if self.telemetry_polling.is_some() {
+            self.emit_critical(BackendEvent::TelemetryPollingChanged {
+                active: true,
+                interval_millis,
+            });
+        }
+    }
+
+    fn stop_telemetry_polling(&mut self) {
+        let Some(polling) = self.telemetry_polling.take() else {
+            return;
+        };
+        self.emit_critical(BackendEvent::TelemetryPollingChanged {
+            active: false,
+            interval_millis: polling.interval_millis(),
+        });
+    }
+
+    fn poll_telemetry_request(&mut self, now: Instant) {
+        let Some(mut polling) = self.telemetry_polling else {
+            return;
+        };
+        if !polling.is_due(now) {
+            return;
+        }
+        if !self.send_command(Command::RequestTelemetry.encode().into_bytes()) {
+            self.stop_telemetry_polling();
+            return;
+        }
+        polling.record_send(now);
+        self.telemetry_polling = Some(polling);
+    }
+
+    fn send_command(&mut self, frame: [u8; 12]) -> bool {
         let Some(worker) = self.rs422.as_ref().filter(|_| self.rs422_connected) else {
             self.fault("RS422", "未连接，指令未发送");
-            return;
+            return false;
         };
         match worker.try_send_bytes(frame.to_vec()) {
             Ok(ticket) => {
                 self.pending_commands.insert(ticket.id(), (ticket, frame));
+                true
             }
-            Err(error) => self.fault("RS422 指令队列", error.to_string()),
+            Err(error) => {
+                self.fault("RS422 指令队列", error.to_string());
+                false
+            }
         }
     }
 
@@ -724,6 +926,7 @@ impl Controller {
                 | ReaderEvent::WriteFailed { .. }
                 | ReaderEvent::Fault(_) => {}
                 ReaderEvent::Stopped { reason } => {
+                    self.stop_telemetry_polling();
                     self.rs422_connected = false;
                     self.emit_critical(BackendEvent::LinkChanged {
                         link: LinkKind::Rs422,
@@ -739,6 +942,25 @@ impl Controller {
         self.drain_lvds_limit(MAX_READER_EVENTS_PER_TICK);
         if self.acquisition_running && !self.lvds_connected {
             self.stop_acquisition_incomplete("LVDS reader stopped before acquisition completed");
+        }
+    }
+
+    fn drain_udp_lvds(&mut self) {
+        let mut decoded_frames = Vec::new();
+        let result = self.lvds_udp.as_mut().map(|receiver| {
+            receiver.drain(MAX_READER_EVENTS_PER_TICK, |frame| {
+                decoded_frames.push(frame);
+            })
+        });
+        if let Some(Err(error)) = result {
+            let message = error.to_string();
+            if self.last_lvds_fault.as_ref() != Some(&message) {
+                self.last_lvds_fault = Some(message.clone());
+                self.fault("LVDS / UDP", message);
+            }
+        }
+        for frame in decoded_frames {
+            self.handle_scientific_frame(frame);
         }
     }
 
@@ -984,7 +1206,12 @@ impl Controller {
             }
         }
 
-        if let Some(metrics) = self.lvds.as_ref().map(ReaderWorker::metrics) {
+        let lvds_metrics = self
+            .lvds
+            .as_ref()
+            .map(ReaderWorker::metrics)
+            .or_else(|| self.lvds_udp.as_ref().map(UdpLvdsReceiver::metrics));
+        if let Some(metrics) = lvds_metrics {
             let connected = self.lvds_connected;
             let display_dropped = self.lvds_display_dropped.load(Ordering::Relaxed);
             let previous = self
@@ -1127,6 +1354,15 @@ impl Controller {
             BackendEvent::AcquisitionChanged { running } => {
                 let mut state = lock_unpoisoned(&self.latest_state);
                 state.acquisition_running = *running;
+                state.revision = state.revision.wrapping_add(1);
+            }
+            BackendEvent::TelemetryPollingChanged {
+                active,
+                interval_millis,
+            } => {
+                let mut state = lock_unpoisoned(&self.latest_state);
+                state.telemetry_polling.active = *active;
+                state.telemetry_polling.interval_millis = *interval_millis;
                 state.revision = state.revision.wrapping_add(1);
             }
             _ => {}
@@ -1285,8 +1521,10 @@ mod tests {
     use std::{
         collections::VecDeque,
         fs,
+        net::UdpSocket,
         sync::{Arc, Mutex, atomic::Ordering},
-        time::Duration,
+        thread,
+        time::{Duration, Instant},
     };
 
     use crossbeam_channel::bounded;
@@ -1296,7 +1534,103 @@ mod tests {
         BackendEvent, BackendStateSnapshot, LinkKind, LogLevel, TelemetrySnapshot,
     };
 
-    use super::{Controller, CsvExportTask, collect_available, sanitize_file_name};
+    use super::{
+        Controller, CsvExportTask, DEPLOYED_LVDS_RAW_FRAME_LEN, TelemetryPolling, UdpLvdsReceiver,
+        collect_available, sanitize_file_name,
+    };
+
+    fn udp_lvds_datagram(frame_sequence: u32, frame_length: usize, payload: &[u8]) -> Vec<u8> {
+        let mut datagram = Vec::with_capacity(24 + payload.len());
+        datagram.extend_from_slice(&[0x55, 0xAA, 0x01, 0xA5]);
+        datagram.extend_from_slice(&frame_sequence.to_be_bytes());
+        datagram.extend_from_slice(
+            &u32::try_from(frame_length)
+                .expect("test frame length fits in u32")
+                .to_be_bytes(),
+        );
+        datagram.extend_from_slice(&[0, 0, 0, 1]);
+        datagram.extend_from_slice(&0_u32.to_be_bytes());
+        datagram.extend_from_slice(
+            &u16::try_from(payload.len())
+                .expect("test payload length fits in u16")
+                .to_be_bytes(),
+        );
+        datagram.extend_from_slice(&0_u16.to_be_bytes());
+        datagram.extend_from_slice(payload);
+        datagram
+    }
+
+    fn deployed_lvds_payload() -> Vec<u8> {
+        let mut payload = vec![0_u8; DEPLOYED_LVDS_RAW_FRAME_LEN];
+        payload[..7].copy_from_slice(&[0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07, 0xAA]);
+        payload[7..11].copy_from_slice(&1_700_000_000_u32.to_be_bytes());
+        payload[11..15].copy_from_slice(&123_456_u32.to_be_bytes());
+        payload[15..17].copy_from_slice(&2048_u16.to_be_bytes());
+        payload[17..19].copy_from_slice(&20_000_u16.to_be_bytes());
+        payload[267..269].copy_from_slice(&0xA55A_u16.to_be_bytes());
+        payload
+    }
+
+    #[test]
+    fn udp_lvds_receiver_accepts_only_complete_deployed_frames() {
+        let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let unexpected_sender = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let mut receiver =
+            UdpLvdsReceiver::bind("127.0.0.1:0".parse().unwrap(), sender.local_addr().unwrap())
+                .unwrap();
+        let target = receiver.socket.local_addr().unwrap();
+        let valid_payload = deployed_lvds_payload();
+        sender
+            .send_to(
+                &udp_lvds_datagram(7, DEPLOYED_LVDS_RAW_FRAME_LEN, &valid_payload),
+                target,
+            )
+            .unwrap();
+        sender
+            .send_to(&udp_lvds_datagram(8, 268, &[0xA5; 268]), target)
+            .unwrap();
+        unexpected_sender
+            .send_to(
+                &udp_lvds_datagram(9, DEPLOYED_LVDS_RAW_FRAME_LEN, &valid_payload),
+                target,
+            )
+            .unwrap();
+
+        let mut decoded = Vec::new();
+        for _ in 0..50 {
+            receiver.drain(8, |frame| decoded.push(frame)).unwrap();
+            if receiver.metrics().frames_decoded == 1 && receiver.metrics().rejected_frames == 1 {
+                break;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(receiver.metrics().frames_decoded, 1);
+        assert_eq!(receiver.metrics().rejected_frames, 1);
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].sequence, 7);
+        assert_eq!(decoded[0].channel_1[0], 2048);
+        assert_eq!(
+            receiver.metrics().bytes_read,
+            u64::try_from(24 + valid_payload.len() + 24 + 268).unwrap()
+        );
+    }
+
+    #[test]
+    fn telemetry_polling_schedules_from_the_actual_send_without_a_burst() {
+        let start = Instant::now();
+        let interval = Duration::from_millis(200);
+        let mut polling = TelemetryPolling::new(interval, start);
+        assert!(polling.is_due(start));
+        polling.record_send(start);
+        assert!(!polling.is_due(start + Duration::from_millis(199)));
+        assert!(polling.is_due(start + interval));
+
+        let delayed_send = start + Duration::from_secs(3);
+        polling.record_send(delayed_send);
+        assert!(!polling.is_due(delayed_send));
+        assert!(!polling.is_due(delayed_send + Duration::from_millis(199)));
+        assert!(polling.is_due(delayed_send + interval));
+    }
 
     #[test]
     fn export_name_is_confined_to_data_directory() {

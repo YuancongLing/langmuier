@@ -3,11 +3,14 @@
 The command and RS422 telemetry protocols follow the supplied 2026-07-24
 single-machine specification. They are not wire-compatible with the earlier
 Python implementation's 16-byte/8N1 RS422 framing.
-The LVDS scientific protocol now uses the 2026-07-24 field table: 270-byte frames,
-125 samples per channel, one timestamp, packet sequence, signed one-byte deltas,
-and an additive checksum. The Rust decoder is stricter and rejects bad lengths, fixed
-fields, checksums, invalid microseconds, truncation, and trailing bytes instead of
-presenting corrupt data.
+The deployed LVDS/UDP protocol uses 269-byte reassembled raw frames, 125 samples per
+channel, one timestamp, signed one-byte deltas, and a two-byte big-endian CRC16. The
+LVDS body has no packet-sequence field; the UDP wrapper sequence is used as the capture
+sequence tag. The UDP reassembler validates the wrapper, lengths, offsets, segment
+coverage, duplicates, and conflicting data before outputting a frame. CRC16 uses
+polynomial `0x1021`, initial `0xFFFF`, no reflection, and no final xor. Captured frames
+do not match the documented coverage range, so strict CRC rejection awaits confirmation
+of the lower computer call site's `data` pointer and `length`.
 
 ## Operator behavior retained
 

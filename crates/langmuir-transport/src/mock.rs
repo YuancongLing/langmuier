@@ -167,25 +167,23 @@ pub fn rs422_packet(sequence: u8, timestamp_seconds: u32) -> [u8; 34] {
 
 #[must_use]
 pub fn lvds_packet(frame_index: u32, timestamp_seconds: u32) -> Vec<u8> {
-    const FRAME_LEN: usize = 270;
+    const FRAME_LEN: usize = 269;
     let mut frame = vec![0_u8; FRAME_LEN];
     frame[0..6].copy_from_slice(&[0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07]);
     frame[6] = 0xAA;
     frame[7..11].copy_from_slice(&timestamp_seconds.to_be_bytes());
     frame[11..15].copy_from_slice(&(frame_index % 1_000_000).to_be_bytes());
-    let sequence_bytes = frame_index.to_be_bytes();
-    frame[15..17].copy_from_slice(&sequence_bytes[2..]);
 
     let channel_1 = 2_048 + (frame_index % 100) as u16;
     let channel_2 = 20_000 + (frame_index % 100) as u16 * 2;
-    frame[17..19].copy_from_slice(&channel_1.to_be_bytes());
-    frame[19..21].copy_from_slice(&channel_2.to_be_bytes());
+    frame[15..17].copy_from_slice(&channel_1.to_be_bytes());
+    frame[17..19].copy_from_slice(&channel_2.to_be_bytes());
     for sample in 1..125_u16 {
-        let offset = 17 + 4 + usize::from(sample - 1) * 2;
+        let offset = 15 + 4 + usize::from(sample - 1) * 2;
         frame[offset] = 1;
         frame[offset + 1] = 3;
     }
-    frame[269] = checksum8(&frame[6..269]);
+    frame[267..269].copy_from_slice(&0_u16.to_be_bytes());
     frame
 }
 
@@ -206,8 +204,8 @@ mod tests {
         assert_eq!(telemetry[33], checksum8(&telemetry[6..33]));
 
         let scientific = lvds_packet(9, 1_700_000_000);
-        assert_eq!(scientific.len(), 270);
+        assert_eq!(scientific.len(), 269);
         assert_eq!(&scientific[..6], &[0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07]);
-        assert_eq!(scientific[269], checksum8(&scientific[6..269]));
+        assert_eq!(&scientific[267..269], &[0, 0]);
     }
 }

@@ -4,8 +4,12 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use langmuir_core::Command;
+
 use crate::bridge::{
-    BackendBridge, BackendEvent, BridgeError, LinkKind, LogLevel, TelemetrySnapshot, UiRequest,
+    BackendBridge, BackendEvent, BridgeError, LinkKind, LogLevel,
+    TELEMETRY_POLL_INTERVAL_MAX_MILLIS, TELEMETRY_POLL_INTERVAL_MIN_MILLIS, TelemetrySnapshot,
+    UiRequest,
 };
 
 const MOCK_FRAME_INTERVAL: Duration = Duration::from_millis(50);
@@ -17,6 +21,8 @@ pub struct MockBridge {
     rs422_connected: bool,
     lvds_connected: bool,
     acquisition_running: bool,
+    telemetry_poll_interval: Option<Duration>,
+    next_telemetry_request: Instant,
     next_frame: Instant,
     next_frame_time_seconds: f64,
     sequence: u64,
@@ -35,6 +41,8 @@ impl MockBridge {
             rs422_connected: false,
             lvds_connected: false,
             acquisition_running: false,
+            telemetry_poll_interval: None,
+            next_telemetry_request: Instant::now(),
             next_frame: Instant::now(),
             next_frame_time_seconds: unix_time_seconds(),
             sequence: 0,
@@ -112,6 +120,67 @@ impl MockBridge {
             false
         }
     }
+
+    fn queue_due_telemetry_request(&mut self, now: Instant) -> bool {
+        let Some(interval) = self.telemetry_poll_interval else {
+            return false;
+        };
+        if !self.rs422_connected {
+            self.telemetry_poll_interval = None;
+            self.events
+                .push_back(BackendEvent::TelemetryPollingChanged {
+                    active: false,
+                    interval_millis: u32::try_from(interval.as_millis()).unwrap_or(u32::MAX),
+                });
+            return true;
+        }
+        if now < self.next_telemetry_request {
+            return false;
+        }
+        self.accepted_commands = self.accepted_commands.wrapping_add(1);
+        self.events.push_back(BackendEvent::CommandSent(
+            Command::RequestTelemetry.encode().into_bytes(),
+        ));
+        self.next_telemetry_request = now.checked_add(interval).unwrap_or(now);
+        true
+    }
+
+    fn set_telemetry_polling(&mut self, enabled: bool, interval_millis: u32) {
+        if !enabled {
+            self.telemetry_poll_interval = None;
+            self.events
+                .push_back(BackendEvent::TelemetryPollingChanged {
+                    active: false,
+                    interval_millis,
+                });
+            return;
+        }
+        if !(TELEMETRY_POLL_INTERVAL_MIN_MILLIS..=TELEMETRY_POLL_INTERVAL_MAX_MILLIS)
+            .contains(&interval_millis)
+        {
+            self.events.push_back(BackendEvent::Fault {
+                source: "循环遥测".to_owned(),
+                message: "循环周期超出允许范围".to_owned(),
+            });
+            return;
+        }
+        if !self.rs422_connected {
+            self.events.push_back(BackendEvent::Fault {
+                source: "循环遥测".to_owned(),
+                message: "RS422 未连接，不能启动循环请求".to_owned(),
+            });
+            return;
+        }
+        let interval = Duration::from_millis(u64::from(interval_millis));
+        self.telemetry_poll_interval = Some(interval);
+        self.next_telemetry_request = Instant::now();
+        self.events
+            .push_back(BackendEvent::TelemetryPollingChanged {
+                active: true,
+                interval_millis,
+            });
+        self.queue_due_telemetry_request(Instant::now());
+    }
 }
 
 impl BackendBridge for MockBridge {
@@ -135,7 +204,17 @@ impl BackendBridge for MockBridge {
             }
             UiRequest::Disconnect { link } => {
                 match link {
-                    LinkKind::Rs422 => self.rs422_connected = false,
+                    LinkKind::Rs422 => {
+                        self.rs422_connected = false;
+                        if let Some(interval) = self.telemetry_poll_interval.take() {
+                            self.events
+                                .push_back(BackendEvent::TelemetryPollingChanged {
+                                    active: false,
+                                    interval_millis: u32::try_from(interval.as_millis())
+                                        .unwrap_or(u32::MAX),
+                                });
+                        }
+                    }
                     LinkKind::Lvds => {
                         self.lvds_connected = false;
                         if self.acquisition_running {
@@ -166,6 +245,10 @@ impl BackendBridge for MockBridge {
                 self.events
                     .push_back(BackendEvent::AcquisitionChanged { running: false });
             }
+            UiRequest::SetTelemetryPolling {
+                enabled,
+                interval_millis,
+            } => self.set_telemetry_polling(enabled, interval_millis),
             UiRequest::SendCommand(frame) => {
                 if !self.rs422_connected {
                     self.rejected_commands = self.rejected_commands.wrapping_add(1);
@@ -199,6 +282,9 @@ impl BackendBridge for MockBridge {
             return Some(event);
         }
         if self.queue_one_due_frame(Instant::now()) {
+            return self.events.pop_front();
+        }
+        if self.queue_due_telemetry_request(Instant::now()) {
             return self.events.pop_front();
         }
         None

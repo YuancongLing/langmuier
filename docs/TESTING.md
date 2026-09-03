@@ -9,6 +9,8 @@ Coverage includes:
 - checksum, header, declared-length, type, and address failures;
 - fragmented input at arbitrary byte boundaries, concatenated frames, leading noise,
   corrupt frames, and byte-wise stream input;
+- UDP/LVDS wrapper validation, source filtering, and reassembly of deployed 269-byte
+  raw frames before the desktop backend reports live reception;
 - bounded-channel behavior and clean worker shutdown;
 - native storage headers/records, partial and full batches, final flush, queue timeout,
   sink failure, and bounded shutdown;
@@ -40,7 +42,7 @@ cargo test -p langmuir-storage --features hdf5
 cargo test -p langmuir-storage --features hdf5-static
 ```
 
-For a repeatable headless throughput measurement using complete 270-byte packets,
+For a repeatable mock throughput measurement using complete 269-byte test packets,
 fragmentation, both bounded worker queues, and real `.lpd` writes:
 
 ```bash

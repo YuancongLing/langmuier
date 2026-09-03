@@ -131,7 +131,7 @@ mod tests {
         assert_eq!(exit.reason, StopReason::EndOfStream);
         let scientific = scientific.unwrap();
         assert_eq!(scientific.timestamp.microseconds, 9);
-        assert_eq!(scientific.sequence, 9);
+        assert_eq!(scientific.sequence, 0);
         assert_eq!(scientific.channel_1[0], 2057);
         assert_eq!(exit.metrics.frames_decoded, 1);
     }

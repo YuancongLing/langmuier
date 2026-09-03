@@ -29,8 +29,10 @@ the explicit `mock` feature:
 cargo test -p langmuir-transport --features mock
 ```
 
-The feature-gated headless replay benchmark exercises real 270-byte LVDS
-packets through fragmentation, decoding, bounded queues, and `BinarySink`:
+The feature-gated headless replay benchmark exercises 269-byte mock LVDS
+packets through fragmentation, decoding, bounded queues, and `BinarySink`. Live UDP
+traffic uses a 24-byte wrapper and reassembles into 269-byte LVDS raw frames through
+`langmuir-protocol-cli receive-udp-lvds`:
 
 ```text
 cargo run -p langmuir-transport --release --features mock --example replay_bench -- 10000 257

@@ -64,10 +64,17 @@ There is no automatic real-device-to-mock fallback.
 
 ## Physical-link caveat
 
-At 20 frames/s, a 270-byte LVDS frame is 5,400 bytes/s. RS422 command/telemetry
+At 20 frames/s, a 269-byte LVDS raw frame is 5,380 bytes/s. RS422 command/telemetry
 uses 115200 baud with odd parity (`8O1`). Scientific data arrives through an
-LVDS-to-UDP converter: the application binds the configured local UDP address and
-passes the received datagram payload bytes directly into the incremental LVDS frame
-decoder. A datagram may contain a full 270-byte frame, multiple consecutive frames,
-or a fragment; UDP datagram boundaries are not used as scientific-frame boundaries.
-The converter must emit raw LVDS protocol bytes with no proprietary packet header.
+LVDS-to-UDP converter. Each deployed UDP datagram has a 24-byte fragment header and
+carries a portion of one 269-byte LVDS frame; the receiver preserves UDP datagram
+boundaries and reassembles by the header's byte offset and frame sequence. A one-fragment
+frame is therefore 293 bytes on the UDP payload (`24 + 269`).
+
+Both `langmuir-protocol-cli receive-udp-lvds` and the desktop backend preserve UDP
+datagram boundaries and reassemble the deployed wrapper. The desktop backend binds
+`192.168.1.100:1534` by default and filters `192.168.1.128:1534`; it exposes live
+reassembly and rejection counters, decodes the reassembled 269-byte frame, and sends its
+125-point channels to storage and plots. The UDP wrapper sequence tags each stored frame;
+the LVDS body has no sequence field. CRC16 uses the lower computer's CCITT-FALSE
+parameters; live rejection awaits confirmation of the CRC coverage call site.

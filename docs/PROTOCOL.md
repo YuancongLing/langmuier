@@ -22,18 +22,25 @@ mode, frequency, voltage, CPU temperature, AD9833/DAC8563/ADC1/ADC2/LVDS raw sta
 bytes, and the five-byte last injected command. It does not include PCB temperature,
 magnetic field, DDS2, or an auxiliary status field.
 
-## LVDS scientific response (270 bytes)
+## Deployed LVDS scientific response (269 bytes)
 
 ```text
-EB 90 | 55 | AA | 01 07 | AA | UTC seconds | microseconds |
-sequence | ch1 first u16 | ch2 first u16 | 248 signed deltas | SUM8
+UDP fragment wrapper (24 bytes) | LVDS raw frame (269 bytes, after reassembly)
 ```
 
-The length field is `0x0107` (263 bytes), covering the data type, timestamp, sequence,
-and 252-byte data domain; the one-byte checksum is outside that length. The checksum is
-the low eight bits of the sum of bytes from the data type through `DATA251`. There is no
-LVDS trailer. The documents also mention 269 bytes and a two-byte checksum in prose; the
-field table is internally consistent only with this 270-byte interpretation.
+The deployed UDP wrapper declares every complete LVDS raw frame as `269` bytes. The raw
+frame is `EB 90 | 55 | AA | 01 07 | AA | UTC(u32) | microseconds(u32) |
+data[252] | CRC16(u16, big-endian)`. `0x0107 = 263` is the declared valid-data length
+from `type` through the two-byte CRC16. The LVDS body has no packet-sequence field; the
+UDP wrapper's `frame_seq` is retained as the capture sequence tag. The UDP `frame_len`
+field defines the actual frame boundary.
+
+CRC16 uses the lower computer's `Calculate_CRC16` implementation: polynomial `0x1021`,
+initial value `0xFFFF`, no input/output reflection, and no final xor. The core provides
+strict validation over the declared valid-data range. Current captured frames do not
+match that range's calculated CRC, so the live receiver parses and retains the CRC field
+without rejecting packets until the lower computer's `Calculate_CRC16` call site confirms
+its exact `data` pointer and `length`.
 
 The data domain contains 125 samples per channel. `DATA0..DATA3` are unsigned big-endian
 16-bit absolute first samples. `DATA4..DATA251` alternate signed two's-complement `i8`
@@ -57,6 +64,7 @@ Unused data bytes are `9B`; the total frame length is 12 bytes.
 - `31 55`: enable LVDS.
 - `AA`: disable LVDS (as listed in the supplied table).
 
-Unlike the Python decoder, the Rust decoder rejects wrong declared lengths, checksum or
-CRC failures, wrong fixed type/device values, invalid microsecond fields, and extra or
-truncated bytes. These are correctness fixes, not wire-format changes.
+The Rust decoder rejects wrong declared lengths, wrong fixed type/device values, invalid
+microsecond fields, invalid reconstructed samples, and extra or truncated bytes. CRC16
+rejection is enabled in the core validation function and will be enabled live once the
+lower computer's CRC coverage range is confirmed.

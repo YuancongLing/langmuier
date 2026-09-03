@@ -8,7 +8,8 @@ use langmuir_core::Command;
 use crate::{
     bridge::{
         BackendBridge, BackendEvent, BackendStateSnapshot, LinkKind, LinkMetricsSnapshot, LogLevel,
-        TelemetrySnapshot, UiRequest,
+        TELEMETRY_POLL_INTERVAL_MAX_MILLIS, TELEMETRY_POLL_INTERVAL_MIN_MILLIS,
+        TelemetryPollingState, TelemetrySnapshot, UiRequest,
     },
     buffer::{SamplePoint, TimeSeriesBuffer},
     ui::{fonts, theme},
@@ -28,6 +29,8 @@ const LOG_HEIGHT: f32 = 128.0;
 const COMMAND_SIDEBAR_WIDTH: f32 = 300.0;
 const TELEMETRY_SIDEBAR_WIDTH: f32 = 300.0;
 const COMMAND_EDITOR_HEIGHT: f32 = 132.0;
+const ADC_ZERO_COUNTS: f64 = 32_768.0;
+const ADC_COUNTS_PER_MILLIVOLT: f64 = 6.4;
 const BAUD_RATES: [u32; 14] = [
     8_000_000, 6_000_000, 4_000_000, 3_000_000, 2_000_000, 1_000_000, 921_600, 460_800, 230_400,
     115_200, 57_600, 38_400, 19_200, 9_600,
@@ -55,8 +58,8 @@ struct LvdsUdpPanelState {
 impl Default for LvdsUdpPanelState {
     fn default() -> Self {
         Self {
-            bind_address: "0.0.0.0".to_owned(),
-            port: 5_000,
+            bind_address: "192.168.1.100".to_owned(),
+            port: 1_534,
             connected: false,
             detail: "未监听".to_owned(),
             metrics: None,
@@ -153,6 +156,7 @@ pub struct LangmuirDesktopApp {
     rs422: ConnectionPanelState,
     lvds: LvdsUdpPanelState,
     acquisition_running: bool,
+    telemetry_polling: TelemetryPollingState,
     command_family: CommandFamily,
     configuration_mode: ConfigurationMode,
     frequency: u8,
@@ -191,6 +195,7 @@ impl LangmuirDesktopApp {
             rs422: ConnectionPanelState::default(),
             lvds: LvdsUdpPanelState::default(),
             acquisition_running: false,
+            telemetry_polling: TelemetryPollingState::default(),
             command_family: CommandFamily::Telemetry,
             configuration_mode: ConfigurationMode::Frequency,
             frequency: 10,
@@ -212,7 +217,7 @@ impl LangmuirDesktopApp {
             ),
             show_channels: [true, true],
             plot_layout: PlotLayout::Overlay,
-            overlay_normalized: true,
+            overlay_normalized: false,
             logs: VecDeque::new(),
             faults: VecDeque::new(),
             font_warning: font_report.warning,
@@ -303,6 +308,10 @@ impl LangmuirDesktopApp {
                     },
                 );
             }
+            BackendEvent::TelemetryPollingChanged {
+                active,
+                interval_millis,
+            } => self.apply_telemetry_polling_state(active, interval_millis),
             BackendEvent::StateSnapshot(snapshot) => self.apply_state_snapshot(snapshot),
             BackendEvent::Telemetry(snapshot) => {
                 self.record_telemetry_anomalies(&snapshot);
@@ -334,7 +343,7 @@ impl LangmuirDesktopApp {
                     |time_seconds, value| {
                         let point = SamplePoint {
                             time_seconds: *time_seconds,
-                            value,
+                            value: adc_counts_to_millivolts(value),
                         };
                         *time_seconds += sample_interval_seconds;
                         Some(point)
@@ -345,7 +354,7 @@ impl LangmuirDesktopApp {
                     |time_seconds, value| {
                         let point = SamplePoint {
                             time_seconds: *time_seconds,
-                            value,
+                            value: adc_counts_to_millivolts(value),
                         };
                         *time_seconds += sample_interval_seconds;
                         Some(point)
@@ -369,6 +378,22 @@ impl LangmuirDesktopApp {
         self.lvds.connected = snapshot.lvds_connected;
         self.lvds.detail = snapshot.lvds_detail;
         self.acquisition_running = snapshot.acquisition_running;
+        self.telemetry_polling = snapshot.telemetry_polling;
+    }
+
+    fn apply_telemetry_polling_state(&mut self, active: bool, interval_millis: u32) {
+        self.telemetry_polling = TelemetryPollingState {
+            active,
+            interval_millis,
+        };
+        self.push_log(
+            LogLevel::Info,
+            if active {
+                format!("循环遥测已启动: {interval_millis} ms")
+            } else {
+                "循环遥测已停止".to_owned()
+            },
+        );
     }
 
     fn command(&self) -> Command {
@@ -719,6 +744,9 @@ impl LangmuirDesktopApp {
             )
             .on_hover_text(preview);
         });
+        if !raw_mode && self.command_family == CommandFamily::Telemetry {
+            self.telemetry_polling_control(ui);
+        }
         ui.horizontal(|ui| {
             if ui
                 .add_sized([68.0, 28.0], egui::Button::new("重置"))
@@ -754,6 +782,50 @@ impl LangmuirDesktopApp {
                     self.submit(UiRequest::SendCommand(frame));
                 }
             });
+        });
+    }
+
+    fn telemetry_polling_control(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new("循环周期")
+                    .size(9.0)
+                    .color(theme::TEXT_SECONDARY),
+            );
+            let changed = ui
+                .add_sized(
+                    [92.0, 24.0],
+                    egui::DragValue::new(&mut self.telemetry_polling.interval_millis)
+                        .range(
+                            TELEMETRY_POLL_INTERVAL_MIN_MILLIS..=TELEMETRY_POLL_INTERVAL_MAX_MILLIS,
+                        )
+                        .speed(100.0)
+                        .suffix(" ms"),
+                )
+                .changed();
+            if changed && self.telemetry_polling.active {
+                self.submit(UiRequest::SetTelemetryPolling {
+                    enabled: true,
+                    interval_millis: self.telemetry_polling.interval_millis,
+                });
+            }
+            let (label, fill) = if self.telemetry_polling.active {
+                ("停止循环", theme::DANGER)
+            } else {
+                ("开始循环", theme::SUCCESS)
+            };
+            if ui
+                .add_enabled(
+                    self.rs422.connected,
+                    egui::Button::new(RichText::new(label).color(theme::WHITE)).fill(fill),
+                )
+                .clicked()
+            {
+                self.submit(UiRequest::SetTelemetryPolling {
+                    enabled: !self.telemetry_polling.active,
+                    interval_millis: self.telemetry_polling.interval_millis,
+                });
+            }
         });
     }
 
@@ -937,7 +1009,7 @@ impl LangmuirDesktopApp {
                     .y_axis_label(if self.overlay_normalized {
                         "独立归一化幅值（实际量程见图例）"
                     } else {
-                        "采样值（共享 Y 轴）"
+                        "电压 (mV)"
                     })
                     .x_axis_formatter(|mark, range| {
                         format_plot_timestamp(mark.value, range.end() - range.start())
@@ -968,7 +1040,7 @@ impl LangmuirDesktopApp {
                     Plot::new("scientific_plot_channel_1")
                         .show_axes([true, true])
                         .x_axis_label("通道 1 时间")
-                        .y_axis_label("通道 1")
+                        .y_axis_label("通道 1 电压 (mV)")
                         .x_axis_formatter(|mark, range| {
                             format_plot_timestamp(mark.value, range.end() - range.start())
                         })
@@ -990,7 +1062,7 @@ impl LangmuirDesktopApp {
                     Plot::new("scientific_plot_channel_2")
                         .show_axes([true, true])
                         .x_axis_label("通道 2 时间")
-                        .y_axis_label("通道 2")
+                        .y_axis_label("通道 2 电压 (mV)")
                         .x_axis_formatter(|mark, range| {
                             format_plot_timestamp(mark.value, range.end() - range.start())
                         })
@@ -1027,7 +1099,7 @@ impl LangmuirDesktopApp {
                     ui.add_sized(
                         [92.0, theme::CONTROL_HEIGHT],
                         egui::TextEdit::singleline(&mut self.lvds.bind_address)
-                            .hint_text("0.0.0.0"),
+                            .hint_text("192.168.1.100"),
                     );
                     ui.label(RichText::new("端口").small().color(theme::TEXT_SECONDARY));
                     ui.add_sized(
@@ -1105,7 +1177,7 @@ impl LangmuirDesktopApp {
                     ui.separator();
                     ui.label(
                         RichText::new(format!(
-                            "解码 {} · 拒绝 {} · 显示丢弃 {}",
+                            "重组 {} · 拒绝 {} · 显示丢弃 {}",
                             metrics.frames_decoded,
                             metrics.rejected_frames,
                             metrics.ui_display_events_dropped
@@ -1116,7 +1188,7 @@ impl LangmuirDesktopApp {
                 }
             });
             ui.label(
-                RichText::new("监听 UDP 负载：原始 270B LVDS 帧或其连续片段")
+                RichText::new("网口协议：24B UDP 封装 + 269B LVDS； 192.168.1.128:1534")
                     .size(9.0)
                     .color(theme::TEXT_MUTED),
             );
@@ -1270,6 +1342,10 @@ impl eframe::App for LangmuirDesktopApp {
             Duration::from_millis(250)
         });
     }
+}
+
+fn adc_counts_to_millivolts(previous_sample: f64) -> f64 {
+    (previous_sample - ADC_ZERO_COUNTS) / ADC_COUNTS_PER_MILLIVOLT
 }
 
 fn status_dot(ui: &mut Ui, active: bool) {
@@ -1465,7 +1541,8 @@ mod tests {
     use langmuir_core::Command;
 
     use super::{
-        command_bytes, hex_bytes, normalize_plot_points, recalculate_checksum, work_mode_name,
+        adc_counts_to_millivolts, command_bytes, hex_bytes, normalize_plot_points,
+        recalculate_checksum, work_mode_name,
     };
 
     #[test]
@@ -1505,5 +1582,12 @@ mod tests {
         let mut points = [[0.0, 100.0], [1.0, 200.0], [2.0, 150.0]];
         assert_eq!(normalize_plot_points(&mut points), Some((100.0, 200.0)));
         assert_eq!(points, [[0.0, 0.0], [1.0, 1.0], [2.0, 0.5]]);
+    }
+
+    #[test]
+    fn plot_vertical_axis_uses_the_adc_to_millivolt_formula() {
+        assert!(adc_counts_to_millivolts(32_768.0).abs() < 1.0e-12);
+        assert!((adc_counts_to_millivolts(32_774.4) - 1.0).abs() < 1.0e-12);
+        assert!((adc_counts_to_millivolts(0.0) + 5_120.0).abs() < 1.0e-12);
     }
 }
