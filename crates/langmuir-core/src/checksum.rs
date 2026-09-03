@@ -5,19 +5,19 @@ pub fn additive_checksum(data: &[u8]) -> u8 {
         .fold(0_u8, |checksum, byte| checksum.wrapping_add(*byte))
 }
 
-/// Computes CRC16-CCITT-FALSE (`poly=0x1021`, `init=0xFFFF`, no reflection,
-/// `xorout=0x0000`).
+/// Computes CRC16-CCITT exactly as the lower computer's `Calculate_CRC16`:
+/// `poly=0x1021`, `init=0xFFFF`, no reflection, and `xorout=0x0000`.
 #[must_use]
 pub fn crc16_ccitt_false(data: &[u8]) -> u16 {
     let mut crc = 0xFFFF_u16;
-    for byte in data {
-        crc ^= u16::from(*byte) << 8;
+    for &byte in data {
+        crc ^= u16::from(byte) << 8;
         for _ in 0..8 {
-            crc = if crc & 0x8000 != 0 {
-                (crc << 1) ^ 0x1021
+            if crc & 0x8000 != 0 {
+                crc = (crc << 1) ^ 0x1021;
             } else {
-                crc << 1
-            };
+                crc <<= 1;
+            }
         }
     }
     crc
@@ -35,7 +35,7 @@ mod tests {
     }
 
     #[test]
-    fn crc_matches_standard_check_vector() {
+    fn crc_matches_the_lower_computer_ccitt_reference_algorithm() {
         assert_eq!(crc16_ccitt_false(b"123456789"), 0x29B1);
         assert_eq!(crc16_ccitt_false(&[]), 0xFFFF);
     }

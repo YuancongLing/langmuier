@@ -1,8 +1,13 @@
-use std::{collections::VecDeque, time::Duration};
+use std::{
+    collections::VecDeque,
+    time::{Duration, Instant},
+};
 
 use chrono::{DateTime, Local, Utc};
-use eframe::egui::{self, Align, Color32, ComboBox, Grid, Layout, RichText, Stroke, Ui};
-use egui_plot::{Legend, Line, Plot, PlotPoints};
+use eframe::egui::{
+    self, Align, Color32, ComboBox, Grid, Layout, PointerButton, RichText, Stroke, Ui,
+};
+use egui_plot::{Legend, Line, Plot, PlotPoints, VLine};
 use langmuir_core::Command;
 
 use crate::{
@@ -21,16 +26,19 @@ const PLOT_WINDOW_SECONDS: f64 = 10.0;
 const MAX_DISPLAY_POINTS: usize = 2_000;
 const MAX_LOGS: usize = 500;
 const MAX_FAULTS: usize = 50;
+const MAX_VISIBLE_FAULTS: usize = 3;
 const EVENT_BUDGET_PER_FRAME: usize = 4_096;
 const APPLICATION_WIDTH: f32 = 1_360.0;
 const APPLICATION_HEIGHT: f32 = 860.0;
-const HEADER_HEIGHT: f32 = 52.0;
+const HEADER_HEIGHT: f32 = 60.0;
 const LOG_HEIGHT: f32 = 128.0;
 const COMMAND_SIDEBAR_WIDTH: f32 = 300.0;
 const TELEMETRY_SIDEBAR_WIDTH: f32 = 300.0;
 const COMMAND_EDITOR_HEIGHT: f32 = 132.0;
 const ADC_ZERO_COUNTS: f64 = 32_768.0;
 const ADC_COUNTS_PER_MILLIVOLT: f64 = 6.4;
+const ALARM_COALESCE_WINDOW: Duration = Duration::from_secs(30);
+const DATA_FRESHNESS_WINDOW: Duration = Duration::from_secs(2);
 const BAUD_RATES: [u32; 14] = [
     8_000_000, 6_000_000, 4_000_000, 3_000_000, 2_000_000, 1_000_000, 921_600, 460_800, 230_400,
     115_200, 57_600, 38_400, 19_200, 9_600,
@@ -137,11 +145,93 @@ struct LogEntry {
     message: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AlarmState {
+    Unacknowledged,
+    AcknowledgedUnresolved,
+    Recovered,
+}
+
+impl AlarmState {
+    const ALL: [Self; 3] = [
+        Self::Unacknowledged,
+        Self::AcknowledgedUnresolved,
+        Self::Recovered,
+    ];
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Unacknowledged => "未确认",
+            Self::AcknowledgedUnresolved => "已确认未恢复",
+            Self::Recovered => "已恢复",
+        }
+    }
+
+    const fn color(self) -> Color32 {
+        match self {
+            Self::Unacknowledged => theme::DANGER,
+            Self::AcknowledgedUnresolved => theme::WARNING,
+            Self::Recovered => theme::SUCCESS,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct FaultEntry {
     time: String,
     source: String,
     message: String,
+    state: AlarmState,
+    repetitions: u32,
+    last_seen: Instant,
+}
+
+#[derive(Debug)]
+struct FrozenPlot {
+    channel_1: Vec<[f64; 2]>,
+    channel_2: Vec<[f64; 2]>,
+}
+
+#[derive(Debug)]
+struct OperatorViewState {
+    frozen_plot: Option<FrozenPlot>,
+    plot_cursor_seconds: Option<f64>,
+    alarm_filter: AlarmState,
+    emergency_stop_confirmation_open: bool,
+    last_telemetry_update: Option<Instant>,
+    last_scientific_update: Option<Instant>,
+}
+
+impl Default for OperatorViewState {
+    fn default() -> Self {
+        Self {
+            frozen_plot: None,
+            plot_cursor_seconds: None,
+            alarm_filter: AlarmState::Unacknowledged,
+            emergency_stop_confirmation_open: false,
+            last_telemetry_update: None,
+            last_scientific_update: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ParameterStepState {
+    frequency: u8,
+    mode: u8,
+    voltage: u16,
+    telemetry_interval: u32,
+}
+
+impl Default for ParameterStepState {
+    fn default() -> Self {
+        Self {
+            frequency: 10,
+            mode: 1,
+            voltage: 100,
+            telemetry_interval: 1_000,
+        }
+    }
 }
 
 #[cfg_attr(
@@ -173,6 +263,8 @@ pub struct LangmuirDesktopApp {
     overlay_normalized: bool,
     logs: VecDeque<LogEntry>,
     faults: VecDeque<FaultEntry>,
+    operator: OperatorViewState,
+    parameter_steps: ParameterStepState,
     font_warning: Option<String>,
     #[cfg(feature = "mock")]
     mock_mode: bool,
@@ -220,6 +312,8 @@ impl LangmuirDesktopApp {
             overlay_normalized: false,
             logs: VecDeque::new(),
             faults: VecDeque::new(),
+            operator: OperatorViewState::default(),
+            parameter_steps: ParameterStepState::default(),
             font_warning: font_report.warning,
             #[cfg(feature = "mock")]
             mock_mode,
@@ -246,15 +340,141 @@ impl LangmuirDesktopApp {
     fn push_fault(&mut self, source: impl Into<String>, message: impl Into<String>) {
         let source = source.into();
         let message = message.into();
+        let now = Instant::now();
+        let timestamp = Self::now();
+        if let Some(existing) = self.faults.iter_mut().find(|fault| {
+            fault.source == source
+                && fault.message == message
+                && now.saturating_duration_since(fault.last_seen) <= ALARM_COALESCE_WINDOW
+        }) {
+            existing.time = timestamp;
+            existing.last_seen = now;
+            existing.repetitions = existing.repetitions.saturating_add(1);
+            existing.state = AlarmState::Unacknowledged;
+            return;
+        }
         self.faults.push_front(FaultEntry {
-            time: Self::now(),
+            time: timestamp,
             source: source.clone(),
             message: message.clone(),
+            state: AlarmState::Unacknowledged,
+            repetitions: 1,
+            last_seen: now,
         });
         while self.faults.len() > MAX_FAULTS {
             self.faults.pop_back();
         }
         self.push_log(LogLevel::Error, format!("{source}: {message}"));
+    }
+
+    fn restore_faults_for_source(&mut self, source: &str) {
+        for fault in &mut self.faults {
+            if fault.state != AlarmState::Recovered && fault.source.contains(source) {
+                fault.state = AlarmState::Recovered;
+            }
+        }
+    }
+
+    fn telemetry_is_fresh(&self) -> bool {
+        self.operator
+            .last_telemetry_update
+            .is_some_and(|updated| updated.elapsed() <= DATA_FRESHNESS_WINDOW)
+    }
+
+    fn scientific_data_is_fresh(&self) -> bool {
+        self.operator
+            .last_scientific_update
+            .is_some_and(|updated| updated.elapsed() <= DATA_FRESHNESS_WINDOW)
+    }
+
+    fn unacknowledged_fault_count(&self) -> usize {
+        self.faults
+            .iter()
+            .filter(|fault| fault.state == AlarmState::Unacknowledged)
+            .count()
+    }
+
+    fn toggle_display_freeze(&mut self) {
+        if self.operator.frozen_plot.is_some() {
+            self.operator.frozen_plot = None;
+            self.push_log(LogLevel::Info, "画面更新已恢复，后台采集未中断");
+        } else {
+            self.operator.frozen_plot = Some(FrozenPlot {
+                channel_1: self.channel_1.decimated(MAX_DISPLAY_POINTS),
+                channel_2: self.channel_2.decimated(MAX_DISPLAY_POINTS),
+            });
+            self.push_log(LogLevel::Info, "画面已冻结，后台采集继续运行");
+        }
+    }
+
+    fn display_plot_points(&mut self) -> (Vec<[f64; 2]>, Vec<[f64; 2]>) {
+        if let Some(frozen) = &self.operator.frozen_plot {
+            return (frozen.channel_1.clone(), frozen.channel_2.clone());
+        }
+        (
+            self.channel_1.decimated(MAX_DISPLAY_POINTS),
+            self.channel_2.decimated(MAX_DISPLAY_POINTS),
+        )
+    }
+
+    fn emergency_stop_dialog(&mut self, context: &egui::Context) {
+        if !self.operator.emergency_stop_confirmation_open {
+            return;
+        }
+        let mut open = true;
+        let mut confirmed = false;
+        let mut cancelled = false;
+        egui::Window::new("软件急停确认")
+            .collapsible(false)
+            .resizable(false)
+            .default_width(360.0)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .open(&mut open)
+            .show(context, |ui| {
+                ui.label(
+                    RichText::new("停止上位机采集和循环遥测；RS422 已连接时会发送禁用 LVDS 指令。")
+                        .color(theme::TEXT),
+                );
+                ui.label(
+                    RichText::new("该操作是软件急停，不替代硬件急停回路。")
+                        .small()
+                        .color(theme::WARNING),
+                );
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    if ui.button("取消").clicked() {
+                        cancelled = true;
+                    }
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if ui
+                            .add_sized(
+                                [144.0, theme::CRITICAL_CONTROL_HEIGHT],
+                                egui::Button::new(
+                                    RichText::new("确认软件急停").strong().color(theme::WHITE),
+                                )
+                                .fill(theme::DANGER),
+                            )
+                            .clicked_by(PointerButton::Primary)
+                        {
+                            confirmed = true;
+                        }
+                    });
+                });
+            });
+        self.operator.emergency_stop_confirmation_open = open && !confirmed && !cancelled;
+        if confirmed {
+            self.submit(UiRequest::StopAcquisition);
+            self.submit(UiRequest::SetTelemetryPolling {
+                enabled: false,
+                interval_millis: self.telemetry_polling.interval_millis,
+            });
+            if self.rs422.connected {
+                self.submit(UiRequest::SendCommand(command_bytes(
+                    Command::SetLvdsEnabled(false),
+                )));
+            }
+            self.push_log(LogLevel::Warning, "已执行软件急停");
+        }
     }
 
     fn submit(&mut self, request: UiRequest) {
@@ -294,11 +514,17 @@ impl LangmuirDesktopApp {
                         self.lvds.detail.clone_from(&detail);
                     }
                 }
+                if connected {
+                    self.restore_faults_for_source(&link.to_string());
+                }
                 let status = if connected { "已连接" } else { "已断开" };
                 self.push_log(LogLevel::Info, format!("{link} {status}: {detail}"));
             }
             BackendEvent::AcquisitionChanged { running } => {
                 self.acquisition_running = running;
+                if running {
+                    self.restore_faults_for_source("采集");
+                }
                 self.push_log(
                     LogLevel::Info,
                     if running {
@@ -314,6 +540,7 @@ impl LangmuirDesktopApp {
             } => self.apply_telemetry_polling_state(active, interval_millis),
             BackendEvent::StateSnapshot(snapshot) => self.apply_state_snapshot(snapshot),
             BackendEvent::Telemetry(snapshot) => {
+                self.operator.last_telemetry_update = Some(Instant::now());
                 self.record_telemetry_anomalies(&snapshot);
                 self.telemetry = Some(snapshot);
             }
@@ -337,30 +564,13 @@ impl LangmuirDesktopApp {
                 sample_interval_seconds,
                 channel_1,
                 channel_2,
-            } => {
-                self.channel_1.extend(channel_1.into_iter().scan(
-                    channel_1_start_seconds,
-                    |time_seconds, value| {
-                        let point = SamplePoint {
-                            time_seconds: *time_seconds,
-                            value: adc_counts_to_millivolts(value),
-                        };
-                        *time_seconds += sample_interval_seconds;
-                        Some(point)
-                    },
-                ));
-                self.channel_2.extend(channel_2.into_iter().scan(
-                    channel_2_start_seconds,
-                    |time_seconds, value| {
-                        let point = SamplePoint {
-                            time_seconds: *time_seconds,
-                            value: adc_counts_to_millivolts(value),
-                        };
-                        *time_seconds += sample_interval_seconds;
-                        Some(point)
-                    },
-                ));
-            }
+            } => self.handle_scientific_samples(
+                channel_1_start_seconds,
+                channel_2_start_seconds,
+                sample_interval_seconds,
+                channel_1,
+                channel_2,
+            ),
             BackendEvent::CommandSent(frame) => {
                 self.push_log(LogLevel::Info, format!("TX {}", hex_frame(&frame)));
             }
@@ -370,6 +580,39 @@ impl LangmuirDesktopApp {
             BackendEvent::Fault { source, message } => self.push_fault(source, message),
             BackendEvent::Log { level, message } => self.push_log(level, message),
         }
+    }
+
+    fn handle_scientific_samples(
+        &mut self,
+        channel_1_start_seconds: f64,
+        channel_2_start_seconds: f64,
+        sample_interval_seconds: f64,
+        channel_1: Vec<f64>,
+        channel_2: Vec<f64>,
+    ) {
+        self.operator.last_scientific_update = Some(Instant::now());
+        self.channel_1.extend(channel_1.into_iter().scan(
+            channel_1_start_seconds,
+            |time_seconds, value| {
+                let point = SamplePoint {
+                    time_seconds: *time_seconds,
+                    value: adc_counts_to_millivolts(value),
+                };
+                *time_seconds += sample_interval_seconds;
+                Some(point)
+            },
+        ));
+        self.channel_2.extend(channel_2.into_iter().scan(
+            channel_2_start_seconds,
+            |time_seconds, value| {
+                let point = SamplePoint {
+                    time_seconds: *time_seconds,
+                    value: adc_counts_to_millivolts(value),
+                };
+                *time_seconds += sample_interval_seconds;
+                Some(point)
+            },
+        ));
     }
 
     fn apply_state_snapshot(&mut self, snapshot: BackendStateSnapshot) {
@@ -594,21 +837,27 @@ impl LangmuirDesktopApp {
                 theme::form_label(ui, parameter_label, configuration_enabled);
                 ui.add_enabled_ui(configuration_enabled, |ui| match self.configuration_mode {
                     ConfigurationMode::Frequency => {
-                        ui.add_sized(
-                            [ui.available_width(), theme::CONTROL_HEIGHT],
-                            egui::DragValue::new(&mut self.frequency).range(0..=u8::MAX),
+                        integer_parameter_u8(
+                            ui,
+                            &mut self.frequency,
+                            &mut self.parameter_steps.frequency,
+                            &[1, 5, 10],
                         );
                     }
                     ConfigurationMode::Mode => {
-                        ui.add_sized(
-                            [ui.available_width(), theme::CONTROL_HEIGHT],
-                            egui::DragValue::new(&mut self.mode).range(0..=u8::MAX),
+                        integer_parameter_u8(
+                            ui,
+                            &mut self.mode,
+                            &mut self.parameter_steps.mode,
+                            &[1, 16, 64],
                         );
                     }
                     ConfigurationMode::Voltage => {
-                        ui.add_sized(
-                            [ui.available_width(), theme::CONTROL_HEIGHT],
-                            egui::DragValue::new(&mut self.voltage).range(0..=u16::MAX),
+                        integer_parameter_u16(
+                            ui,
+                            &mut self.voltage,
+                            &mut self.parameter_steps.voltage,
+                            &[1, 10, 100],
                         );
                     }
                 });
@@ -636,13 +885,9 @@ impl LangmuirDesktopApp {
                 for (index, byte) in frame.iter().enumerate() {
                     let active = !raw_mode && self.command_byte_is_active(index);
                     let (fill, stroke, text_color) = match index {
-                        6 => (theme::PRIMARY, theme::PRIMARY, Color32::BLACK),
-                        11 => (theme::DANGER, theme::DANGER, Color32::BLACK),
-                        _ if active => (
-                            Color32::from_rgb(255, 247, 237),
-                            Color32::from_rgb(249, 115, 22),
-                            Color32::from_rgb(194, 65, 12),
-                        ),
+                        6 => (theme::PRIMARY, theme::PRIMARY, theme::WHITE),
+                        11 => (theme::DANGER, theme::DANGER, theme::WHITE),
+                        _ if active => (theme::SURFACE_ALT, theme::WARNING, theme::WARNING),
                         _ => (theme::SURFACE_ALT, theme::BORDER, theme::TEXT),
                     };
                     egui::Frame::new()
@@ -792,23 +1037,59 @@ impl LangmuirDesktopApp {
                     .size(9.0)
                     .color(theme::TEXT_SECONDARY),
             );
-            let changed = ui
-                .add_sized(
-                    [92.0, 24.0],
-                    egui::DragValue::new(&mut self.telemetry_polling.interval_millis)
-                        .range(
-                            TELEMETRY_POLL_INTERVAL_MIN_MILLIS..=TELEMETRY_POLL_INTERVAL_MAX_MILLIS,
-                        )
-                        .speed(100.0)
-                        .suffix(" ms"),
+            ui.label(
+                RichText::new("滑块粗调 / 数字精调")
+                    .size(9.0)
+                    .color(theme::TEXT_MUTED),
+            );
+        });
+        let slider_changed = ui
+            .add(
+                egui::Slider::new(
+                    &mut self.telemetry_polling.interval_millis,
+                    TELEMETRY_POLL_INTERVAL_MIN_MILLIS..=TELEMETRY_POLL_INTERVAL_MAX_MILLIS,
                 )
-                .changed();
-            if changed && self.telemetry_polling.active {
-                self.submit(UiRequest::SetTelemetryPolling {
-                    enabled: true,
-                    interval_millis: self.telemetry_polling.interval_millis,
-                });
-            }
+                .show_value(false)
+                .logarithmic(true)
+                .step_by(f64::from(self.parameter_steps.telemetry_interval)),
+            )
+            .changed();
+        let input_changed = ui
+            .horizontal(|ui| {
+                let changed = ui
+                    .add_sized(
+                        [102.0, theme::CONTROL_HEIGHT],
+                        egui::DragValue::new(&mut self.telemetry_polling.interval_millis)
+                            .range(
+                                TELEMETRY_POLL_INTERVAL_MIN_MILLIS
+                                    ..=TELEMETRY_POLL_INTERVAL_MAX_MILLIS,
+                            )
+                            .speed(f64::from(self.parameter_steps.telemetry_interval))
+                            .suffix(" ms"),
+                    )
+                    .changed();
+                for preset in [100, 1_000, 5_000] {
+                    if ui
+                        .selectable_label(
+                            self.parameter_steps.telemetry_interval == preset,
+                            format!("{preset}"),
+                        )
+                        .clicked()
+                    {
+                        self.parameter_steps.telemetry_interval = preset;
+                    }
+                }
+                changed
+            })
+            .inner;
+        let changed = slider_changed || input_changed;
+        if changed && self.telemetry_polling.active {
+            self.submit(UiRequest::SetTelemetryPolling {
+                enabled: true,
+                interval_millis: self.telemetry_polling.interval_millis,
+            });
+        }
+        ui.horizontal(|ui| {
             let (label, fill) = if self.telemetry_polling.active {
                 ("停止循环", theme::DANGER)
             } else {
@@ -858,9 +1139,13 @@ impl LangmuirDesktopApp {
             });
             return;
         };
+        let fresh = self.telemetry_is_fresh();
 
         theme::card().show(ui, |ui| {
-            theme::section_title(ui, "时间与工作参数");
+            ui.horizontal(|ui| {
+                theme::section_title(ui, "时间与工作参数");
+                heartbeat_indicator(ui, fresh);
+            });
             Grid::new("telemetry_parameters")
                 .num_columns(2)
                 .min_col_width(120.0)
@@ -870,14 +1155,25 @@ impl LangmuirDesktopApp {
                         ui,
                         "下位机时间",
                         format_timestamp(data.absolute_time_seconds),
+                        fresh,
                     );
-                    telemetry_value_cell(ui, "自守时 (s)", data.local_time_seconds.to_string());
+                    telemetry_value_cell(
+                        ui,
+                        "自守时 (s)",
+                        data.local_time_seconds.to_string(),
+                        fresh,
+                    );
                     ui.end_row();
-                    telemetry_value_cell(ui, "遥测计数", data.telemetry_request_count.to_string());
-                    telemetry_value_cell(ui, "工作模式", work_mode_name(data.work_mode));
+                    telemetry_value_cell(
+                        ui,
+                        "遥测计数",
+                        data.telemetry_request_count.to_string(),
+                        fresh,
+                    );
+                    telemetry_value_cell(ui, "工作模式", work_mode_name(data.work_mode), fresh);
                     ui.end_row();
-                    telemetry_value_cell(ui, "扫描频率", data.scan_frequency.to_string());
-                    telemetry_value_cell(ui, "扫描电压", data.scan_voltage.to_string());
+                    telemetry_value_cell(ui, "扫描频率", data.scan_frequency.to_string(), fresh);
+                    telemetry_value_cell(ui, "扫描电压", data.scan_voltage.to_string(), fresh);
                     ui.end_row();
                 });
         });
@@ -885,7 +1181,7 @@ impl LangmuirDesktopApp {
         ui.add_space(7.0);
         theme::card().show(ui, |ui| {
             theme::section_title(ui, "温度");
-            temperature_bar(ui, "CPU 温度", data.cpu_temperature_celsius, theme::PRIMARY);
+            temperature_bar(ui, "CPU 温度", data.cpu_temperature_celsius, fresh);
         });
 
         ui.add_space(7.0);
@@ -913,40 +1209,112 @@ impl LangmuirDesktopApp {
                 .min_col_width(120.0)
                 .spacing([8.0, 4.0])
                 .show(ui, |ui| {
-                    protocol_status_cell(ui, "AD9833", data.ad9833_status);
-                    protocol_status_cell(ui, "DAC8563", data.dac8563_status);
+                    protocol_status_cell(ui, "AD9833", data.ad9833_status, fresh);
+                    protocol_status_cell(ui, "DAC8563", data.dac8563_status, fresh);
                     ui.end_row();
-                    protocol_status_cell(ui, "ADC1", data.adc_1_status);
-                    protocol_status_cell(ui, "ADC2", data.adc_2_status);
+                    protocol_status_cell(ui, "ADC1", data.adc_1_status, fresh);
+                    protocol_status_cell(ui, "ADC2", data.adc_2_status, fresh);
                     ui.end_row();
-                    protocol_status_cell(ui, "LVDS", data.lvds_status);
-                    telemetry_value_cell(ui, "上一条指令", hex_bytes(&data.last_injected_command));
+                    protocol_status_cell(ui, "LVDS", data.lvds_status, fresh);
+                    telemetry_value_cell(
+                        ui,
+                        "上一条指令",
+                        hex_bytes(&data.last_injected_command),
+                        fresh,
+                    );
                     ui.end_row();
                 });
         });
     }
 
-    fn fault_panel(&self, ui: &mut Ui) {
+    fn fault_panel(&mut self, ui: &mut Ui) {
         theme::card().show(ui, |ui| {
             ui.horizontal(|ui| {
-                theme::section_title(ui, "异常指令记录");
+                theme::section_title(ui, "报警");
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(
-                        RichText::new(format!("{}/{}", self.faults.len(), MAX_FAULTS))
-                            .small()
-                            .color(theme::TEXT_MUTED),
+                        RichText::new(format!(
+                            "未确认 {} · {}/{}",
+                            self.unacknowledged_fault_count(),
+                            self.faults.len(),
+                            MAX_FAULTS
+                        ))
+                        .small()
+                        .color(theme::TEXT_MUTED),
                     );
                 });
             });
-            if let Some(fault) = self.faults.front() {
-                let summary = format!("[{}] {}: {}", fault.time, fault.source, fault.message);
-                ui.add(
-                    egui::Label::new(RichText::new(&summary).size(10.0).color(theme::DANGER))
-                        .truncate(),
-                )
-                .on_hover_text(summary);
+            ui.horizontal_wrapped(|ui| {
+                for state in AlarmState::ALL {
+                    ui.selectable_value(&mut self.operator.alarm_filter, state, state.label());
+                }
+            });
+            let visible: Vec<_> = self
+                .faults
+                .iter()
+                .enumerate()
+                .filter_map(|(index, fault)| {
+                    (fault.state == self.operator.alarm_filter).then_some(index)
+                })
+                .take(MAX_VISIBLE_FAULTS)
+                .collect();
+            if visible.is_empty() {
+                ui.label(
+                    RichText::new("该筛选下没有报警")
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
             } else {
-                ui.label(RichText::new("暂无异常").small().color(theme::TEXT_MUTED));
+                for index in visible {
+                    let fault = self
+                        .faults
+                        .get_mut(index)
+                        .expect("filtered fault index remains valid");
+                    let color = if fault.state == AlarmState::Unacknowledged {
+                        flashing_alarm_color(ui, fault.state)
+                    } else {
+                        fault.state.color()
+                    };
+                    egui::Frame::new()
+                        .fill(color.gamma_multiply(0.16))
+                        .stroke(Stroke::new(1.0, color))
+                        .corner_radius(4.0)
+                        .inner_margin(egui::Margin::same(5))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                theme::status_badge(ui, fault.state.label(), color);
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{}  ×{}",
+                                        fault.time, fault.repetitions
+                                    ))
+                                    .small()
+                                    .color(theme::TEXT_MUTED),
+                                );
+                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                    match fault.state {
+                                        AlarmState::Unacknowledged => {
+                                            if ui.button("确认").clicked() {
+                                                fault.state = AlarmState::AcknowledgedUnresolved;
+                                            }
+                                        }
+                                        AlarmState::AcknowledgedUnresolved => {
+                                            if ui.button("标记恢复").clicked() {
+                                                fault.state = AlarmState::Recovered;
+                                            }
+                                        }
+                                        AlarmState::Recovered => {}
+                                    }
+                                });
+                            });
+                            let summary = format!("{}: {}", fault.source, fault.message);
+                            ui.add(
+                                egui::Label::new(RichText::new(&summary).size(10.0).color(color))
+                                    .truncate(),
+                            )
+                            .on_hover_text(summary);
+                        });
+                }
             }
         });
     }
@@ -972,11 +1340,31 @@ impl LangmuirDesktopApp {
             if self.plot_layout == PlotLayout::Overlay {
                 ui.checkbox(&mut self.overlay_normalized, "叠加独立归一");
             }
+            let frozen = self.operator.frozen_plot.is_some();
+            let freeze_label = if frozen {
+                "恢复更新"
+            } else {
+                "冻结画面"
+            };
+            if ui
+                .add(egui::Button::new(freeze_label).fill(if frozen {
+                    theme::PRIMARY
+                } else {
+                    theme::SURFACE_ALT
+                }))
+                .clicked()
+            {
+                self.toggle_display_freeze();
+            }
             if ui.button("清空").clicked() {
                 self.channel_1.clear();
                 self.channel_2.clear();
+                self.operator.plot_cursor_seconds = None;
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if frozen {
+                    theme::status_badge(ui, "画面冻结", theme::PRIMARY);
+                }
                 ui.small(format!(
                     "固定窗 {:.0}s · 缓存 {}/{} 点",
                     PLOT_WINDOW_SECONDS,
@@ -985,9 +1373,15 @@ impl LangmuirDesktopApp {
                 ));
             });
         });
-        let mut channel_1 = self.channel_1.decimated(MAX_DISPLAY_POINTS);
-        let mut channel_2 = self.channel_2.decimated(MAX_DISPLAY_POINTS);
+        let (mut channel_1, mut channel_2) = self.display_plot_points();
+        let cursor_channel_1 = channel_1.clone();
+        let cursor_channel_2 = channel_2.clone();
+        if let Some(cursor) = self.operator.plot_cursor_seconds {
+            plot_cursor_readout(ui, cursor, &cursor_channel_1, &cursor_channel_2);
+        }
         let available_plot_height = ui.available_height().max(180.0);
+        let cursor = self.operator.plot_cursor_seconds;
+        let mut cursor_update = None;
         match self.plot_layout {
             PlotLayout::Overlay => {
                 let channel_1_range = if self.overlay_normalized {
@@ -1015,23 +1409,29 @@ impl LangmuirDesktopApp {
                         format_plot_timestamp(mark.value, range.end() - range.start())
                     })
                     .allow_scroll(false)
+                    .allow_drag(false)
                     .allow_zoom(true)
                     .allow_boxed_zoom(true)
                     .show_background(true)
                     .height(available_plot_height)
                     .show(ui, |plot_ui| {
+                        if let Some(cursor) = cursor {
+                            plot_ui
+                                .vline(VLine::new("游标", cursor).color(theme::WARNING).width(1.5));
+                        }
                         if self.show_channels[0] && !channel_1.is_empty() {
                             plot_ui.line(
-                                Line::new(channel_1_name, PlotPoints::from(channel_1))
-                                    .color(Color32::from_rgb(37, 99, 235)),
+                                Line::new(channel_1_name, PlotPoints::from(channel_1.clone()))
+                                    .color(theme::PRIMARY),
                             );
                         }
                         if self.show_channels[1] && !channel_2.is_empty() {
                             plot_ui.line(
-                                Line::new(channel_2_name, PlotPoints::from(channel_2))
-                                    .color(Color32::from_rgb(220, 38, 38)),
+                                Line::new(channel_2_name, PlotPoints::from(channel_2.clone()))
+                                    .color(theme::DANGER),
                             );
                         }
+                        update_plot_cursor_from_pointer(plot_ui, &mut cursor_update);
                     });
             }
             PlotLayout::Split => {
@@ -1045,17 +1445,24 @@ impl LangmuirDesktopApp {
                             format_plot_timestamp(mark.value, range.end() - range.start())
                         })
                         .allow_scroll(false)
+                        .allow_drag(false)
                         .allow_zoom(true)
                         .allow_boxed_zoom(true)
                         .show_background(true)
                         .height(split_height)
                         .show(ui, |plot_ui| {
-                            if !channel_1.is_empty() {
-                                plot_ui.line(
-                                    Line::new("通道 1", PlotPoints::from(channel_1))
-                                        .color(Color32::from_rgb(37, 99, 235)),
+                            if let Some(cursor) = cursor {
+                                plot_ui.vline(
+                                    VLine::new("游标", cursor).color(theme::WARNING).width(1.5),
                                 );
                             }
+                            if !channel_1.is_empty() {
+                                plot_ui.line(
+                                    Line::new("通道 1", PlotPoints::from(channel_1.clone()))
+                                        .color(theme::PRIMARY),
+                                );
+                            }
+                            update_plot_cursor_from_pointer(plot_ui, &mut cursor_update);
                         });
                 }
                 if self.show_channels[1] {
@@ -1067,20 +1474,30 @@ impl LangmuirDesktopApp {
                             format_plot_timestamp(mark.value, range.end() - range.start())
                         })
                         .allow_scroll(false)
+                        .allow_drag(false)
                         .allow_zoom(true)
                         .allow_boxed_zoom(true)
                         .show_background(true)
                         .height(split_height)
                         .show(ui, |plot_ui| {
-                            if !channel_2.is_empty() {
-                                plot_ui.line(
-                                    Line::new("通道 2", PlotPoints::from(channel_2))
-                                        .color(Color32::from_rgb(220, 38, 38)),
+                            if let Some(cursor) = cursor {
+                                plot_ui.vline(
+                                    VLine::new("游标", cursor).color(theme::WARNING).width(1.5),
                                 );
                             }
+                            if !channel_2.is_empty() {
+                                plot_ui.line(
+                                    Line::new("通道 2", PlotPoints::from(channel_2.clone()))
+                                        .color(theme::DANGER),
+                                );
+                            }
+                            update_plot_cursor_from_pointer(plot_ui, &mut cursor_update);
                         });
                 }
             }
+        }
+        if let Some(cursor) = cursor_update {
+            self.operator.plot_cursor_seconds = Some(cursor);
         }
     }
 
@@ -1139,7 +1556,7 @@ impl LangmuirDesktopApp {
                 };
                 if ui
                     .add_sized(
-                        [70.0, theme::CONTROL_HEIGHT],
+                        [128.0, theme::CRITICAL_CONTROL_HEIGHT],
                         egui::Button::new(RichText::new(action_text).strong().color(theme::WHITE))
                             .fill(action_color),
                     )
@@ -1234,6 +1651,10 @@ impl LangmuirDesktopApp {
 }
 
 impl eframe::App for LangmuirDesktopApp {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the desktop shell keeps the fixed industrial console regions together"
+    )]
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         self.drain_backend();
 
@@ -1244,9 +1665,9 @@ impl eframe::App for LangmuirDesktopApp {
             .exact_size(HEADER_HEIGHT)
             .frame(
                 egui::Frame::new()
-                    .fill(theme::WHITE)
+                    .fill(theme::SURFACE)
                     .stroke(Stroke::new(1.0, theme::BORDER))
-                    .inner_margin(egui::Margin::symmetric(14, 8)),
+                    .inner_margin(egui::Margin::symmetric(14, 5)),
             )
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -1264,6 +1685,18 @@ impl eframe::App for LangmuirDesktopApp {
                         );
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if ui
+                            .add_sized(
+                                [122.0, theme::CRITICAL_CONTROL_HEIGHT],
+                                egui::Button::new(
+                                    RichText::new("软件急停").strong().color(theme::WHITE),
+                                )
+                                .fill(theme::DANGER),
+                            )
+                            .clicked_by(PointerButton::Primary)
+                        {
+                            self.operator.emergency_stop_confirmation_open = true;
+                        }
                         #[cfg(feature = "mock")]
                         if self.mock_mode {
                             theme::status_badge(ui, "MOCK", theme::WARNING);
@@ -1271,6 +1704,12 @@ impl eframe::App for LangmuirDesktopApp {
                         if let Some(warning) = self.font_warning.as_deref() {
                             ui.colored_label(theme::WARNING, "CJK FONT MISSING")
                                 .on_hover_text(warning);
+                        }
+                        if self.operator.frozen_plot.is_some() {
+                            theme::status_badge(ui, "画面冻结", theme::PRIMARY);
+                        }
+                        if self.telemetry_polling.active {
+                            theme::status_badge(ui, "自动遥测", theme::PRIMARY);
                         }
                         header_link_status(
                             ui,
@@ -1280,9 +1719,20 @@ impl eframe::App for LangmuirDesktopApp {
                                 "已停止"
                             },
                             self.acquisition_running,
+                            self.scientific_data_is_fresh(),
                         );
-                        header_link_status(ui, "LVDS", self.lvds.connected);
-                        header_link_status(ui, "RS422", self.rs422.connected);
+                        header_link_status(
+                            ui,
+                            "LVDS",
+                            self.lvds.connected,
+                            self.scientific_data_is_fresh(),
+                        );
+                        header_link_status(
+                            ui,
+                            "RS422",
+                            self.rs422.connected,
+                            self.telemetry_is_fresh(),
+                        );
                     });
                 });
             });
@@ -1292,7 +1742,7 @@ impl eframe::App for LangmuirDesktopApp {
             .exact_size(COMMAND_SIDEBAR_WIDTH)
             .frame(
                 egui::Frame::new()
-                    .fill(theme::WHITE)
+                    .fill(theme::SURFACE)
                     .stroke(Stroke::new(1.0, theme::BORDER))
                     .inner_margin(egui::Margin::same(8)),
             )
@@ -1324,7 +1774,7 @@ impl eframe::App for LangmuirDesktopApp {
             .exact_size(LOG_HEIGHT)
             .frame(
                 egui::Frame::new()
-                    .fill(Color32::from_rgb(249, 250, 251))
+                    .fill(theme::SURFACE_ALT)
                     .stroke(Stroke::new(1.0, theme::BORDER))
                     .inner_margin(egui::Margin::symmetric(10, 8)),
             )
@@ -1336,11 +1786,18 @@ impl eframe::App for LangmuirDesktopApp {
             theme::card().show(ui, |ui| self.plot_panel(ui));
         });
 
-        ui.ctx().request_repaint_after(if self.acquisition_running {
-            Duration::from_millis(16)
-        } else {
-            Duration::from_millis(250)
-        });
+        self.emergency_stop_dialog(ui.ctx());
+
+        ui.ctx().request_repaint_after(
+            if self.acquisition_running
+                || self.telemetry_is_fresh()
+                || self.scientific_data_is_fresh()
+            {
+                Duration::from_millis(50)
+            } else {
+                Duration::from_millis(250)
+            },
+        );
     }
 }
 
@@ -1352,28 +1809,29 @@ fn status_dot(ui: &mut Ui, active: bool) {
     let color = if active {
         theme::SUCCESS
     } else {
-        theme::DANGER
+        theme::OFFLINE
     };
     ui.colored_label(color, "●");
 }
 
-fn header_link_status(ui: &mut Ui, label: &str, active: bool) {
-    let color = if active {
+fn header_link_status(ui: &mut Ui, label: &str, active: bool, fresh: bool) {
+    let color = if !active {
+        theme::OFFLINE
+    } else if fresh {
         theme::SUCCESS
     } else {
-        theme::DANGER
+        theme::WARNING
     };
-    ui.label(
-        RichText::new(format!("● {label}"))
-            .strong()
-            .size(11.0)
-            .color(color),
-    );
+    ui.horizontal(|ui| {
+        heartbeat_indicator(ui, active && fresh);
+        ui.label(RichText::new(label).strong().size(11.0).color(color));
+    });
 }
 
-fn telemetry_value_cell(ui: &mut Ui, label: &str, value: String) {
+fn telemetry_value_cell(ui: &mut Ui, label: &str, value: String, fresh: bool) {
     ui.horizontal(|ui| {
         ui.label(RichText::new(label).size(9.0).color(theme::TEXT_SECONDARY));
+        heartbeat_indicator(ui, fresh);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.label(
                 RichText::new(value)
@@ -1386,10 +1844,59 @@ fn telemetry_value_cell(ui: &mut Ui, label: &str, value: String) {
     });
 }
 
-fn protocol_status_cell(ui: &mut Ui, label: &str, status: u8) {
+fn integer_parameter_u8(ui: &mut Ui, value: &mut u8, step: &mut u8, presets: &[u8]) {
+    ui.add(
+        egui::Slider::new(value, 0..=u8::MAX)
+            .show_value(false)
+            .step_by(f64::from(*step)),
+    );
+    ui.horizontal(|ui| {
+        ui.add_sized(
+            [64.0, theme::CONTROL_HEIGHT],
+            egui::DragValue::new(value)
+                .range(0..=u8::MAX)
+                .speed(f64::from(*step)),
+        );
+        for preset in presets {
+            if ui
+                .selectable_label(*step == *preset, format!("{preset}"))
+                .clicked()
+            {
+                *step = *preset;
+            }
+        }
+    });
+}
+
+fn integer_parameter_u16(ui: &mut Ui, value: &mut u16, step: &mut u16, presets: &[u16]) {
+    ui.add(
+        egui::Slider::new(value, 0..=u16::MAX)
+            .show_value(false)
+            .step_by(f64::from(*step)),
+    );
+    ui.horizontal(|ui| {
+        ui.add_sized(
+            [78.0, theme::CONTROL_HEIGHT],
+            egui::DragValue::new(value)
+                .range(0..=u16::MAX)
+                .speed(f64::from(*step)),
+        );
+        for preset in presets {
+            if ui
+                .selectable_label(*step == *preset, format!("{preset}"))
+                .clicked()
+            {
+                *step = *preset;
+            }
+        }
+    });
+}
+
+fn protocol_status_cell(ui: &mut Ui, label: &str, status: u8, fresh: bool) {
     let value = format!("0x{status:02X}");
     ui.horizontal(|ui| {
         ui.label(RichText::new(label).small().color(theme::TEXT_SECONDARY));
+        heartbeat_indicator(ui, fresh);
         theme::status_badge(ui, &value, theme::PRIMARY);
     })
     .response
@@ -1413,7 +1920,7 @@ fn hex_bytes(bytes: &[u8]) -> String {
         .join(" ")
 }
 
-fn temperature_bar(ui: &mut Ui, label: &str, temperature: u8, color: Color32) {
+fn temperature_bar(ui: &mut Ui, label: &str, temperature: u8, fresh: bool) {
     ui.horizontal(|ui| {
         ui.label(
             RichText::new(label)
@@ -1421,14 +1928,61 @@ fn temperature_bar(ui: &mut Ui, label: &str, temperature: u8, color: Color32) {
                 .strong()
                 .color(theme::TEXT_SECONDARY),
         );
+        heartbeat_indicator(ui, fresh);
         let fraction = (f32::from(temperature) / 100.0).clamp(0.0, 1.0);
+        let color = threshold_color(fraction);
         ui.add(
             egui::ProgressBar::new(fraction)
                 .desired_width(ui.available_width())
                 .fill(color)
-                .text(format!("{temperature} ℃")),
+                .text(format!("{temperature} ℃   80% 警告 · 90% 严重")),
         );
     });
+}
+
+fn heartbeat_indicator(ui: &mut Ui, fresh: bool) {
+    let time = ui.ctx().input(|input| input.time);
+    let bright_phase = time.fract() < 0.5;
+    let color = if fresh {
+        if bright_phase {
+            theme::SUCCESS
+        } else {
+            theme::SUCCESS.gamma_multiply(0.55)
+        }
+    } else {
+        theme::WARNING
+    };
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(10.0, 12.0), egui::Sense::hover());
+    ui.painter()
+        .circle_filled(rect.center(), if bright_phase { 4.0 } else { 2.5 }, color);
+    response.on_hover_text(if fresh {
+        "实时数据正在更新"
+    } else {
+        "数据更新已超时"
+    });
+}
+
+fn flashing_alarm_color(ui: &Ui, state: AlarmState) -> Color32 {
+    let phase = ui.ctx().input(|input| input.time).fract();
+    if state == AlarmState::Unacknowledged && phase >= 0.5 {
+        theme::DANGER.gamma_multiply(0.45)
+    } else {
+        state.color()
+    }
+}
+
+fn threshold_color(fraction: f32) -> Color32 {
+    if fraction <= 0.8 {
+        blend_color(theme::SUCCESS, theme::WARNING, fraction / 0.8)
+    } else {
+        blend_color(theme::WARNING, theme::DANGER, (fraction - 0.8) / 0.2)
+    }
+}
+
+fn blend_color(start: Color32, end: Color32, amount: f32) -> Color32 {
+    let start = egui::Rgba::from(start);
+    let end = egui::Rgba::from(end);
+    egui::lerp(start..=end, amount.clamp(0.0, 1.0)).into()
 }
 
 fn command_counter(ui: &mut Ui, title: &str, value: u8, color: Color32, background: Color32) {
@@ -1454,6 +2008,64 @@ fn command_counter(ui: &mut Ui, title: &str, value: u8, color: Color32, backgrou
                 );
             });
         });
+}
+
+fn update_plot_cursor_from_pointer(plot_ui: &egui_plot::PlotUi<'_>, cursor: &mut Option<f64>) {
+    let response = plot_ui.response();
+    if (response.clicked_by(PointerButton::Primary) || response.dragged_by(PointerButton::Primary))
+        && let Some(pointer) = plot_ui.pointer_coordinate()
+    {
+        *cursor = Some(pointer.x);
+    }
+}
+
+fn plot_cursor_readout(
+    ui: &mut Ui,
+    cursor_seconds: f64,
+    channel_1: &[[f64; 2]],
+    channel_2: &[[f64; 2]],
+) {
+    let channel_1_value = closest_plot_value(channel_1, cursor_seconds);
+    let channel_2_value = closest_plot_value(channel_2, cursor_seconds);
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new(format!(
+                "游标 {}",
+                format_plot_timestamp(cursor_seconds, 0.0)
+            ))
+            .small()
+            .color(theme::WARNING),
+        );
+        if let Some(value) = channel_1_value {
+            ui.label(
+                RichText::new(format!("通道 1 {value:.2} mV"))
+                    .monospace()
+                    .small()
+                    .color(theme::PRIMARY),
+            );
+        }
+        if let Some(value) = channel_2_value {
+            ui.label(
+                RichText::new(format!("通道 2 {value:.2} mV"))
+                    .monospace()
+                    .small()
+                    .color(theme::DANGER),
+            );
+        }
+    });
+}
+
+fn closest_plot_value(points: &[[f64; 2]], cursor_seconds: f64) -> Option<f64> {
+    let mut closest = None;
+    let mut distance = f64::INFINITY;
+    for point in points {
+        let candidate_distance = (point[0] - cursor_seconds).abs();
+        if candidate_distance < distance {
+            distance = candidate_distance;
+            closest = Some(point[1]);
+        }
+    }
+    closest
 }
 
 fn normalize_plot_points(points: &mut [[f64; 2]]) -> Option<(f64, f64)> {

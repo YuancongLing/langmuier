@@ -5,24 +5,27 @@ use eframe::egui::{
     Response, RichText, Sense, Stroke, TextStyle, Ui, Vec2,
 };
 
-pub const CONTROL_HEIGHT: f32 = 28.0;
+pub const CONTROL_HEIGHT: f32 = 32.0;
+pub const CRITICAL_CONTROL_HEIGHT: f32 = 44.0;
 pub const FORM_LABEL_WIDTH: f32 = 42.0;
 
-pub const WHITE: Color32 = Color32::from_rgb(255, 255, 255);
-pub const PAGE: Color32 = Color32::from_rgb(248, 250, 252);
-pub const SURFACE_ALT: Color32 = Color32::from_rgb(241, 245, 249);
-pub const BORDER: Color32 = Color32::from_rgb(226, 232, 240);
-pub const PRIMARY: Color32 = Color32::from_rgb(37, 99, 235);
-pub const PRIMARY_DARK: Color32 = Color32::from_rgb(30, 64, 175);
-pub const PRIMARY_SOFT: Color32 = Color32::from_rgb(219, 234, 254);
-pub const SUCCESS: Color32 = Color32::from_rgb(5, 150, 105);
-pub const SUCCESS_SOFT: Color32 = Color32::from_rgb(236, 253, 245);
-pub const WARNING: Color32 = Color32::from_rgb(217, 119, 6);
-pub const DANGER: Color32 = Color32::from_rgb(220, 38, 38);
-pub const DANGER_SOFT: Color32 = Color32::from_rgb(254, 242, 242);
-pub const TEXT: Color32 = Color32::from_rgb(30, 41, 59);
-pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(100, 116, 139);
-pub const TEXT_MUTED: Color32 = Color32::from_rgb(148, 163, 184);
+pub const WHITE: Color32 = Color32::from_rgb(224, 224, 224);
+pub const PAGE: Color32 = Color32::from_rgb(30, 30, 30);
+pub const SURFACE: Color32 = Color32::from_rgb(37, 41, 48);
+pub const SURFACE_ALT: Color32 = Color32::from_rgb(47, 53, 62);
+pub const BORDER: Color32 = Color32::from_rgb(70, 78, 91);
+pub const PRIMARY: Color32 = Color32::from_rgb(59, 130, 246);
+pub const PRIMARY_DARK: Color32 = Color32::from_rgb(147, 197, 253);
+pub const PRIMARY_SOFT: Color32 = Color32::from_rgb(30, 58, 95);
+pub const SUCCESS: Color32 = Color32::from_rgb(46, 179, 112);
+pub const SUCCESS_SOFT: Color32 = Color32::from_rgb(27, 54, 42);
+pub const WARNING: Color32 = Color32::from_rgb(240, 180, 41);
+pub const DANGER: Color32 = Color32::from_rgb(224, 82, 82);
+pub const DANGER_SOFT: Color32 = Color32::from_rgb(67, 34, 39);
+pub const OFFLINE: Color32 = Color32::from_rgb(120, 130, 145);
+pub const TEXT: Color32 = WHITE;
+pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(174, 183, 196);
+pub const TEXT_MUTED: Color32 = Color32::from_rgb(125, 136, 152);
 
 pub fn configure(context: &egui::Context) {
     context.all_styles_mut(|style| {
@@ -55,12 +58,12 @@ pub fn configure(context: &egui::Context) {
 }
 
 fn visuals() -> egui::Visuals {
-    let mut visuals = egui::Visuals::light();
+    let mut visuals = egui::Visuals::dark();
     visuals.override_text_color = Some(TEXT);
     visuals.panel_fill = PAGE;
-    visuals.window_fill = WHITE;
-    visuals.extreme_bg_color = WHITE;
-    visuals.text_edit_bg_color = Some(WHITE);
+    visuals.window_fill = SURFACE;
+    visuals.extreme_bg_color = SURFACE;
+    visuals.text_edit_bg_color = Some(SURFACE_ALT);
     visuals.faint_bg_color = SURFACE_ALT;
     visuals.code_bg_color = SURFACE_ALT;
     visuals.selection.bg_fill = PRIMARY;
@@ -68,35 +71,35 @@ fn visuals() -> egui::Visuals {
     visuals.hyperlink_color = PRIMARY;
     visuals.warn_fg_color = WARNING;
     visuals.error_fg_color = DANGER;
-    visuals.window_corner_radius = CornerRadius::same(10);
-    visuals.widgets.noninteractive.bg_fill = WHITE;
+    visuals.window_corner_radius = CornerRadius::same(6);
+    visuals.widgets.noninteractive.bg_fill = SURFACE;
     visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, BORDER);
-    visuals.widgets.noninteractive.corner_radius = CornerRadius::same(8);
+    visuals.widgets.noninteractive.corner_radius = CornerRadius::same(6);
     visuals.widgets.inactive.bg_fill = SURFACE_ALT;
     visuals.widgets.inactive.weak_bg_fill = SURFACE_ALT;
     visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, BORDER);
-    visuals.widgets.inactive.corner_radius = CornerRadius::same(8);
+    visuals.widgets.inactive.corner_radius = CornerRadius::same(6);
     visuals.widgets.hovered.bg_fill = PRIMARY_SOFT;
     visuals.widgets.hovered.weak_bg_fill = PRIMARY_SOFT;
     visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, PRIMARY);
-    visuals.widgets.hovered.corner_radius = CornerRadius::same(8);
+    visuals.widgets.hovered.corner_radius = CornerRadius::same(6);
     visuals.widgets.active.bg_fill = PRIMARY;
     visuals.widgets.active.weak_bg_fill = PRIMARY;
     visuals.widgets.active.bg_stroke = Stroke::new(1.0, PRIMARY_DARK);
     visuals.widgets.active.fg_stroke = Stroke::new(1.0, WHITE);
-    visuals.widgets.active.corner_radius = CornerRadius::same(8);
+    visuals.widgets.active.corner_radius = CornerRadius::same(6);
     visuals.widgets.open.bg_fill = PRIMARY_SOFT;
     visuals.widgets.open.weak_bg_fill = PRIMARY_SOFT;
     visuals.widgets.open.bg_stroke = Stroke::new(1.0, PRIMARY);
-    visuals.widgets.open.corner_radius = CornerRadius::same(8);
+    visuals.widgets.open.corner_radius = CornerRadius::same(6);
     visuals
 }
 
 pub fn card() -> Frame {
     Frame::new()
-        .fill(WHITE)
+        .fill(SURFACE)
         .stroke(Stroke::new(1.0, BORDER))
-        .corner_radius(10.0)
+        .corner_radius(6.0)
         .inner_margin(Margin::same(8))
 }
 
@@ -104,7 +107,7 @@ pub fn subtle_card() -> Frame {
     Frame::new()
         .fill(SURFACE_ALT)
         .stroke(Stroke::new(1.0, BORDER))
-        .corner_radius(8.0)
+        .corner_radius(6.0)
         .inner_margin(Margin::same(6))
 }
 
@@ -115,7 +118,7 @@ pub fn section_title(ui: &mut Ui, title: &str) {
 pub fn status_badge(ui: &mut Ui, text: &str, color: Color32) {
     Frame::new()
         .fill(color)
-        .corner_radius(12.0)
+        .corner_radius(6.0)
         .inner_margin(Margin::symmetric(7, 2))
         .show(ui, |ui| {
             ui.label(RichText::new(text).strong().color(WHITE).size(10.0));
@@ -158,9 +161,9 @@ mod tests {
     use super::{BORDER, CONTROL_HEIGHT, PAGE, PRIMARY, TEXT, visuals};
 
     #[test]
-    fn light_theme_preserves_python_palette_contract() {
+    fn dark_theme_uses_the_industrial_palette_contract() {
         let visuals = visuals();
-        assert!(!visuals.dark_mode);
+        assert!(visuals.dark_mode);
         assert_eq!(visuals.panel_fill, PAGE);
         assert_eq!(visuals.override_text_color, Some(TEXT));
         assert_eq!(visuals.selection.bg_fill, PRIMARY);
@@ -169,6 +172,6 @@ mod tests {
 
     #[test]
     fn functional_controls_share_one_row_height() {
-        assert!((CONTROL_HEIGHT - 28.0).abs() < f32::EPSILON);
+        assert!((CONTROL_HEIGHT - 32.0).abs() < f32::EPSILON);
     }
 }

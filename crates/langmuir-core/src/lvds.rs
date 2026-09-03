@@ -91,9 +91,12 @@ pub fn decode_scientific_frame(frame: &[u8]) -> Result<ScientificFrame, FrameErr
 /// frame sequence. The LVDS body itself does not carry a packet-sequence field.
 ///
 /// The last two bytes are a big-endian CRC16 over the declared valid-data range.
-/// The source specification does not yet define its polynomial, initial value,
-/// reflection, or final xor, so this function parses the field but cannot safely
-/// validate it until those parameters are supplied.
+/// The lower computer has confirmed the CRC16-CCITT algorithm: polynomial
+/// `0x1021`, initial value `0xFFFF`, no reflection, and no final xor.
+///
+/// CRC validation remains a separate operation so the live receiver can retain
+/// captured frames until the lower computer confirms the exact `data` pointer
+/// and `length` passed to `Calculate_CRC16` on the wire.
 ///
 /// # Errors
 ///
