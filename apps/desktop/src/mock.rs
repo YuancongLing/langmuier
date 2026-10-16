@@ -82,27 +82,8 @@ impl MockBridge {
         });
 
         if self.sequence.is_multiple_of(10) {
-            let seconds = Duration::try_from_secs_f64(now).map_or(u32::MAX, |duration| {
-                u32::try_from(duration.as_secs()).unwrap_or(u32::MAX)
-            });
             self.events
-                .push_back(BackendEvent::Telemetry(TelemetrySnapshot {
-                    absolute_time_seconds: seconds,
-                    local_time_seconds: seconds % 86_400,
-                    cpu_temperature_celsius: 42 + (self.sequence % 7) as u8,
-                    telemetry_request_count: u8::try_from(self.sequence).unwrap_or(u8::MAX),
-                    accepted_commands: self.accepted_commands,
-                    rejected_commands: self.rejected_commands,
-                    work_mode: 0x55,
-                    scan_frequency: 100,
-                    scan_voltage: 5_000,
-                    ad9833_status: 1,
-                    dac8563_status: 1,
-                    adc_1_status: 1,
-                    adc_2_status: 1,
-                    lvds_status: 1,
-                    last_injected_command: [0x21, 0x55, 0x64, 0x9B, 0x9B],
-                }));
+                .push_back(BackendEvent::Telemetry(self.telemetry_snapshot(now)));
         }
         self.sequence = self.sequence.wrapping_add(1);
         self.next_frame = self
@@ -110,6 +91,29 @@ impl MockBridge {
             .checked_add(MOCK_FRAME_INTERVAL)
             .unwrap_or_else(Instant::now);
         self.next_frame_time_seconds += SAMPLE_INTERVAL_SECONDS * f64::from(MOCK_SAMPLES_PER_FRAME);
+    }
+
+    fn telemetry_snapshot(&self, now: f64) -> TelemetrySnapshot {
+        let seconds = Duration::try_from_secs_f64(now).map_or(u32::MAX, |duration| {
+            u32::try_from(duration.as_secs()).unwrap_or(u32::MAX)
+        });
+        TelemetrySnapshot {
+            absolute_time_seconds: seconds,
+            local_time_seconds: seconds % 86_400,
+            cpu_temperature_celsius: 42 + (self.sequence % 7) as u8,
+            telemetry_request_count: u8::try_from(self.sequence).unwrap_or(u8::MAX),
+            accepted_commands: self.accepted_commands,
+            rejected_commands: self.rejected_commands,
+            work_mode: 0x55,
+            scan_frequency: 100,
+            scan_voltage: 5_000,
+            ad9833_status: 1,
+            dac8563_status: 1,
+            adc_1_status: 1,
+            adc_2_status: 1,
+            lvds_status: 1,
+            last_injected_command: [0x21, 0x55, 0x64, 0x9B, 0x9B],
+        }
     }
 
     fn queue_one_due_frame(&mut self, now: Instant) -> bool {
@@ -140,6 +144,9 @@ impl MockBridge {
         self.accepted_commands = self.accepted_commands.wrapping_add(1);
         self.events.push_back(BackendEvent::CommandSent(
             Command::RequestTelemetry.encode().into_bytes(),
+        ));
+        self.events.push_back(BackendEvent::Telemetry(
+            self.telemetry_snapshot(unix_time_seconds()),
         ));
         self.next_telemetry_request = now.checked_add(interval).unwrap_or(now);
         true
@@ -322,5 +329,41 @@ mod tests {
         }
         assert_eq!(scientific_frames, 4);
         assert!(bridge.next_frame > now);
+    }
+
+    #[test]
+    fn telemetry_polling_returns_a_snapshot_without_science_capture() {
+        let mut bridge = MockBridge::new();
+        bridge.rs422_connected = true;
+
+        bridge.set_telemetry_polling(true, 1_000);
+
+        assert!(
+            bridge
+                .events
+                .iter()
+                .any(|event| matches!(event, BackendEvent::Telemetry(_)))
+        );
+        assert!(!bridge.acquisition_running);
+    }
+
+    #[test]
+    fn mock_send_command_emits_the_exact_submitted_frame() {
+        let mut bridge = MockBridge::new();
+        bridge
+            .request(UiRequest::Connect {
+                link: LinkKind::Rs422,
+                port: "MOCK-RS422".to_owned(),
+                baud: 115_200,
+            })
+            .unwrap();
+        let frame = Command::ConfigureDc(0x1234).encode().into_bytes();
+        bridge.request(UiRequest::SendCommand(frame)).unwrap();
+
+        assert!(
+            bridge.events.iter().any(|event| {
+                matches!(event, BackendEvent::CommandSent(sent) if *sent == frame)
+            })
+        );
     }
 }

@@ -155,6 +155,8 @@ pub enum BackendEvent {
         channel_1: Vec<f64>,
         channel_2: Vec<f64>,
     },
+    /// The complete command bytes were written to the local serial port.
+    /// RS422 control commands have no device execution acknowledgement.
     CommandSent([u8; 12]),
     CsvExported {
         path: String,

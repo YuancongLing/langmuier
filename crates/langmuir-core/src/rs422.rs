@@ -169,7 +169,9 @@ pub(crate) mod test_support {
 
 #[cfg(test)]
 mod tests {
-    use super::{RS422_FRAME_LEN, decode_rs422_telemetry, test_support::valid_frame};
+    use super::{
+        PAYLOAD_OFFSET, RS422_FRAME_LEN, decode_rs422_telemetry, test_support::valid_frame,
+    };
     use crate::{FrameError, Protocol};
 
     #[test]
@@ -218,6 +220,20 @@ mod tests {
         ));
         let mut frame = valid_frame();
         frame[33] ^= 1;
+        assert!(matches!(
+            decode_rs422_telemetry(&frame),
+            Err(FrameError::ChecksumMismatch {
+                protocol: Protocol::Rs422,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn rejects_telemetry_data_change_with_stale_checksum() {
+        let mut frame = valid_frame();
+        frame[PAYLOAD_OFFSET + 1] ^= 0x01;
+
         assert!(matches!(
             decode_rs422_telemetry(&frame),
             Err(FrameError::ChecksumMismatch {

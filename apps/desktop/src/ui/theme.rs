@@ -7,7 +7,6 @@ use eframe::egui::{
 
 pub const CONTROL_HEIGHT: f32 = 32.0;
 pub const CRITICAL_CONTROL_HEIGHT: f32 = 44.0;
-pub const FORM_LABEL_WIDTH: f32 = 42.0;
 
 pub const WHITE: Color32 = Color32::from_rgb(224, 224, 224);
 pub const PAGE: Color32 = Color32::from_rgb(30, 30, 30);
@@ -17,6 +16,7 @@ pub const BORDER: Color32 = Color32::from_rgb(70, 78, 91);
 pub const PRIMARY: Color32 = Color32::from_rgb(59, 130, 246);
 pub const PRIMARY_DARK: Color32 = Color32::from_rgb(147, 197, 253);
 pub const PRIMARY_SOFT: Color32 = Color32::from_rgb(30, 58, 95);
+pub const SLIDER_TRACK: Color32 = Color32::from_rgb(82, 97, 114);
 pub const SUCCESS: Color32 = Color32::from_rgb(46, 179, 112);
 pub const SUCCESS_SOFT: Color32 = Color32::from_rgb(27, 54, 42);
 pub const WARNING: Color32 = Color32::from_rgb(240, 180, 41);
@@ -123,18 +123,6 @@ pub fn status_badge(ui: &mut Ui, text: &str, color: Color32) {
         .show(ui, |ui| {
             ui.label(RichText::new(text).strong().color(WHITE).size(10.0));
         });
-}
-
-pub fn form_label(ui: &mut Ui, text: &str, enabled: bool) {
-    ui.add_enabled_ui(enabled, |ui| {
-        ui.allocate_ui_with_layout(
-            Vec2::new(FORM_LABEL_WIDTH, CONTROL_HEIGHT),
-            Layout::left_to_right(Align::Center),
-            |ui| {
-                ui.label(text);
-            },
-        );
-    });
 }
 
 pub fn aligned_checkbox(ui: &mut Ui, checked: &mut bool, text: &str) -> Response {

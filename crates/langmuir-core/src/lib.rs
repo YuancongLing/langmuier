@@ -13,7 +13,10 @@ mod rs422;
 mod udp_lvds;
 
 pub use checksum::{additive_checksum, crc16_ccitt_false};
-pub use command::{COMMAND_FRAME_LEN, Command, CommandFrame};
+pub use command::{
+    COMMAND_FRAME_LEN, Command, CommandError, CommandFrame, CommandFrameError, MAX_SCAN_FREQUENCY,
+    ScanFrequency, command_checksum, validate_command_frame,
+};
 pub use error::{FrameError, Protocol};
 pub use framing::{DecodeBatch, LvdsStreamDecoder, Rs422StreamDecoder, StreamMetrics};
 pub use lvds::{

@@ -8,8 +8,8 @@ All multi-byte integers use network (big-endian) byte order.
 EB 90 | sender | receiver | length | type | data[1..4] | SUM8(type+data)
 ```
 
-RS422 uses `115200` baud, 8 data bits, odd parity, one stop bit (`8O1`). The telemetry
-request is a 12-byte frame:
+RS422 uses `115200` baud, 8 data bits, odd parity, one stop bit (`8O1`), and no hardware
+flow control. The telemetry request is a 12-byte frame:
 
 ```text
 EB 90 F0 55 00 06 11 9B 9B 9B 9B 7D
@@ -57,12 +57,24 @@ EB 90 | F0 | 55 | 00 06 | command | data[4] | SUM8(command+data)
 
 Unused data bytes are `9B`; the total frame length is 12 bytes.
 
-- `11`: telemetry request.
-- `21 55 frequency`: triangle-wave mode and scan frequency.
-- `AA`: sine-wave mode.
-- `BB value_hi value_lo`: DC mode and scan voltage.
-- `31 55`: enable LVDS.
-- `AA`: disable LVDS (as listed in the supplied table).
+- `11 9B 9B 9B 9B`: telemetry request.
+- `21 55 frequency 9B 9B`: triangle-wave mode and scan frequency (`frequency=00..64`).
+- `21 AA frequency 9B 9B`: sine-wave mode and scan frequency (`frequency=00..64`).
+- `21 BB value_hi value_lo 9B`: DC mode and raw scan-voltage setting in big-endian order.
+- `31 55 9B 9B 9B`: enable LVDS.
+- `31 AA 9B 9B 9B`: disable LVDS.
+
+The `21` and `31` values are the command `TYPE` bytes. The waveform or LVDS
+selection (`55`, `AA`, or `BB`) is `DATA1`; the `AA`/`BB` values must not be
+promoted to a command type. The source document's table 2-4 uses merged cells
+for these type values. The voltage command is encoded as a raw big-endian `u16`;
+the source table does not define a separately validated downlink voltage range,
+so the telemetry range `0000..1388` is not treated as a hardware-confirmed
+downlink limit.
+
+The legacy CLI names `frequency`, `mode`, and `voltage` are rejected with an
+explicit migration message; use `triangle`, `sine`, and `dc` for new scripts.
+The numeric `mode` command cannot identify the waveform/DC meaning safely.
 
 The Rust decoder rejects wrong declared lengths, wrong fixed type/device values, invalid
 microsecond fields, invalid reconstructed samples, and extra or truncated bytes. CRC16

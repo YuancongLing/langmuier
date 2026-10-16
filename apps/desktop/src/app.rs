@@ -1,20 +1,24 @@
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
+    sync::{Mutex, OnceLock},
     time::{Duration, Instant},
 };
 
 use chrono::{DateTime, Local, Utc};
 use eframe::egui::{
-    self, Align, Color32, ComboBox, Grid, Layout, PointerButton, RichText, Stroke, Ui,
+    self, Align, Color32, ComboBox, Grid, Layout, PointerButton, RichText, ScrollArea, Stroke, Ui,
 };
 use egui_plot::{Legend, Line, Plot, PlotPoints, VLine};
-use langmuir_core::Command;
+use langmuir_core::{
+    Command, CommandError, CommandFrame, ScanFrequency, command_checksum as core_command_checksum,
+    validate_command_frame,
+};
 
 use crate::{
     bridge::{
         BackendBridge, BackendEvent, BackendStateSnapshot, LinkKind, LinkMetricsSnapshot, LogLevel,
-        TELEMETRY_POLL_INTERVAL_MAX_MILLIS, TELEMETRY_POLL_INTERVAL_MIN_MILLIS,
-        TelemetryPollingState, TelemetrySnapshot, UiRequest,
+        TELEMETRY_POLL_INTERVAL_DEFAULT_MILLIS, TELEMETRY_POLL_INTERVAL_MAX_MILLIS,
+        TELEMETRY_POLL_INTERVAL_MIN_MILLIS, TelemetryPollingState, TelemetrySnapshot, UiRequest,
     },
     buffer::{SamplePoint, TimeSeriesBuffer},
     ui::{fonts, theme},
@@ -28,17 +32,45 @@ const MAX_LOGS: usize = 500;
 const MAX_FAULTS: usize = 50;
 const MAX_VISIBLE_FAULTS: usize = 3;
 const EVENT_BUDGET_PER_FRAME: usize = 4_096;
-const APPLICATION_WIDTH: f32 = 1_360.0;
-const APPLICATION_HEIGHT: f32 = 860.0;
 const HEADER_HEIGHT: f32 = 60.0;
-const LOG_HEIGHT: f32 = 128.0;
-const COMMAND_SIDEBAR_WIDTH: f32 = 300.0;
-const TELEMETRY_SIDEBAR_WIDTH: f32 = 300.0;
-const COMMAND_EDITOR_HEIGHT: f32 = 132.0;
+const HEADER_COMPACT_HEIGHT: f32 = 104.0;
+const HEADER_COMPACT_BREAKPOINT: f32 = 1_280.0;
+const HEADER_TITLE_WIDTH: f32 = 218.0;
+const HEADER_TITLE_HEIGHT: f32 = 40.0;
+const HEADER_DEVICE_GROUP_WIDTH: f32 = 450.0;
+const HEADER_POLLING_WIDTH: f32 = 180.0;
+#[cfg(feature = "mock")]
+const HEADER_MOCK_WIDTH: f32 = 58.0;
+const HEADER_FONT_WARNING_WIDTH: f32 = 118.0;
+const HEADER_SCALE_WIDTH: f32 = 96.0;
+const HEADER_EMERGENCY_WIDTH: f32 = 122.0;
+const HEADER_CONTROLS_WIDTH: f32 = 598.0;
+const POLLING_SLIDER_MIN_WIDTH: f32 = 180.0;
+// Fixed industrial-console columns.  The panel widths are outer widths
+// (including the panel frame); cards fill the remaining inner content rect.
+const COMMAND_SIDEBAR_WIDTH: f32 = 360.0;
+const COMMAND_SIDEBAR_MIN_WIDTH: f32 = 260.0;
+const COMMAND_SIDEBAR_MAX_WIDTH: f32 = 420.0;
+const TELEMETRY_SIDEBAR_WIDTH: f32 = 320.0;
+const TELEMETRY_SIDEBAR_MIN_WIDTH: f32 = 240.0;
+const TELEMETRY_SIDEBAR_MAX_WIDTH: f32 = 380.0;
+const COMPACT_LAYOUT_BREAKPOINT: f32 = 1_120.0;
+const COMPACT_COMMAND_SIDEBAR_WIDTH: f32 = 300.0;
+const COMPACT_TELEMETRY_SIDEBAR_WIDTH: f32 = 280.0;
+const MONITOR_LABEL_WIDTH: f32 = 94.0;
+// The central work area is deliberately partitioned into fixed docking
+// regions.  Only the plot body receives elastic height; logs scroll inside
+// their own region and never change the height of the central work area.
+const CENTRAL_OPERATIONS_HEIGHT: f32 = 136.0;
+const CENTRAL_PLOT_TOOLBAR_HEIGHT: f32 = 68.0;
+const CENTRAL_LOG_HEIGHT: f32 = 160.0;
+const CENTRAL_GAP: f32 = 6.0;
+const UI_SCALE_OPTIONS: [f32; 6] = [0.8, 0.9, 1.0, 1.1, 1.25, 1.5];
 const ADC_ZERO_COUNTS: f64 = 32_768.0;
 const ADC_COUNTS_PER_MILLIVOLT: f64 = 6.4;
 const ALARM_COALESCE_WINDOW: Duration = Duration::from_secs(30);
 const DATA_FRESHNESS_WINDOW: Duration = Duration::from_secs(2);
+const UI_RECT_DEBUG_ENV: &str = "LANGMUIR_UI_DEBUG_RECTS";
 const BAUD_RATES: [u32; 14] = [
     8_000_000, 6_000_000, 4_000_000, 3_000_000, 2_000_000, 1_000_000, 921_600, 460_800, 230_400,
     115_200, 57_600, 38_400, 19_200, 9_600,
@@ -101,17 +133,17 @@ impl CommandFamily {
     const fn label(self) -> &'static str {
         match self {
             Self::Telemetry => "遥测 (0x11)",
-            Self::Configuration => "配置 (0x22)",
-            Self::Lvds => "LVDS (0x33)",
+            Self::Configuration => "波形 / DC (0x21)",
+            Self::Lvds => "LVDS (0x31)",
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ConfigurationMode {
-    Frequency,
-    Mode,
-    Voltage,
+    Triangle,
+    Sine,
+    Dc,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,13 +159,13 @@ enum CommandEditMode {
 }
 
 impl ConfigurationMode {
-    const ALL: [Self; 3] = [Self::Frequency, Self::Mode, Self::Voltage];
+    const ALL: [Self; 3] = [Self::Triangle, Self::Sine, Self::Dc];
 
     const fn label(self) -> &'static str {
         match self {
-            Self::Frequency => "频率 (0x55)",
-            Self::Mode => "模式 (0xAA)",
-            Self::Voltage => "电压 (0xBB)",
+            Self::Triangle => "三角波 (DATA1 0x55)",
+            Self::Sine => "正弦波 (DATA1 0xAA)",
+            Self::Dc => "直流 DC (DATA1 0xBB)",
         }
     }
 }
@@ -218,7 +250,6 @@ impl Default for OperatorViewState {
 #[derive(Debug)]
 struct ParameterStepState {
     frequency: u8,
-    mode: u8,
     voltage: u16,
     telemetry_interval: u32,
 }
@@ -227,7 +258,6 @@ impl Default for ParameterStepState {
     fn default() -> Self {
         Self {
             frequency: 10,
-            mode: 1,
             voltage: 100,
             telemetry_interval: 1_000,
         }
@@ -247,10 +277,10 @@ pub struct LangmuirDesktopApp {
     lvds: LvdsUdpPanelState,
     acquisition_running: bool,
     telemetry_polling: TelemetryPollingState,
+    telemetry_polling_edit_millis: u32,
     command_family: CommandFamily,
     configuration_mode: ConfigurationMode,
     frequency: u8,
-    mode: u8,
     voltage: u16,
     lvds_enabled: bool,
     command_edit_mode: CommandEditMode,
@@ -288,10 +318,10 @@ impl LangmuirDesktopApp {
             lvds: LvdsUdpPanelState::default(),
             acquisition_running: false,
             telemetry_polling: TelemetryPollingState::default(),
+            telemetry_polling_edit_millis: TELEMETRY_POLL_INTERVAL_DEFAULT_MILLIS,
             command_family: CommandFamily::Telemetry,
-            configuration_mode: ConfigurationMode::Frequency,
+            configuration_mode: ConfigurationMode::Triangle,
             frequency: 10,
-            mode: 0,
             voltage: 5_000,
             lvds_enabled: true,
             command_edit_mode: CommandEditMode::Typed,
@@ -572,7 +602,10 @@ impl LangmuirDesktopApp {
                 channel_2,
             ),
             BackendEvent::CommandSent(frame) => {
-                self.push_log(LogLevel::Info, format!("TX {}", hex_frame(&frame)));
+                self.push_log(
+                    LogLevel::Info,
+                    format!("RS422 已写入（设备无控制应答）: {}", hex_frame(&frame)),
+                );
             }
             BackendEvent::CsvExported { path } => {
                 self.push_log(LogLevel::Info, format!("CSV 已导出: {path}"));
@@ -622,6 +655,7 @@ impl LangmuirDesktopApp {
         self.lvds.detail = snapshot.lvds_detail;
         self.acquisition_running = snapshot.acquisition_running;
         self.telemetry_polling = snapshot.telemetry_polling;
+        self.telemetry_polling_edit_millis = snapshot.telemetry_polling.interval_millis;
     }
 
     fn apply_telemetry_polling_state(&mut self, active: bool, interval_millis: u32) {
@@ -629,6 +663,7 @@ impl LangmuirDesktopApp {
             active,
             interval_millis,
         };
+        self.telemetry_polling_edit_millis = interval_millis;
         self.push_log(
             LogLevel::Info,
             if active {
@@ -639,16 +674,20 @@ impl LangmuirDesktopApp {
         );
     }
 
-    fn command(&self) -> Command {
+    fn command(&self) -> Result<Command, CommandError> {
         match self.command_family {
-            CommandFamily::Telemetry => Command::RequestTelemetry,
+            CommandFamily::Telemetry => Ok(Command::RequestTelemetry),
             CommandFamily::Configuration => match self.configuration_mode {
-                ConfigurationMode::Frequency => Command::ConfigureFrequency(self.frequency),
-                ConfigurationMode::Mode => Command::ConfigureMode(self.mode),
-                ConfigurationMode::Voltage => Command::ConfigureVoltage(self.voltage),
+                ConfigurationMode::Triangle => Command::configure_triangle(self.frequency),
+                ConfigurationMode::Sine => Command::configure_sine(self.frequency),
+                ConfigurationMode::Dc => Ok(Command::ConfigureDc(self.voltage)),
             },
-            CommandFamily::Lvds => Command::SetLvdsEnabled(self.lvds_enabled),
+            CommandFamily::Lvds => Ok(Command::SetLvdsEnabled(self.lvds_enabled)),
         }
+    }
+
+    fn typed_command_bytes(&self) -> Result<[u8; 12], CommandError> {
+        self.command().map(command_bytes)
     }
 
     fn record_telemetry_anomalies(&mut self, snapshot: &TelemetrySnapshot) {
@@ -694,17 +733,20 @@ impl LangmuirDesktopApp {
         state: &mut ConnectionPanelState,
     ) -> Option<UiRequest> {
         let mut request = None;
-        theme::card().show(ui, |ui| {
-            ui.horizontal(|ui| {
+        full_width_card(ui, |ui| {
+            debug_ui_rect("left.rs422_card", ui.available_rect_before_wrap());
+            ui.horizontal_wrapped(|ui| {
                 status_dot(ui, state.connected);
                 theme::section_title(ui, &format!("{link} 串口连接"));
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(
+                ui.add(
+                    egui::Label::new(
                         RichText::new(&state.detail)
                             .small()
                             .color(theme::TEXT_SECONDARY),
-                    );
-                });
+                    )
+                    .truncate(),
+                )
+                .on_hover_text(&state.detail);
             });
             let selected_port = state
                 .ports
@@ -794,65 +836,60 @@ impl LangmuirDesktopApp {
     }
 
     fn typed_command_controls(&mut self, ui: &mut Ui) {
-        let configuration_enabled = self.command_family == CommandFamily::Configuration;
-        let lvds_enabled = self.command_family == CommandFamily::Lvds;
-        Grid::new("typed_command_controls")
-            .num_columns(2)
-            .min_row_height(theme::CONTROL_HEIGHT)
-            .spacing([8.0, 7.0])
-            .show(ui, |ui| {
-                theme::form_label(ui, "类型", true);
-                ComboBox::from_id_salt("command_family")
-                    .selected_text(self.command_family.label())
-                    .width(ui.available_width())
-                    .show_ui(ui, |ui| {
-                        for family in CommandFamily::ALL {
-                            ui.selectable_value(&mut self.command_family, family, family.label());
-                        }
-                    });
-                ui.end_row();
+        ui.label(
+            RichText::new("指令类型")
+                .small()
+                .color(theme::TEXT_SECONDARY),
+        );
+        ui.horizontal_wrapped(|ui| {
+            for family in CommandFamily::ALL {
+                ui.selectable_value(&mut self.command_family, family, family.label());
+            }
+        });
 
-                theme::form_label(ui, "子模式", configuration_enabled);
-                ui.add_enabled_ui(configuration_enabled, |ui| {
-                    ComboBox::from_id_salt("configuration_mode")
-                        .selected_text(self.configuration_mode.label())
-                        .width(ui.available_width())
-                        .show_ui(ui, |ui| {
-                            for mode in ConfigurationMode::ALL {
-                                ui.selectable_value(
-                                    &mut self.configuration_mode,
-                                    mode,
-                                    mode.label(),
-                                );
-                            }
-                        });
+        match self.command_family {
+            CommandFamily::Telemetry => {
+                ui.add_space(6.0);
+                full_width_subtle_card(ui, |ui| {
+                    ui.label(
+                        RichText::new("固定遥测请求")
+                            .strong()
+                            .color(theme::PRIMARY_DARK),
+                    );
+                    ui.label(
+                        RichText::new("TYPE=0x11，数据域固定为 9B 9B 9B 9B。")
+                            .small()
+                            .color(theme::TEXT_SECONDARY),
+                    );
                 });
-                ui.end_row();
-
-                let parameter_label = match self.configuration_mode {
-                    ConfigurationMode::Frequency => "频率",
-                    ConfigurationMode::Mode => "模式",
-                    ConfigurationMode::Voltage => "电压",
-                };
-                theme::form_label(ui, parameter_label, configuration_enabled);
-                ui.add_enabled_ui(configuration_enabled, |ui| match self.configuration_mode {
-                    ConfigurationMode::Frequency => {
-                        integer_parameter_u8(
+            }
+            CommandFamily::Configuration => {
+                ui.add_space(6.0);
+                ui.label(
+                    RichText::new("工作模式")
+                        .small()
+                        .color(theme::TEXT_SECONDARY),
+                );
+                ui.horizontal_wrapped(|ui| {
+                    for mode in ConfigurationMode::ALL {
+                        ui.selectable_value(&mut self.configuration_mode, mode, mode.label());
+                    }
+                });
+                ui.add_space(4.0);
+                match self.configuration_mode {
+                    ConfigurationMode::Triangle | ConfigurationMode::Sine => {
+                        frequency_parameter(
                             ui,
                             &mut self.frequency,
                             &mut self.parameter_steps.frequency,
-                            &[1, 5, 10],
                         );
                     }
-                    ConfigurationMode::Mode => {
-                        integer_parameter_u8(
-                            ui,
-                            &mut self.mode,
-                            &mut self.parameter_steps.mode,
-                            &[1, 16, 64],
+                    ConfigurationMode::Dc => {
+                        ui.label(
+                            RichText::new("原始电压设定值（协议未定义物理单位）")
+                                .small()
+                                .color(theme::TEXT_SECONDARY),
                         );
-                    }
-                    ConfigurationMode::Voltage => {
                         integer_parameter_u16(
                             ui,
                             &mut self.voltage,
@@ -860,15 +897,26 @@ impl LangmuirDesktopApp {
                             &[1, 10, 100],
                         );
                     }
+                }
+            }
+            CommandFamily::Lvds => {
+                ui.add_space(6.0);
+                ui.label(
+                    RichText::new("LVDS 发送目标状态")
+                        .small()
+                        .color(theme::TEXT_SECONDARY),
+                );
+                ui.horizontal_wrapped(|ui| {
+                    ui.selectable_value(&mut self.lvds_enabled, true, "发送开启");
+                    ui.selectable_value(&mut self.lvds_enabled, false, "发送关闭");
                 });
-                ui.end_row();
-
-                theme::form_label(ui, "LVDS", lvds_enabled);
-                ui.add_enabled_ui(lvds_enabled, |ui| {
-                    theme::aligned_checkbox(ui, &mut self.lvds_enabled, "使能科学数据传输");
-                });
-                ui.end_row();
-            });
+                ui.label(
+                    RichText::new("目标状态来自当前待发送指令；实际设备状态以遥测确认。")
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+            }
+        }
     }
 
     fn command_bytes_grid(&mut self, ui: &mut Ui, frame: &[u8; 12], raw_mode: bool) {
@@ -934,73 +982,107 @@ impl LangmuirDesktopApp {
 
     fn command_panel(&mut self, ui: &mut Ui) {
         theme::section_title(ui, "12B 指令构造");
-        let typed_before_toggle = command_bytes(self.command());
+        let typed_before_toggle = self.typed_command_bytes();
         let mut raw_mode = self.command_edit_mode == CommandEditMode::Raw;
         if theme::aligned_checkbox(ui, &mut raw_mode, "原始字节编辑").changed() {
             self.command_edit_mode = if raw_mode {
-                self.raw_command = typed_before_toggle;
+                if let Ok(frame) = typed_before_toggle {
+                    self.raw_command = frame;
+                }
                 CommandEditMode::Raw
             } else {
                 CommandEditMode::Typed
             };
         }
 
-        theme::subtle_card().show(ui, |ui| {
-            ui.allocate_ui_with_layout(
-                egui::vec2(ui.available_width(), COMMAND_EDITOR_HEIGHT),
-                Layout::top_down(Align::Min),
-                |ui| {
-                    if raw_mode {
-                        let raw_frame = self.raw_command;
-                        self.command_bytes_grid(ui, &raw_frame, true);
-                        ui.add_space(2.0);
-                        ui.label(
-                            RichText::new("原始模式：直接编辑 12 字节；不会自动修复校验和")
-                                .size(9.0)
-                                .color(Color32::from_rgb(220, 38, 38)),
-                        );
-                    } else {
-                        self.typed_command_controls(ui);
-                    }
-                },
-            );
+        full_width_subtle_card(ui, |ui| {
+            debug_ui_rect("left.command_card", ui.available_rect_before_wrap());
+            if raw_mode {
+                let raw_frame = self.raw_command;
+                self.command_bytes_grid(ui, &raw_frame, true);
+                ui.add_space(2.0);
+                ui.label(
+                    RichText::new("原始模式：直接编辑 HEADER | SRC | DST | LEN | TYPE | DATA | SUM；不会自动修复校验和")
+                        .size(9.0)
+                        .color(theme::WARNING),
+                );
+            } else {
+                self.typed_command_controls(ui);
+            }
         });
 
         let displayed_frame = if raw_mode {
-            self.raw_command
+            Some(self.raw_command)
         } else {
-            command_bytes(self.command())
+            self.typed_command_bytes().ok()
         };
-        ui.horizontal(|ui| {
-            ui.label(
-                RichText::new("待发送")
-                    .size(9.0)
-                    .color(theme::TEXT_SECONDARY),
-            );
-            let preview = hex_frame(&displayed_frame);
-            ui.add(
-                egui::Label::new(
-                    RichText::new(&preview)
-                        .monospace()
-                        .size(9.0)
-                        .color(theme::PRIMARY),
+        full_width_subtle_card(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                theme::section_title(ui, "指令预览与校验");
+                ui.label(
+                    RichText::new("固定 12B · 大端序")
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+            });
+            if let Some(frame) = displayed_frame {
+                let preview = hex_frame(&frame);
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(&preview)
+                            .monospace()
+                            .size(10.0)
+                            .color(theme::PRIMARY),
+                    )
+                    .wrap(),
                 )
-                .truncate(),
-            )
-            .on_hover_text(preview);
+                .on_hover_text(&preview);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("地址").small().color(theme::TEXT_SECONDARY));
+                    ui.label(RichText::new("F0 → 55").monospace());
+                    ui.label(RichText::new("TYPE").small().color(theme::TEXT_SECONDARY));
+                    ui.label(RichText::new(format!("0x{:02X}", frame[6])).monospace());
+                    ui.label(RichText::new("SUM").small().color(theme::TEXT_SECONDARY));
+                    ui.label(RichText::new(format!("0x{:02X}", frame[11])).monospace());
+                    if raw_mode {
+                        ui.label(
+                            RichText::new(format!("预期 0x{:02X}", command_checksum(&frame)))
+                                .small()
+                                .color(theme::TEXT_SECONDARY),
+                        );
+                        match raw_frame_validation(&frame) {
+                            Ok(()) => {
+                                theme::status_badge(ui, "校验正确", theme::SUCCESS);
+                            }
+                            Err(reason) => {
+                                theme::status_badge(ui, "校验错误", theme::DANGER);
+                                ui.label(RichText::new(reason).small().color(theme::DANGER));
+                            }
+                        }
+                    } else {
+                        theme::status_badge(ui, "自动生成·校验正确", theme::SUCCESS);
+                    }
+                    if ui.button("复制完整帧").clicked() {
+                        ui.ctx().copy_text(preview.clone());
+                    }
+                });
+            } else {
+                ui.colored_label(theme::DANGER, "频率超出协议范围 0x00..=0x64，无法生成指令");
+            }
         });
-        if !raw_mode && self.command_family == CommandFamily::Telemetry {
-            self.telemetry_polling_control(ui);
-        }
-        ui.horizontal(|ui| {
+        let can_send = if raw_mode {
+            raw_frame_validation(&self.raw_command).is_ok()
+        } else {
+            self.typed_command_bytes().is_ok()
+        };
+        ui.horizontal_wrapped(|ui| {
             if ui
                 .add_sized([68.0, 28.0], egui::Button::new("重置"))
                 .clicked()
             {
                 self.command_family = CommandFamily::Telemetry;
-                self.configuration_mode = ConfigurationMode::Frequency;
+                self.configuration_mode = ConfigurationMode::Triangle;
                 self.frequency = 10;
-                self.mode = 0;
                 self.voltage = 5_000;
                 self.lvds_enabled = true;
                 self.command_edit_mode = CommandEditMode::Typed;
@@ -1010,56 +1092,133 @@ impl LangmuirDesktopApp {
             if raw_mode && ui.button("重算 SUM").clicked() {
                 recalculate_checksum(&mut self.raw_command);
             }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui
-                    .add_sized(
-                        [104.0, 28.0],
-                        egui::Button::new(RichText::new("发送指令").strong().color(theme::WHITE))
-                            .fill(theme::PRIMARY),
-                    )
-                    .clicked()
-                {
-                    let frame = if raw_mode {
-                        self.raw_command
-                    } else {
-                        command_bytes(self.command())
-                    };
+            if ui
+                .add_enabled(
+                    can_send,
+                    egui::Button::new(RichText::new("发送指令").strong().color(theme::WHITE))
+                        .min_size(egui::vec2(104.0, 28.0))
+                        .fill(theme::PRIMARY),
+                )
+                .clicked()
+            {
+                if raw_mode {
+                    match raw_frame_validation(&self.raw_command) {
+                        Ok(()) => self.submit(UiRequest::SendCommand(self.raw_command)),
+                        Err(reason) => {
+                            self.push_fault("RS422 指令", format!("原始帧无效，未发送：{reason}"))
+                        }
+                    }
+                } else if let Some(frame) = self.typed_command_bytes().ok() {
                     self.submit(UiRequest::SendCommand(frame));
+                } else {
+                    self.push_fault("RS422 指令", "频率超出协议范围 0x00..=0x64，指令未发送");
                 }
-            });
+            }
         });
+        if !raw_mode && self.command_family == CommandFamily::Telemetry {
+            ui.add_space(6.0);
+            full_width_subtle_card(ui, |ui| {
+                theme::section_title(ui, "自动遥测轮询");
+                self.telemetry_polling_control(ui);
+            });
+        }
     }
 
     fn telemetry_polling_control(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new("循环周期")
+                RichText::new("当前执行周期")
                     .size(9.0)
                     .color(theme::TEXT_SECONDARY),
             );
+            let current = if self.telemetry_polling.active {
+                format!("{} ms", self.telemetry_polling.interval_millis)
+            } else {
+                "未运行".to_owned()
+            };
             ui.label(
-                RichText::new("滑块粗调 / 数字精调")
-                    .size(9.0)
-                    .color(theme::TEXT_MUTED),
+                RichText::new(current)
+                    .monospace()
+                    .strong()
+                    .color(theme::PRIMARY),
+            );
+            let edit_state =
+                if self.telemetry_polling_edit_millis == self.telemetry_polling.interval_millis {
+                    "已同步"
+                } else {
+                    "待应用"
+                };
+            theme::status_badge(
+                ui,
+                edit_state,
+                if edit_state == "已同步" {
+                    theme::SUCCESS
+                } else {
+                    theme::WARNING
+                },
             );
         });
-        let slider_changed = ui
-            .add(
-                egui::Slider::new(
-                    &mut self.telemetry_polling.interval_millis,
-                    TELEMETRY_POLL_INTERVAL_MIN_MILLIS..=TELEMETRY_POLL_INTERVAL_MAX_MILLIS,
+        ui.label(
+            RichText::new(format!(
+                "编辑周期：{} ms（范围 {}–{} ms）",
+                self.telemetry_polling_edit_millis,
+                TELEMETRY_POLL_INTERVAL_MIN_MILLIS,
+                TELEMETRY_POLL_INTERVAL_MAX_MILLIS
+            ))
+            .small()
+            .color(theme::TEXT_MUTED),
+        );
+
+        let slider_width = polling_slider_width(ui.available_width());
+        let slider_response = ui
+            .scope(|ui| {
+                let visuals = ui.visuals_mut();
+                visuals.selection.bg_fill = theme::PRIMARY;
+                visuals.widgets.inactive.bg_fill = theme::SLIDER_TRACK;
+                visuals.widgets.inactive.bg_stroke = Stroke::new(1.5, theme::PRIMARY_DARK);
+                visuals.widgets.hovered.bg_fill = theme::PRIMARY_SOFT;
+                visuals.widgets.hovered.bg_stroke = Stroke::new(2.0, theme::PRIMARY);
+                visuals.widgets.active.bg_fill = theme::PRIMARY;
+                visuals.widgets.active.fg_stroke = Stroke::new(2.0, theme::WHITE);
+                ui.spacing_mut().slider_width = slider_width;
+                ui.spacing_mut().slider_rail_height = 6.0;
+                ui.add_sized(
+                    [slider_width, theme::CONTROL_HEIGHT],
+                    egui::Slider::new(
+                        &mut self.telemetry_polling_edit_millis,
+                        TELEMETRY_POLL_INTERVAL_MIN_MILLIS..=TELEMETRY_POLL_INTERVAL_MAX_MILLIS,
+                    )
+                    .show_value(false)
+                    .logarithmic(true)
+                    .trailing_fill(true)
+                    .step_by(f64::from(self.parameter_steps.telemetry_interval)),
                 )
-                .show_value(false)
-                .logarithmic(true)
-                .step_by(f64::from(self.parameter_steps.telemetry_interval)),
-            )
-            .changed();
+            })
+            .inner;
+        debug_ui_rect("left.telemetry_slider", slider_response.rect);
+        let slider_changed = slider_response.changed();
+
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(format!("最小 {} ms", TELEMETRY_POLL_INTERVAL_MIN_MILLIS))
+                    .small()
+                    .color(theme::TEXT_MUTED),
+            );
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.label(
+                    RichText::new(format!("最大 {} ms", TELEMETRY_POLL_INTERVAL_MAX_MILLIS))
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+            });
+        });
+
         let input_changed = ui
             .horizontal(|ui| {
-                let changed = ui
+                let mut changed = ui
                     .add_sized(
                         [102.0, theme::CONTROL_HEIGHT],
-                        egui::DragValue::new(&mut self.telemetry_polling.interval_millis)
+                        egui::DragValue::new(&mut self.telemetry_polling_edit_millis)
                             .range(
                                 TELEMETRY_POLL_INTERVAL_MIN_MILLIS
                                     ..=TELEMETRY_POLL_INTERVAL_MAX_MILLIS,
@@ -1068,15 +1227,16 @@ impl LangmuirDesktopApp {
                             .suffix(" ms"),
                     )
                     .changed();
-                for preset in [100, 1_000, 5_000] {
+                for preset in [100, 1_000, 5_000, 60_000] {
                     if ui
                         .selectable_label(
-                            self.parameter_steps.telemetry_interval == preset,
+                            telemetry_preset_active(self.telemetry_polling_edit_millis, preset),
                             format!("{preset}"),
                         )
                         .clicked()
                     {
-                        self.parameter_steps.telemetry_interval = preset;
+                        self.telemetry_polling_edit_millis = preset;
+                        changed = true;
                     }
                 }
                 changed
@@ -1086,7 +1246,7 @@ impl LangmuirDesktopApp {
         if changed && self.telemetry_polling.active {
             self.submit(UiRequest::SetTelemetryPolling {
                 enabled: true,
-                interval_millis: self.telemetry_polling.interval_millis,
+                interval_millis: self.telemetry_polling_edit_millis,
             });
         }
         ui.horizontal(|ui| {
@@ -1104,7 +1264,7 @@ impl LangmuirDesktopApp {
             {
                 self.submit(UiRequest::SetTelemetryPolling {
                     enabled: !self.telemetry_polling.active,
-                    interval_millis: self.telemetry_polling.interval_millis,
+                    interval_millis: self.telemetry_polling_edit_millis,
                 });
             }
         });
@@ -1114,10 +1274,8 @@ impl LangmuirDesktopApp {
         match self.command_family {
             CommandFamily::Telemetry => index == 6,
             CommandFamily::Configuration => match self.configuration_mode {
-                ConfigurationMode::Frequency | ConfigurationMode::Mode => {
-                    matches!(index, 6..=8)
-                }
-                ConfigurationMode::Voltage => matches!(index, 6..=8),
+                ConfigurationMode::Triangle | ConfigurationMode::Sine => matches!(index, 6..=8),
+                ConfigurationMode::Dc => matches!(index, 6..=10),
             },
             CommandFamily::Lvds => matches!(index, 6..=7),
         }
@@ -1125,67 +1283,94 @@ impl LangmuirDesktopApp {
 
     fn telemetry_panel(&self, ui: &mut Ui) {
         let Some(data) = &self.telemetry else {
-            theme::card().show(ui, |ui| {
-                theme::section_title(ui, "遥测状态");
-                ui.add_space(8.0);
+            full_width_card(ui, |ui| {
+                debug_ui_rect(
+                    "right.telemetry_empty_card",
+                    ui.available_rect_before_wrap(),
+                );
+                ui.horizontal_wrapped(|ui| {
+                    theme::section_title(ui, "遥测状态");
+                    theme::status_badge(ui, "等待数据", theme::WARNING);
+                });
+                ui.add_space(6.0);
                 ui.vertical_centered(|ui| {
-                    ui.spinner();
+                    ui.label(RichText::new("●").color(theme::WARNING).size(16.0));
                     ui.label(
-                        RichText::new("等待遥测数据…")
+                        RichText::new("尚未收到下位机遥测响应")
                             .color(theme::TEXT_SECONDARY)
                             .size(11.0),
                     );
+                    ui.label(
+                        RichText::new("时间、工作模式和状态将在响应后显示")
+                            .small()
+                            .color(theme::TEXT_MUTED),
+                    );
                 });
+                #[cfg(feature = "mock")]
+                if self.mock_mode {
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new("数据源：Mock 模式（等待模拟遥测）")
+                            .small()
+                            .color(theme::WARNING),
+                    );
+                }
             });
             return;
         };
         let fresh = self.telemetry_is_fresh();
 
-        theme::card().show(ui, |ui| {
-            ui.horizontal(|ui| {
+        full_width_card(ui, |ui| {
+            debug_ui_rect("right.telemetry_card", ui.available_rect_before_wrap());
+            ui.horizontal_wrapped(|ui| {
                 theme::section_title(ui, "时间与工作参数");
                 heartbeat_indicator(ui, fresh);
+                theme::status_badge(
+                    ui,
+                    if fresh { "实时" } else { "数据超时" },
+                    if fresh {
+                        theme::SUCCESS
+                    } else {
+                        theme::WARNING
+                    },
+                );
             });
-            Grid::new("telemetry_parameters")
-                .num_columns(2)
-                .min_col_width(120.0)
-                .spacing([8.0, 4.0])
-                .show(ui, |ui| {
-                    telemetry_value_cell(
-                        ui,
-                        "下位机时间",
-                        format_timestamp(data.absolute_time_seconds),
-                        fresh,
-                    );
-                    telemetry_value_cell(
-                        ui,
-                        "自守时 (s)",
-                        data.local_time_seconds.to_string(),
-                        fresh,
-                    );
-                    ui.end_row();
-                    telemetry_value_cell(
-                        ui,
-                        "遥测计数",
-                        data.telemetry_request_count.to_string(),
-                        fresh,
-                    );
-                    telemetry_value_cell(ui, "工作模式", work_mode_name(data.work_mode), fresh);
-                    ui.end_row();
-                    telemetry_value_cell(ui, "扫描频率", data.scan_frequency.to_string(), fresh);
-                    telemetry_value_cell(ui, "扫描电压", data.scan_voltage.to_string(), fresh);
-                    ui.end_row();
-                });
+            telemetry_detail_row(
+                ui,
+                "下位机时间",
+                format_timestamp(data.absolute_time_seconds),
+                fresh,
+            );
+            telemetry_detail_row(ui, "自守时 (s)", data.local_time_seconds.to_string(), fresh);
+            telemetry_detail_row(
+                ui,
+                "遥测计数",
+                data.telemetry_request_count.to_string(),
+                fresh,
+            );
+            telemetry_detail_row(ui, "工作模式", work_mode_name(data.work_mode), fresh);
+            telemetry_detail_row(ui, "扫描频率", data.scan_frequency.to_string(), fresh);
+            telemetry_detail_row(ui, "扫描电压", data.scan_voltage.to_string(), fresh);
+            #[cfg(feature = "mock")]
+            if self.mock_mode {
+                ui.label(
+                    RichText::new("数据源：Mock 模式")
+                        .small()
+                        .color(theme::WARNING),
+                );
+            }
         });
 
         ui.add_space(7.0);
-        theme::card().show(ui, |ui| {
+        full_width_card(ui, |ui| {
+            debug_ui_rect("right.temperature_card", ui.available_rect_before_wrap());
             theme::section_title(ui, "温度");
             temperature_bar(ui, "CPU 温度", data.cpu_temperature_celsius, fresh);
         });
 
         ui.add_space(7.0);
-        theme::card().show(ui, |ui| {
+        full_width_card(ui, |ui| {
+            debug_ui_rect("right.device_card", ui.available_rect_before_wrap());
             theme::section_title(ui, "设备状态");
             ui.columns(2, |columns| {
                 command_counter(
@@ -1204,45 +1389,40 @@ impl LangmuirDesktopApp {
                 );
             });
             ui.separator();
-            Grid::new("device_status_grid")
-                .num_columns(2)
-                .min_col_width(120.0)
-                .spacing([8.0, 4.0])
-                .show(ui, |ui| {
-                    protocol_status_cell(ui, "AD9833", data.ad9833_status, fresh);
-                    protocol_status_cell(ui, "DAC8563", data.dac8563_status, fresh);
-                    ui.end_row();
-                    protocol_status_cell(ui, "ADC1", data.adc_1_status, fresh);
-                    protocol_status_cell(ui, "ADC2", data.adc_2_status, fresh);
-                    ui.end_row();
-                    protocol_status_cell(ui, "LVDS", data.lvds_status, fresh);
-                    telemetry_value_cell(
-                        ui,
-                        "上一条指令",
-                        hex_bytes(&data.last_injected_command),
-                        fresh,
-                    );
-                    ui.end_row();
-                });
+            protocol_status_row(ui, "AD9833", data.ad9833_status, fresh);
+            protocol_status_row(ui, "DAC8563", data.dac8563_status, fresh);
+            protocol_status_row(ui, "ADC1", data.adc_1_status, fresh);
+            protocol_status_row(ui, "ADC2", data.adc_2_status, fresh);
+            protocol_status_row(ui, "LVDS", data.lvds_status, fresh);
+            telemetry_detail_row(
+                ui,
+                "上一条指令数据域（5B）",
+                hex_bytes(&data.last_injected_command),
+                fresh,
+            );
+            ui.label(
+                RichText::new("遥测应答仅包含 TYPE + DATA1..DATA4；完整发送帧请查看左侧预览。")
+                    .small()
+                    .color(theme::TEXT_MUTED),
+            );
         });
     }
 
     fn fault_panel(&mut self, ui: &mut Ui) {
-        theme::card().show(ui, |ui| {
-            ui.horizontal(|ui| {
+        full_width_card(ui, |ui| {
+            debug_ui_rect("right.alarm_card", ui.available_rect_before_wrap());
+            ui.horizontal_wrapped(|ui| {
                 theme::section_title(ui, "报警");
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(
-                        RichText::new(format!(
-                            "未确认 {} · {}/{}",
-                            self.unacknowledged_fault_count(),
-                            self.faults.len(),
-                            MAX_FAULTS
-                        ))
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                    );
-                });
+                ui.label(
+                    RichText::new(format!(
+                        "未确认 {} · {}/{}",
+                        self.unacknowledged_fault_count(),
+                        self.faults.len(),
+                        MAX_FAULTS
+                    ))
+                    .small()
+                    .color(theme::TEXT_MUTED),
+                );
             });
             ui.horizontal_wrapped(|ui| {
                 for state in AlarmState::ALL {
@@ -1259,11 +1439,27 @@ impl LangmuirDesktopApp {
                 .take(MAX_VISIBLE_FAULTS)
                 .collect();
             if visible.is_empty() {
-                ui.label(
-                    RichText::new("该筛选下没有报警")
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                );
+                egui::Frame::new()
+                    .fill(theme::SUCCESS_SOFT)
+                    .stroke(Stroke::new(1.0, theme::SUCCESS.gamma_multiply(0.45)))
+                    .corner_radius(5.0)
+                    .inner_margin(egui::Margin::same(7))
+                    .show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            theme::status_badge(ui, "正常", theme::SUCCESS);
+                            ui.label(
+                                RichText::new("该筛选下没有报警记录")
+                                    .small()
+                                    .color(theme::TEXT_SECONDARY),
+                            );
+                        });
+                        ui.label(
+                            RichText::new("收到设备异常或通信故障后，记录会显示在这里。")
+                                .small()
+                                .color(theme::TEXT_MUTED)
+                                .italics(),
+                        );
+                    });
             } else {
                 for index in visible {
                     let fault = self
@@ -1281,7 +1477,7 @@ impl LangmuirDesktopApp {
                         .corner_radius(4.0)
                         .inner_margin(egui::Margin::same(5))
                         .show(ui, |ui| {
-                            ui.horizontal(|ui| {
+                            ui.horizontal_wrapped(|ui| {
                                 theme::status_badge(ui, fault.state.label(), color);
                                 ui.label(
                                     RichText::new(format!(
@@ -1291,26 +1487,24 @@ impl LangmuirDesktopApp {
                                     .small()
                                     .color(theme::TEXT_MUTED),
                                 );
-                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                    match fault.state {
-                                        AlarmState::Unacknowledged => {
-                                            if ui.button("确认").clicked() {
-                                                fault.state = AlarmState::AcknowledgedUnresolved;
-                                            }
+                                match fault.state {
+                                    AlarmState::Unacknowledged => {
+                                        if ui.button("确认").clicked() {
+                                            fault.state = AlarmState::AcknowledgedUnresolved;
                                         }
-                                        AlarmState::AcknowledgedUnresolved => {
-                                            if ui.button("标记恢复").clicked() {
-                                                fault.state = AlarmState::Recovered;
-                                            }
-                                        }
-                                        AlarmState::Recovered => {}
                                     }
-                                });
+                                    AlarmState::AcknowledgedUnresolved => {
+                                        if ui.button("标记恢复").clicked() {
+                                            fault.state = AlarmState::Recovered;
+                                        }
+                                    }
+                                    AlarmState::Recovered => {}
+                                }
                             });
                             let summary = format!("{}: {}", fault.source, fault.message);
                             ui.add(
                                 egui::Label::new(RichText::new(&summary).size(10.0).color(color))
-                                    .truncate(),
+                                    .wrap(),
                             )
                             .on_hover_text(summary);
                         });
@@ -1319,33 +1513,67 @@ impl LangmuirDesktopApp {
         });
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "overlay and split layouts intentionally share one control header"
-    )]
-    fn plot_panel(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            theme::section_title(
-                ui,
-                match self.plot_layout {
-                    PlotLayout::Overlay => "LVDS 科学数据（双通道）",
-                    PlotLayout::Split => "LVDS 科学数据（上下分屏）",
-                },
-            );
+    fn plot_toolbar_channels(&mut self, ui: &mut Ui, short: bool, show_title: bool) {
+        if show_title {
+            theme::section_title(ui, "LVDS 科学数据");
             ui.separator();
-            ui.checkbox(&mut self.show_channels[0], "通道 1");
-            ui.checkbox(&mut self.show_channels[1], "通道 2");
+        }
+        ui.checkbox(
+            &mut self.show_channels[0],
+            if short { "通1" } else { "通道 1" },
+        );
+        ui.checkbox(
+            &mut self.show_channels[1],
+            if short { "通2" } else { "通道 2" },
+        );
+    }
+
+    fn plot_toolbar_modes(&mut self, ui: &mut Ui, menu: bool) {
+        if menu {
+            ui.menu_button("显示模式", |ui| {
+                ui.selectable_value(&mut self.plot_layout, PlotLayout::Overlay, "叠加");
+                ui.selectable_value(&mut self.plot_layout, PlotLayout::Split, "分屏");
+                if self.plot_layout == PlotLayout::Overlay {
+                    ui.checkbox(&mut self.overlay_normalized, "独立归一化");
+                }
+            });
+        } else {
             ui.selectable_value(&mut self.plot_layout, PlotLayout::Overlay, "叠加");
             ui.selectable_value(&mut self.plot_layout, PlotLayout::Split, "分屏");
             if self.plot_layout == PlotLayout::Overlay {
-                ui.checkbox(&mut self.overlay_normalized, "叠加独立归一");
+                ui.checkbox(&mut self.overlay_normalized, "独立归一化");
             }
-            let frozen = self.operator.frozen_plot.is_some();
-            let freeze_label = if frozen {
-                "恢复更新"
-            } else {
-                "冻结画面"
-            };
+        }
+    }
+
+    fn plot_toolbar_channels_menu(&mut self, ui: &mut Ui) {
+        ui.menu_button("通道", |ui| {
+            ui.checkbox(&mut self.show_channels[0], "通道 1");
+            ui.checkbox(&mut self.show_channels[1], "通道 2");
+        });
+    }
+
+    fn plot_toolbar_actions(&mut self, ui: &mut Ui, menu: bool) {
+        let frozen = self.operator.frozen_plot.is_some();
+        let freeze_label = if frozen {
+            "恢复更新"
+        } else {
+            "冻结画面"
+        };
+        if menu {
+            ui.menu_button("图表操作", |ui| {
+                if ui.button(freeze_label).clicked() {
+                    self.toggle_display_freeze();
+                    ui.close();
+                }
+                if ui.button("清空").clicked() {
+                    self.channel_1.clear();
+                    self.channel_2.clear();
+                    self.operator.plot_cursor_seconds = None;
+                    ui.close();
+                }
+            });
+        } else {
             if ui
                 .add(egui::Button::new(freeze_label).fill(if frozen {
                     theme::PRIMARY
@@ -1361,25 +1589,153 @@ impl LangmuirDesktopApp {
                 self.channel_2.clear();
                 self.operator.plot_cursor_seconds = None;
             }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if frozen {
-                    theme::status_badge(ui, "画面冻结", theme::PRIMARY);
-                }
-                ui.small(format!(
-                    "固定窗 {:.0}s · 缓存 {}/{} 点",
-                    PLOT_WINDOW_SECONDS,
-                    self.channel_1.len(),
-                    self.channel_2.len()
-                ));
-            });
-        });
+        }
+    }
+
+    fn plot_toolbar(&mut self, ui: &mut Ui) {
+        let width = ui.available_width();
+        let compact = width < 560.0;
+        let ultra_compact = width < 360.0;
+        let frozen = self.operator.frozen_plot.is_some();
+        let cache = format!(
+            "固定 {:.0}s · {}/{} 点",
+            PLOT_WINDOW_SECONDS,
+            self.channel_1.len(),
+            self.channel_2.len()
+        );
+
+        if !compact {
+            ui.allocate_ui_with_layout(
+                egui::vec2(width, 50.0),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    self.plot_toolbar_channels(ui, false, true);
+                    ui.add_space(6.0);
+                    self.plot_toolbar_modes(ui, false);
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(&cache).small().color(theme::TEXT_MUTED),
+                            )
+                            .truncate(),
+                        );
+                        self.plot_toolbar_actions(ui, false);
+                    });
+                },
+            );
+        } else {
+            ui.allocate_ui_with_layout(
+                egui::vec2(width, 25.0),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    if ultra_compact {
+                        // At the minimum window width the title and two
+                        // checkboxes cannot share a row with the mode menu.
+                        // Keep both channel controls accessible through an
+                        // explicit menu instead of allowing an accidental
+                        // third toolbar row.
+                        self.plot_toolbar_channels_menu(ui);
+                        self.plot_toolbar_modes(ui, true);
+                    } else {
+                        self.plot_toolbar_channels(ui, true, true);
+                        ui.add_space(6.0);
+                        self.plot_toolbar_modes(ui, false);
+                    }
+                },
+            );
+            ui.allocate_ui_with_layout(
+                egui::vec2(width, 25.0),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    self.plot_toolbar_actions(ui, ultra_compact);
+                    if frozen && !ultra_compact {
+                        theme::status_badge(ui, "画面冻结", theme::PRIMARY);
+                    }
+                    ui.add_sized(
+                        [ui.available_width().max(0.0), 25.0],
+                        egui::Label::new(RichText::new(&cache).small().color(theme::TEXT_MUTED))
+                            .truncate(),
+                    );
+                },
+            );
+        }
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "overlay and split plots share rendering logic"
+    )]
+    fn plot_panel(&mut self, ui: &mut Ui) {
+        debug_ui_rect("central.plot_body_inner", ui.available_rect_before_wrap());
         let (mut channel_1, mut channel_2) = self.display_plot_points();
         let cursor_channel_1 = channel_1.clone();
         let cursor_channel_2 = channel_2.clone();
-        if let Some(cursor) = self.operator.plot_cursor_seconds {
-            plot_cursor_readout(ui, cursor, &cursor_channel_1, &cursor_channel_2);
+        // Reserve the readout row even when no cursor is active.  This keeps
+        // the actual plot rect stable when a pointer interaction creates or
+        // clears the cursor.
+        let readout_height = ui.available_height().min(20.0).max(0.0);
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width().max(0.0), readout_height),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                if let Some(cursor) = self.operator.plot_cursor_seconds {
+                    plot_cursor_readout(ui, cursor, &cursor_channel_1, &cursor_channel_2);
+                }
+            },
+        );
+        // The parent central layout owns the plot height.  Never grow this
+        // region to a minimum that could overflow the fixed log dock.
+        let available_plot_height = ui.available_height().max(0.0);
+        let has_visible_samples = (self.show_channels[0] && !channel_1.is_empty())
+            || (self.show_channels[1] && !channel_2.is_empty());
+        if !has_visible_samples {
+            let empty_rect = ui.available_rect_before_wrap();
+            debug_ui_rect("central.plot_empty_state", empty_rect);
+            let channels_hidden = !self.show_channels[0] && !self.show_channels[1];
+            let state = if channels_hidden {
+                "通道 1 和通道 2 当前均已隐藏"
+            } else if !self.lvds.connected {
+                "LVDS / UDP 未连接"
+            } else if !self.acquisition_running {
+                "采集未启动，点击“开始采集”后等待样本"
+            } else if self.operator.frozen_plot.is_some() {
+                "画面已冻结，恢复更新后等待新样本"
+            } else {
+                "采集已启动，等待 LVDS 样本"
+            };
+            ui.allocate_ui_with_layout(
+                empty_rect.size(),
+                Layout::centered_and_justified(egui::Direction::TopDown),
+                |ui| {
+                    ui.vertical(|ui| {
+                        ui.label(
+                            RichText::new(if channels_hidden {
+                                "请选择显示通道"
+                            } else {
+                                "暂无 LVDS 数据"
+                            })
+                            .strong()
+                            .size(16.0)
+                            .color(if channels_hidden {
+                                theme::WARNING
+                            } else {
+                                theme::TEXT_SECONDARY
+                            }),
+                        );
+                        ui.label(RichText::new(state).small().color(theme::TEXT_SECONDARY));
+                        ui.label(
+                            RichText::new("接收到数据后，图表会自动显示最近 10 秒")
+                                .small()
+                                .color(theme::TEXT_MUTED),
+                        );
+                    });
+                },
+            );
+            return;
         }
-        let available_plot_height = ui.available_height().max(180.0);
         let cursor = self.operator.plot_cursor_seconds;
         let mut cursor_update = None;
         match self.plot_layout {
@@ -1435,8 +1791,18 @@ impl LangmuirDesktopApp {
                     });
             }
             PlotLayout::Split => {
-                let split_height = ((available_plot_height - 8.0) / 2.0).max(105.0);
-                if self.show_channels[0] {
+                let show_channel_1 = self.show_channels[0];
+                let show_channel_2 = self.show_channels[1];
+                let visible_channel_count =
+                    usize::from(show_channel_1) + usize::from(show_channel_2);
+                let split_height = if visible_channel_count == 2 {
+                    ((available_plot_height - 8.0) / 2.0).max(1.0)
+                } else {
+                    // A single visible channel owns the whole elastic plot
+                    // region; do not leave an unexplained empty half below it.
+                    available_plot_height.max(1.0)
+                };
+                if show_channel_1 {
                     Plot::new("scientific_plot_channel_1")
                         .show_axes([true, true])
                         .x_axis_label("通道 1 时间")
@@ -1465,7 +1831,7 @@ impl LangmuirDesktopApp {
                             update_plot_cursor_from_pointer(plot_ui, &mut cursor_update);
                         });
                 }
-                if self.show_channels[1] {
+                if show_channel_2 {
                     Plot::new("scientific_plot_channel_2")
                         .show_axes([true, true])
                         .x_axis_label("通道 2 时间")
@@ -1503,111 +1869,243 @@ impl LangmuirDesktopApp {
 
     #[expect(
         clippy::too_many_lines,
-        reason = "the LVDS toolbar keeps its responsive single-row controls in one render function"
+        reason = "the LVDS toolbar keeps its responsive controls in one render function"
     )]
     fn operations_panel(&mut self, ui: &mut Ui) {
         let mut request = None;
-        theme::card().show(ui, |ui| {
-            ui.horizontal(|ui| {
-                status_dot(ui, self.lvds.connected);
-                ui.strong("LVDS / UDP");
-                ui.add_enabled_ui(!self.lvds.connected, |ui| {
-                    ui.label(RichText::new("本机").small().color(theme::TEXT_SECONDARY));
-                    ui.add_sized(
-                        [92.0, theme::CONTROL_HEIGHT],
-                        egui::TextEdit::singleline(&mut self.lvds.bind_address)
-                            .hint_text("192.168.1.100"),
-                    );
-                    ui.label(RichText::new("端口").small().color(theme::TEXT_SECONDARY));
-                    ui.add_sized(
-                        [64.0, theme::CONTROL_HEIGHT],
+        full_width_card(ui, |ui| {
+            debug_ui_rect("central.operations_card", ui.available_rect_before_wrap());
+            let row_width = ui.available_width().max(0.0);
+            let compact = row_width < 560.0;
+            let ultra_compact = row_width < 360.0;
+            ui.spacing_mut().item_spacing.y = 0.0;
+            ui.allocate_ui_with_layout(
+                egui::vec2(row_width, theme::CRITICAL_CONTROL_HEIGHT),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    status_dot(ui, self.lvds.connected);
+                    ui.strong("LVDS / UDP");
+                    if !compact {
+                        ui.label(RichText::new("本机").small().color(theme::TEXT_SECONDARY));
+                    }
+                    let ip_response = ui
+                        .add_enabled_ui(!self.lvds.connected, |ui| {
+                            ui.add_sized(
+                                [
+                                    if ultra_compact {
+                                        82.0
+                                    } else if compact {
+                                        96.0
+                                    } else {
+                                        150.0
+                                    },
+                                    theme::CONTROL_HEIGHT,
+                                ],
+                                egui::TextEdit::singleline(&mut self.lvds.bind_address)
+                                    .hint_text("192.168.1.100"),
+                            )
+                        })
+                        .inner;
+                    debug_ui_rect("central.operations.ip_input", ip_response.rect);
+                    if !ultra_compact {
+                        ui.label(
+                            RichText::new(if compact { "端" } else { "端口" })
+                                .small()
+                                .color(theme::TEXT_SECONDARY),
+                        );
+                    }
+                    let port_response = ui.add_sized(
+                        [
+                            if ultra_compact {
+                                34.0
+                            } else if compact {
+                                42.0
+                            } else {
+                                64.0
+                            },
+                            theme::CONTROL_HEIGHT,
+                        ],
                         egui::DragValue::new(&mut self.lvds.port).range(1..=u16::MAX),
                     );
-                });
+                    debug_ui_rect("central.operations.port_input", port_response.rect);
+                    if !compact {
+                        let connection_label = if self.lvds.connected {
+                            "断开"
+                        } else {
+                            "连接"
+                        };
+                        let response = ui.add_sized(
+                            [56.0, theme::CONTROL_HEIGHT],
+                            egui::Button::new(connection_label),
+                        );
+                        debug_ui_rect("central.operations.connection_button", response.rect);
+                        if response.clicked() {
+                            request = if self.lvds.connected {
+                                Some(UiRequest::Disconnect {
+                                    link: LinkKind::Lvds,
+                                })
+                            } else {
+                                Some(UiRequest::BindLvdsUdp {
+                                    bind_address: self.lvds.bind_address.trim().to_owned(),
+                                    port: self.lvds.port,
+                                })
+                            };
+                        }
 
-                let connection_label = if self.lvds.connected {
-                    "断开"
-                } else {
-                    "连接"
-                };
-                if ui
-                    .add(
-                        egui::Button::new(connection_label)
-                            .min_size(egui::vec2(50.0, theme::CONTROL_HEIGHT)),
-                    )
-                    .clicked()
-                {
-                    request = if self.lvds.connected {
-                        Some(UiRequest::Disconnect {
-                            link: LinkKind::Lvds,
-                        })
-                    } else {
-                        Some(UiRequest::BindLvdsUdp {
-                            bind_address: self.lvds.bind_address.trim().to_owned(),
-                            port: self.lvds.port,
-                        })
-                    };
-                }
-
-                let (action_text, action_color) = if self.acquisition_running {
-                    ("停止采集", theme::DANGER)
-                } else {
-                    ("开始采集", theme::SUCCESS)
-                };
-                if ui
-                    .add_sized(
-                        [128.0, theme::CRITICAL_CONTROL_HEIGHT],
-                        egui::Button::new(RichText::new(action_text).strong().color(theme::WHITE))
+                        let (action_text, action_color) = if self.acquisition_running {
+                            ("停止采集", theme::DANGER)
+                        } else {
+                            ("开始采集", theme::SUCCESS)
+                        };
+                        let response = ui.add_sized(
+                            [112.0, theme::CRITICAL_CONTROL_HEIGHT],
+                            egui::Button::new(
+                                RichText::new(action_text).strong().color(theme::WHITE),
+                            )
                             .fill(action_color),
-                    )
-                    .clicked()
-                {
-                    request = Some(if self.acquisition_running {
-                        UiRequest::StopAcquisition
+                        );
+                        debug_ui_rect("central.operations.acquisition_button", response.rect);
+                        if response.clicked() {
+                            request = Some(if self.acquisition_running {
+                                UiRequest::StopAcquisition
+                            } else {
+                                UiRequest::StartAcquisition
+                            });
+                        }
+                    }
+                },
+            );
+
+            let row_two_height = if compact {
+                theme::CRITICAL_CONTROL_HEIGHT
+            } else {
+                theme::CONTROL_HEIGHT
+            };
+            ui.allocate_ui_with_layout(
+                egui::vec2(row_width, row_two_height),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    if compact {
+                        let connection_label = if self.lvds.connected {
+                            "断开"
+                        } else {
+                            "连接"
+                        };
+                        let response = ui.add_sized(
+                            [44.0, theme::CONTROL_HEIGHT],
+                            egui::Button::new(connection_label),
+                        );
+                        debug_ui_rect("central.operations.connection_button", response.rect);
+                        if response.clicked() {
+                            request = if self.lvds.connected {
+                                Some(UiRequest::Disconnect {
+                                    link: LinkKind::Lvds,
+                                })
+                            } else {
+                                Some(UiRequest::BindLvdsUdp {
+                                    bind_address: self.lvds.bind_address.trim().to_owned(),
+                                    port: self.lvds.port,
+                                })
+                            };
+                        }
+
+                        let (action_text, action_color) = if self.acquisition_running {
+                            ("停止采集", theme::DANGER)
+                        } else {
+                            ("开始采集", theme::SUCCESS)
+                        };
+                        let response = ui.add_sized(
+                            [70.0, theme::CRITICAL_CONTROL_HEIGHT],
+                            egui::Button::new(
+                                RichText::new(action_text).strong().color(theme::WHITE),
+                            )
+                            .fill(action_color),
+                        );
+                        debug_ui_rect("central.operations.acquisition_button", response.rect);
+                        if response.clicked() {
+                            request = Some(if self.acquisition_running {
+                                UiRequest::StopAcquisition
+                            } else {
+                                UiRequest::StartAcquisition
+                            });
+                        }
+
+                        ui.menu_button("更多操作", |ui| {
+                            if ui.button("刷新串口").clicked() {
+                                request = Some(UiRequest::RefreshPorts);
+                                ui.close();
+                            }
+                            if ui.button("导出遥测 (CSV)").clicked() {
+                                request = Some(UiRequest::ExportCsv {
+                                    suggested_name: format!(
+                                        "langmuir-{}.csv",
+                                        Local::now().format("%Y%m%d-%H%M%S")
+                                    ),
+                                });
+                                ui.close();
+                            }
+                            #[cfg(feature = "mock")]
+                            if self.mock_mode && ui.button("注入模拟异常").clicked() {
+                                request = Some(UiRequest::InjectMockFault);
+                                ui.close();
+                            }
+                        });
                     } else {
-                        UiRequest::StartAcquisition
-                    });
-                }
-                if ui.button("刷新串口").clicked() {
-                    request = Some(UiRequest::RefreshPorts);
-                }
-                if ui.button("导出遥测 (CSV)").clicked() {
-                    request = Some(UiRequest::ExportCsv {
-                        suggested_name: format!(
-                            "langmuir-{}.csv",
-                            Local::now().format("%Y%m%d-%H%M%S")
-                        ),
-                    });
-                }
-                #[cfg(feature = "mock")]
-                if self.mock_mode && ui.button("注入模拟异常").clicked() {
-                    request = Some(UiRequest::InjectMockFault);
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(&self.lvds.detail)
-                        .small()
-                        .color(theme::TEXT_SECONDARY),
-                );
-                if let Some(metrics) = self.lvds.metrics {
-                    ui.separator();
-                    ui.label(
-                        RichText::new(format!(
-                            "重组 {} · 拒绝 {} · 显示丢弃 {}",
-                            metrics.frames_decoded,
-                            metrics.rejected_frames,
-                            metrics.ui_display_events_dropped
-                        ))
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                    );
-                }
-            });
-            ui.label(
-                RichText::new("网口协议：24B UDP 封装 + 269B LVDS； 192.168.1.128:1534")
-                    .size(9.0)
-                    .color(theme::TEXT_MUTED),
+                        if ui.button("刷新串口").clicked() {
+                            request = Some(UiRequest::RefreshPorts);
+                        }
+                        if ui.button("导出遥测 (CSV)").clicked() {
+                            request = Some(UiRequest::ExportCsv {
+                                suggested_name: format!(
+                                    "langmuir-{}.csv",
+                                    Local::now().format("%Y%m%d-%H%M%S")
+                                ),
+                            });
+                        }
+                        #[cfg(feature = "mock")]
+                        if self.mock_mode && ui.button("注入模拟异常").clicked() {
+                            request = Some(UiRequest::InjectMockFault);
+                        }
+                    }
+                    let listener_status = if self.lvds.connected {
+                        format!(
+                            "监听 {}:{} · {}",
+                            self.lvds.bind_address, self.lvds.port, self.lvds.detail
+                        )
+                    } else {
+                        format!("未监听 · {}:{}", self.lvds.bind_address, self.lvds.port)
+                    };
+                    ui.add_space(4.0);
+                    ui.add_sized(
+                        [ui.available_width().max(0.0), row_two_height],
+                        egui::Label::new(
+                            RichText::new(listener_status.clone())
+                                .small()
+                                .color(theme::TEXT_SECONDARY),
+                        )
+                        .truncate(),
+                    )
+                    .on_hover_text(listener_status);
+                },
+            );
+
+            ui.allocate_ui_with_layout(
+                egui::vec2(row_width, 22.0),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    let protocol =
+                        "UDP 24B + LVDS 269B · 源端 192.168.1.128:1534 · 详细信息悬停查看";
+                    ui.add_sized(
+                        [row_width, 22.0],
+                        egui::Label::new(
+                            RichText::new(protocol).size(9.0).color(theme::TEXT_MUTED),
+                        )
+                        .truncate(),
+                    )
+                    .on_hover_text("网口协议：24B UDP 封装 + 269B LVDS；源端 192.168.1.128:1534");
+                },
             );
         });
         if let Some(request) = request {
@@ -1616,8 +2114,16 @@ impl LangmuirDesktopApp {
     }
 
     fn log_panel(&self, ui: &mut Ui) {
+        let compact = ui.available_width() < 420.0;
         ui.horizontal(|ui| {
             theme::section_title(ui, "系统日志");
+            if !compact {
+                ui.label(
+                    RichText::new("自动跟随最新消息；向上滚动可查看历史")
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+            }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label(
                     RichText::new(format!("{}/{} 条", self.logs.len(), MAX_LOGS))
@@ -1626,25 +2132,200 @@ impl LangmuirDesktopApp {
                 );
             });
         });
-        for entry in self.logs.iter().rev().take(4).rev() {
-            let color = match entry.level {
-                LogLevel::Info => theme::TEXT,
-                LogLevel::Warning => theme::WARNING,
-                LogLevel::Error => theme::DANGER,
-            };
-            let full_text = format!("[{}] {}", entry.time, entry.message);
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(format!("[{}]", entry.time))
-                        .monospace()
-                        .size(10.0)
-                        .color(color),
+        egui::ScrollArea::vertical()
+            .id_salt("system_log_scroll")
+            .auto_shrink([false, false])
+            .stick_to_bottom(true)
+            .max_height(ui.available_height().max(0.0))
+            .show(ui, |ui| {
+                for entry in &self.logs {
+                    let color = match entry.level {
+                        LogLevel::Info => theme::TEXT,
+                        LogLevel::Warning => theme::WARNING,
+                        LogLevel::Error => theme::DANGER,
+                    };
+                    let full_text = format!("[{}] {}", entry.time, entry.message);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(
+                            RichText::new(format!("[{}]", entry.time))
+                                .monospace()
+                                .size(10.0)
+                                .color(color),
+                        );
+                        ui.add(
+                            egui::Label::new(RichText::new(&entry.message).size(10.0).color(color))
+                                .wrap(),
+                        )
+                        .on_hover_text(full_text);
+                    });
+                }
+            });
+    }
+
+    fn header_title(ui: &mut Ui) {
+        ui.allocate_ui_with_layout(
+            egui::vec2(HEADER_TITLE_WIDTH, HEADER_TITLE_HEIGHT),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                debug_ui_rect("header.title", ui.available_rect_before_wrap());
+                ui.vertical(|ui| {
+                    ui.label(
+                        RichText::new("航天设备集成控制中心")
+                            .strong()
+                            .size(16.0)
+                            .color(theme::TEXT),
+                    );
+                    ui.label(
+                        RichText::new("Langmuir Probe Ground Control")
+                            .size(10.0)
+                            .color(theme::TEXT_MUTED),
+                    );
+                });
+            },
+        );
+    }
+
+    fn header_device_group(&self, ui: &mut Ui) {
+        ui.allocate_ui_with_layout(
+            egui::vec2(HEADER_DEVICE_GROUP_WIDTH, theme::CONTROL_HEIGHT),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                debug_ui_rect("header.device_group", ui.available_rect_before_wrap());
+                header_link_status(
+                    ui,
+                    if self.acquisition_running {
+                        "采集 · 运行中"
+                    } else {
+                        "采集 · 已停止"
+                    },
+                    self.acquisition_running,
+                    self.scientific_data_is_fresh(),
                 );
-                ui.add(
-                    egui::Label::new(RichText::new(&entry.message).size(10.0).color(color))
-                        .truncate(),
-                )
-                .on_hover_text(full_text);
+                header_link_status(
+                    ui,
+                    if self.lvds.connected {
+                        "LVDS · 已连接"
+                    } else {
+                        "LVDS · 未连接"
+                    },
+                    self.lvds.connected,
+                    self.scientific_data_is_fresh(),
+                );
+                header_link_status(
+                    ui,
+                    if self.rs422.connected {
+                        "RS422 · 已连接"
+                    } else {
+                        "RS422 · 未连接"
+                    },
+                    self.rs422.connected,
+                    self.telemetry_is_fresh(),
+                );
+                ui.allocate_ui_with_layout(
+                    egui::vec2(82.0, theme::CONTROL_HEIGHT),
+                    Layout::left_to_right(Align::Center),
+                    |ui| {
+                        if self.operator.frozen_plot.is_some() {
+                            theme::status_badge(ui, "画面冻结", theme::PRIMARY);
+                        }
+                    },
+                );
+            },
+        );
+    }
+
+    fn header_controls(&mut self, ui: &mut Ui) {
+        let remaining_width = ui.available_width() - HEADER_CONTROLS_WIDTH;
+        if remaining_width > 0.0 {
+            ui.allocate_space(egui::vec2(remaining_width, 0.0));
+        }
+        let mut emergency_clicked = false;
+        ui.allocate_ui_with_layout(
+            egui::vec2(HEADER_CONTROLS_WIDTH, theme::CONTROL_HEIGHT),
+            Layout::right_to_left(Align::Center),
+            |ui| {
+                debug_ui_rect("header.controls", ui.available_rect_before_wrap());
+                if ui
+                    .add_sized(
+                        [HEADER_EMERGENCY_WIDTH, theme::CONTROL_HEIGHT],
+                        egui::Button::new(RichText::new("软件急停").strong().color(theme::WHITE))
+                            .fill(theme::DANGER),
+                    )
+                    .clicked_by(PointerButton::Primary)
+                {
+                    emergency_clicked = true;
+                }
+                ui_scale_control(ui);
+                ui.allocate_ui_with_layout(
+                    egui::vec2(HEADER_FONT_WARNING_WIDTH, theme::CONTROL_HEIGHT),
+                    Layout::left_to_right(Align::Center),
+                    |ui| {
+                        if let Some(warning) = self.font_warning.as_deref() {
+                            ui.colored_label(theme::WARNING, "CJK FONT MISSING")
+                                .on_hover_text(warning);
+                        }
+                    },
+                );
+                #[cfg(feature = "mock")]
+                ui.allocate_ui_with_layout(
+                    egui::vec2(HEADER_MOCK_WIDTH, theme::CONTROL_HEIGHT),
+                    Layout::left_to_right(Align::Center),
+                    |ui| {
+                        if self.mock_mode {
+                            theme::status_badge(ui, "MOCK", theme::WARNING);
+                        }
+                    },
+                );
+                let polling_label = if self.telemetry_polling.active {
+                    format!("遥测轮询 · {} ms", self.telemetry_polling.interval_millis)
+                } else {
+                    "遥测轮询 · 停止".to_owned()
+                };
+                ui.allocate_ui_with_layout(
+                    egui::vec2(HEADER_POLLING_WIDTH, theme::CONTROL_HEIGHT),
+                    Layout::left_to_right(Align::Center),
+                    |ui| {
+                        theme::status_badge(
+                            ui,
+                            &polling_label,
+                            if self.telemetry_polling.active {
+                                theme::PRIMARY
+                            } else {
+                                theme::OFFLINE
+                            },
+                        );
+                    },
+                );
+            },
+        );
+        if emergency_clicked {
+            self.operator.emergency_stop_confirmation_open = true;
+        }
+    }
+
+    fn header_content(&mut self, ui: &mut Ui, compact: bool) {
+        if compact {
+            ui.vertical(|ui| {
+                let row_width = ui.available_width();
+                ui.allocate_ui_with_layout(
+                    egui::vec2(row_width, 40.0),
+                    Layout::left_to_right(Align::Center),
+                    |ui| {
+                        Self::header_title(ui);
+                        self.header_device_group(ui);
+                    },
+                );
+                ui.allocate_ui_with_layout(
+                    egui::vec2(row_width, 40.0),
+                    Layout::left_to_right(Align::Center),
+                    |ui| self.header_controls(ui),
+                );
+            });
+        } else {
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                Self::header_title(ui);
+                self.header_device_group(ui);
+                self.header_controls(ui);
             });
         }
     }
@@ -1657,12 +2338,15 @@ impl eframe::App for LangmuirDesktopApp {
     )]
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         self.drain_backend();
-
-        debug_assert!((ui.available_width() - APPLICATION_WIDTH).abs() < 1.0);
-        debug_assert!((ui.available_height() - APPLICATION_HEIGHT).abs() < 1.0);
+        let compact_header = ui.available_width() < HEADER_COMPACT_BREAKPOINT;
 
         egui::Panel::top("application_header")
-            .exact_size(HEADER_HEIGHT)
+            .resizable(false)
+            .exact_size(if compact_header {
+                HEADER_COMPACT_HEIGHT
+            } else {
+                HEADER_HEIGHT
+            })
             .frame(
                 egui::Frame::new()
                     .fill(theme::SURFACE)
@@ -1670,76 +2354,25 @@ impl eframe::App for LangmuirDesktopApp {
                     .inner_margin(egui::Margin::symmetric(14, 5)),
             )
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        ui.label(
-                            RichText::new("航天设备集成控制中心")
-                                .strong()
-                                .size(16.0)
-                                .color(theme::TEXT),
-                        );
-                        ui.label(
-                            RichText::new("Langmuir Probe Ground Control")
-                                .size(10.0)
-                                .color(theme::TEXT_MUTED),
-                        );
-                    });
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui
-                            .add_sized(
-                                [122.0, theme::CRITICAL_CONTROL_HEIGHT],
-                                egui::Button::new(
-                                    RichText::new("软件急停").strong().color(theme::WHITE),
-                                )
-                                .fill(theme::DANGER),
-                            )
-                            .clicked_by(PointerButton::Primary)
-                        {
-                            self.operator.emergency_stop_confirmation_open = true;
-                        }
-                        #[cfg(feature = "mock")]
-                        if self.mock_mode {
-                            theme::status_badge(ui, "MOCK", theme::WARNING);
-                        }
-                        if let Some(warning) = self.font_warning.as_deref() {
-                            ui.colored_label(theme::WARNING, "CJK FONT MISSING")
-                                .on_hover_text(warning);
-                        }
-                        if self.operator.frozen_plot.is_some() {
-                            theme::status_badge(ui, "画面冻结", theme::PRIMARY);
-                        }
-                        if self.telemetry_polling.active {
-                            theme::status_badge(ui, "自动遥测", theme::PRIMARY);
-                        }
-                        header_link_status(
-                            ui,
-                            if self.acquisition_running {
-                                "采集中"
-                            } else {
-                                "已停止"
-                            },
-                            self.acquisition_running,
-                            self.scientific_data_is_fresh(),
-                        );
-                        header_link_status(
-                            ui,
-                            "LVDS",
-                            self.lvds.connected,
-                            self.scientific_data_is_fresh(),
-                        );
-                        header_link_status(
-                            ui,
-                            "RS422",
-                            self.rs422.connected,
-                            self.telemetry_is_fresh(),
-                        );
-                    });
-                });
+                debug_ui_rect("top_status", ui.available_rect_before_wrap());
+                self.header_content(ui, compact_header);
             });
 
+        // The compact mode changes only at a window-width threshold, never in
+        // response to telemetry content. This keeps the three docked regions
+        // stable during a run while leaving a usable central strip at 800px.
+        let compact_layout = ui.available_width() < COMPACT_LAYOUT_BREAKPOINT;
         egui::Panel::left("command_sidebar")
             .resizable(false)
-            .exact_size(COMMAND_SIDEBAR_WIDTH)
+            .exact_size(fixed_panel_size(
+                if compact_layout {
+                    COMPACT_COMMAND_SIDEBAR_WIDTH
+                } else {
+                    COMMAND_SIDEBAR_WIDTH
+                },
+                COMMAND_SIDEBAR_MIN_WIDTH,
+                COMMAND_SIDEBAR_MAX_WIDTH,
+            ))
             .frame(
                 egui::Frame::new()
                     .fill(theme::SURFACE)
@@ -1747,16 +2380,33 @@ impl eframe::App for LangmuirDesktopApp {
                     .inner_margin(egui::Margin::same(8)),
             )
             .show(ui, |ui| {
-                if let Some(request) = Self::connection_card(ui, LinkKind::Rs422, &mut self.rs422) {
-                    self.submit(request);
-                }
-                ui.add_space(6.0);
-                self.command_panel(ui);
+                debug_ui_rect("left_sidebar", ui.available_rect_before_wrap());
+                ScrollArea::vertical()
+                    .id_salt("command_sidebar_scroll")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.set_min_width(ui.available_width());
+                        if let Some(request) =
+                            Self::connection_card(ui, LinkKind::Rs422, &mut self.rs422)
+                        {
+                            self.submit(request);
+                        }
+                        ui.add_space(6.0);
+                        self.command_panel(ui);
+                    });
             });
 
         egui::Panel::right("telemetry_sidebar")
             .resizable(false)
-            .exact_size(TELEMETRY_SIDEBAR_WIDTH)
+            .exact_size(fixed_panel_size(
+                if compact_layout {
+                    COMPACT_TELEMETRY_SIDEBAR_WIDTH
+                } else {
+                    TELEMETRY_SIDEBAR_WIDTH
+                },
+                TELEMETRY_SIDEBAR_MIN_WIDTH,
+                TELEMETRY_SIDEBAR_MAX_WIDTH,
+            ))
             .frame(
                 egui::Frame::new()
                     .fill(theme::PAGE)
@@ -1764,40 +2414,87 @@ impl eframe::App for LangmuirDesktopApp {
                     .inner_margin(egui::Margin::same(8)),
             )
             .show(ui, |ui| {
-                self.telemetry_panel(ui);
-                ui.add_space(6.0);
-                self.fault_panel(ui);
+                debug_ui_rect("right_sidebar", ui.available_rect_before_wrap());
+                ScrollArea::vertical()
+                    .id_salt("telemetry_sidebar_scroll")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.set_min_width(ui.available_width());
+                        self.telemetry_panel(ui);
+                        ui.add_space(6.0);
+                        self.fault_panel(ui);
+                    });
             });
 
-        egui::Panel::bottom("system_log")
-            .resizable(false)
-            .exact_size(LOG_HEIGHT)
-            .frame(
-                egui::Frame::new()
-                    .fill(theme::SURFACE_ALT)
-                    .stroke(Stroke::new(1.0, theme::BORDER))
-                    .inner_margin(egui::Margin::symmetric(10, 8)),
-            )
-            .show(ui, |ui| self.log_panel(ui));
-
         egui::CentralPanel::default().show(ui, |ui| {
-            self.operations_panel(ui);
-            ui.add_space(6.0);
-            theme::card().show(ui, |ui| self.plot_panel(ui));
+            let regions = central_layout_rects(ui.available_rect_before_wrap());
+            debug_ui_rect("central_data", regions.root);
+            debug_ui_rect("central.operations", regions.operations);
+            debug_ui_rect("central.plot_toolbar", regions.plot_toolbar);
+            debug_ui_rect("central.plot_body", regions.plot_body);
+            debug_ui_rect("central.logs", regions.logs);
+
+            ui.scope_builder(egui::UiBuilder::new().max_rect(regions.operations), |ui| {
+                self.operations_panel(ui)
+            });
+            ui.scope_builder(
+                egui::UiBuilder::new().max_rect(regions.plot_toolbar),
+                |ui| {
+                    full_width_subtle_card(ui, |ui| self.plot_toolbar(ui));
+                },
+            );
+            ui.scope_builder(egui::UiBuilder::new().max_rect(regions.plot_body), |ui| {
+                full_width_card(ui, |ui| self.plot_panel(ui));
+            });
+            ui.scope_builder(egui::UiBuilder::new().max_rect(regions.logs), |ui| {
+                full_width_card(ui, |ui| self.log_panel(ui));
+            });
         });
 
         self.emergency_stop_dialog(ui.ctx());
 
         ui.ctx().request_repaint_after(
-            if self.acquisition_running
-                || self.telemetry_is_fresh()
-                || self.scientific_data_is_fresh()
-            {
+            if self.acquisition_running || self.scientific_data_is_fresh() {
+                // Scientific samples are time-sensitive; keep the plot responsive.
                 Duration::from_millis(50)
             } else {
+                // Telemetry is event-driven and does not need a high-rate repaint loop.
                 Duration::from_millis(250)
             },
         );
+    }
+}
+
+fn ui_rect_debug_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os(UI_RECT_DEBUG_ENV).is_some())
+}
+
+/// Logs a region once and again only when its geometry moves by more than one
+/// logical point. This makes a 60-second Mock run useful for detecting layout
+/// jumps without flooding the log on every repaint.
+fn debug_ui_rect(label: &'static str, rect: egui::Rect) {
+    if !ui_rect_debug_enabled() {
+        return;
+    }
+    static LAST: OnceLock<Mutex<HashMap<&'static str, [f32; 4]>>> = OnceLock::new();
+    let snapshot = [rect.min.x, rect.min.y, rect.width(), rect.height()];
+    let last = LAST.get_or_init(|| Mutex::new(HashMap::new()));
+    let Ok(mut last) = last.lock() else {
+        return;
+    };
+    let changed = last.get(label).is_none_or(|previous| {
+        previous
+            .iter()
+            .zip(snapshot)
+            .any(|(old, new)| (old - new).abs() > 1.0)
+    });
+    if changed {
+        eprintln!(
+            "UI_RECT {label}: x={:.1} y={:.1} w={:.1} h={:.1}",
+            snapshot[0], snapshot[1], snapshot[2], snapshot[3]
+        );
+        last.insert(label, snapshot);
     }
 }
 
@@ -1814,6 +2511,88 @@ fn status_dot(ui: &mut Ui, active: bool) {
     ui.colored_label(color, "●");
 }
 
+/// Render a card at the full width assigned by its parent panel.
+///
+/// `Frame::show` sizes the outer frame from the child UI's minimum rect.  A
+/// short label can therefore make a card shrink to its contents, which is
+/// especially visible in the telemetry sidebar.  Expanding the child UI
+/// before drawing its contents keeps every card aligned to the panel's
+/// content rect while preserving the panel's own padding.
+fn full_width_card<R>(
+    ui: &mut Ui,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> egui::InnerResponse<R> {
+    theme::card().show(ui, |ui| {
+        ui.take_available_width();
+        add_contents(ui)
+    })
+}
+
+fn fixed_panel_size(default: f32, minimum: f32, maximum: f32) -> f32 {
+    default.clamp(minimum, maximum)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CentralLayoutRects {
+    root: egui::Rect,
+    operations: egui::Rect,
+    plot_toolbar: egui::Rect,
+    plot_body: egui::Rect,
+    logs: egui::Rect,
+}
+
+/// Split the central panel without relying on child content's natural height.
+///
+/// The operations card, plot toolbar, and log card retain stable heights on a
+/// normal window.  If the available height is exceptionally small, those
+/// fixed portions are scaled together so every returned rectangle still fits
+/// inside `root`; the plot body is the only elastic region in the normal case.
+fn central_layout_rects(root: egui::Rect) -> CentralLayoutRects {
+    // Three gaps are present between A, toolbar, plot body, and C.  Scale the
+    // gap itself for pathological tiny roots so the returned rectangles never
+    // extend outside the central panel.
+    let gap = CENTRAL_GAP.min(root.height().max(0.0) / 3.0);
+    let available = (root.height() - gap * 3.0).max(0.0);
+    let normal_fixed = CENTRAL_OPERATIONS_HEIGHT + CENTRAL_PLOT_TOOLBAR_HEIGHT + CENTRAL_LOG_HEIGHT;
+    let scale = (available / normal_fixed).min(1.0);
+    let operations_height = CENTRAL_OPERATIONS_HEIGHT * scale;
+    let toolbar_height = CENTRAL_PLOT_TOOLBAR_HEIGHT * scale;
+    let logs_height = CENTRAL_LOG_HEIGHT * scale;
+    let plot_height = (available - operations_height - toolbar_height - logs_height).max(0.0);
+
+    let x = root.min.x;
+    let width = root.width().max(0.0);
+    let operations = egui::Rect::from_min_size(
+        egui::pos2(x, root.min.y),
+        egui::vec2(width, operations_height),
+    );
+    let toolbar_y = operations.max.y + gap;
+    let plot_toolbar =
+        egui::Rect::from_min_size(egui::pos2(x, toolbar_y), egui::vec2(width, toolbar_height));
+    let plot_y = plot_toolbar.max.y + gap;
+    let plot_body =
+        egui::Rect::from_min_size(egui::pos2(x, plot_y), egui::vec2(width, plot_height));
+    let logs_y = plot_body.max.y + gap;
+    let logs = egui::Rect::from_min_size(egui::pos2(x, logs_y), egui::vec2(width, logs_height));
+    CentralLayoutRects {
+        root,
+        operations,
+        plot_toolbar,
+        plot_body,
+        logs,
+    }
+}
+
+fn full_width_subtle_card<R>(
+    ui: &mut Ui,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> egui::InnerResponse<R> {
+    theme::subtle_card().show(ui, |ui| {
+        ui.take_available_width();
+        add_contents(ui)
+    })
+}
+
 fn header_link_status(ui: &mut Ui, label: &str, active: bool, fresh: bool) {
     let color = if !active {
         theme::OFFLINE
@@ -1822,85 +2601,285 @@ fn header_link_status(ui: &mut Ui, label: &str, active: bool, fresh: bool) {
     } else {
         theme::WARNING
     };
-    ui.horizontal(|ui| {
-        heartbeat_indicator(ui, active && fresh);
-        ui.label(RichText::new(label).strong().size(11.0).color(color));
-    });
-}
-
-fn telemetry_value_cell(ui: &mut Ui, label: &str, value: String, fresh: bool) {
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(label).size(9.0).color(theme::TEXT_SECONDARY));
-        heartbeat_indicator(ui, fresh);
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.label(
-                RichText::new(value)
-                    .monospace()
-                    .size(10.0)
-                    .strong()
-                    .color(theme::PRIMARY),
+    ui.allocate_ui_with_layout(
+        egui::vec2(112.0, theme::CONTROL_HEIGHT),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            heartbeat_indicator(ui, active && fresh);
+            ui.add(
+                egui::Label::new(RichText::new(label).strong().size(11.0).color(color)).truncate(),
             );
-        });
-    });
+        },
+    );
 }
 
-fn integer_parameter_u8(ui: &mut Ui, value: &mut u8, step: &mut u8, presets: &[u8]) {
-    ui.add(
-        egui::Slider::new(value, 0..=u8::MAX)
-            .show_value(false)
-            .step_by(f64::from(*step)),
+fn ui_scale_control(ui: &mut Ui) {
+    let current_scale = ui.ctx().zoom_factor();
+    let mut selected_scale = nearest_ui_scale(current_scale);
+    ui.allocate_ui_with_layout(
+        egui::vec2(HEADER_SCALE_WIDTH, theme::CONTROL_HEIGHT),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.label(RichText::new("界面").small().color(theme::TEXT_SECONDARY));
+            ComboBox::from_id_salt("ui_scale")
+                .selected_text(format!("{:.0}%", selected_scale * 100.0))
+                .width(64.0)
+                .show_ui(ui, |ui| {
+                    for scale in UI_SCALE_OPTIONS {
+                        ui.selectable_value(
+                            &mut selected_scale,
+                            scale,
+                            format!("{:.0}%", scale * 100.0),
+                        );
+                    }
+                });
+        },
     );
-    ui.horizontal(|ui| {
-        ui.add_sized(
-            [64.0, theme::CONTROL_HEIGHT],
-            egui::DragValue::new(value)
-                .range(0..=u8::MAX)
-                .speed(f64::from(*step)),
-        );
-        for preset in presets {
-            if ui
-                .selectable_label(*step == *preset, format!("{preset}"))
-                .clicked()
-            {
-                *step = *preset;
-            }
+    if (selected_scale - current_scale).abs() > f32::EPSILON {
+        // egui's zoom factor is relative to native_pixels_per_point, so the
+        // operating-system Retina/HiDPI scale is preserved instead of doubled.
+        ui.ctx().set_zoom_factor(selected_scale);
+    }
+}
+
+fn nearest_ui_scale(value: f32) -> f32 {
+    let mut nearest = UI_SCALE_OPTIONS[0];
+    let mut nearest_distance = (value - nearest).abs();
+    for scale in UI_SCALE_OPTIONS.into_iter().skip(1) {
+        let distance = (value - scale).abs();
+        if distance < nearest_distance {
+            nearest = scale;
+            nearest_distance = distance;
         }
-    });
+    }
+    nearest
+}
+
+fn telemetry_detail_row(ui: &mut Ui, label: &str, value: String, fresh: bool) {
+    let row_width = ui.available_width().max(MONITOR_LABEL_WIDTH + 42.0);
+    ui.allocate_ui_with_layout(
+        egui::vec2(row_width, theme::CONTROL_HEIGHT),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.add_sized(
+                [MONITOR_LABEL_WIDTH, theme::CONTROL_HEIGHT],
+                egui::Label::new(RichText::new(label).small().color(theme::TEXT_SECONDARY)),
+            );
+            heartbeat_indicator(ui, fresh);
+            let value_width = ui.available_width().max(0.0);
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.add_sized(
+                    [value_width, theme::CONTROL_HEIGHT],
+                    egui::Label::new(
+                        RichText::new(&value)
+                            .monospace()
+                            .size(10.0)
+                            .strong()
+                            .color(theme::PRIMARY),
+                    )
+                    .truncate(),
+                )
+                .on_hover_text(value);
+            });
+        },
+    );
+    ui.add_space(2.0);
+}
+
+fn protocol_status_row(ui: &mut Ui, label: &str, status: u8, fresh: bool) {
+    let value = format!("0x{status:02X}");
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), theme::CONTROL_HEIGHT),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.add_sized(
+                [MONITOR_LABEL_WIDTH, theme::CONTROL_HEIGHT],
+                egui::Label::new(RichText::new(label).small().color(theme::TEXT_SECONDARY)),
+            );
+            heartbeat_indicator(ui, fresh);
+            theme::status_badge(ui, &value, theme::PRIMARY);
+        },
+    );
+    ui.add_space(2.0);
+}
+
+fn frequency_parameter(ui: &mut Ui, value: &mut u8, step: &mut u8) {
+    let parent_rect = ui.available_rect_before_wrap();
+    debug_ui_rect("left.scan_frequency_parameter", parent_rect);
+    let slider_width = frequency_slider_width(parent_rect.width());
+
+    ui.allocate_ui_with_layout(
+        egui::vec2(parent_rect.width().max(0.0), theme::CONTROL_HEIGHT),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.label(
+                RichText::new("扫描频率设定值")
+                    .small()
+                    .color(theme::TEXT_SECONDARY),
+            );
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.label(
+                    RichText::new(format!("当前值 {value}"))
+                        .monospace()
+                        .strong()
+                        .color(theme::PRIMARY),
+                );
+            });
+        },
+    );
+
+    let slider_response = ui
+        .scope(|ui| {
+            let visuals = ui.visuals_mut();
+            visuals.selection.bg_fill = theme::PRIMARY;
+            visuals.widgets.noninteractive.bg_fill = theme::SLIDER_TRACK;
+            visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.5, theme::PRIMARY_DARK);
+            visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.5, theme::WHITE);
+            visuals.widgets.inactive.bg_fill = theme::SLIDER_TRACK;
+            visuals.widgets.inactive.bg_stroke = Stroke::new(1.5, theme::PRIMARY_DARK);
+            visuals.widgets.inactive.fg_stroke = Stroke::new(2.0, theme::WHITE);
+            visuals.widgets.hovered.bg_fill = theme::PRIMARY_SOFT;
+            visuals.widgets.hovered.bg_stroke = Stroke::new(2.0, theme::PRIMARY);
+            visuals.widgets.hovered.fg_stroke = Stroke::new(2.0, theme::WHITE);
+            visuals.widgets.active.bg_fill = theme::PRIMARY;
+            visuals.widgets.active.fg_stroke = Stroke::new(2.0, theme::WHITE);
+            ui.spacing_mut().slider_width = slider_width;
+            ui.spacing_mut().slider_rail_height = 6.0;
+            ui.add_sized(
+                [slider_width, theme::CONTROL_HEIGHT],
+                egui::Slider::new(value, ScanFrequency::MIN..=ScanFrequency::MAX)
+                    .show_value(false)
+                    .step_by(f64::from(*step))
+                    .trailing_fill(true),
+            )
+            .on_hover_text("扫描频率：0..=100；可拖动、键盘调整或精确输入")
+        })
+        .inner;
+    debug_ui_rect("left.scan_frequency_slider", slider_response.rect);
+    debug_slider_geometry(
+        "left.scan_frequency_slider",
+        parent_rect,
+        slider_response.rect,
+        slider_width,
+        true,
+    );
+
+    ui.allocate_ui_with_layout(
+        egui::vec2(slider_width, 20.0),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.label(RichText::new("最小 0").small().color(theme::TEXT_MUTED));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.label(
+                    RichText::new(format!("最大 {}", ScanFrequency::MAX))
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+            });
+        },
+    );
+
+    ui.allocate_ui_with_layout(
+        egui::vec2(parent_rect.width().max(0.0), theme::CONTROL_HEIGHT),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = 3.0;
+            ui.label(
+                RichText::new("快速设置")
+                    .small()
+                    .color(theme::TEXT_SECONDARY),
+            );
+            for preset in [1, 50, ScanFrequency::MAX] {
+                if ui
+                    .selectable_label(*value == preset, format!("{preset}"))
+                    .clicked()
+                {
+                    *value = preset;
+                }
+            }
+            ui.separator();
+            ui.label(
+                RichText::new("精确输入")
+                    .small()
+                    .color(theme::TEXT_SECONDARY),
+            );
+            ui.add_sized(
+                [64.0, theme::CONTROL_HEIGHT],
+                egui::DragValue::new(value)
+                    .range(ScanFrequency::MIN..=ScanFrequency::MAX)
+                    .speed(f64::from(*step)),
+            );
+        },
+    );
+}
+
+fn frequency_slider_width(available_width: f32) -> f32 {
+    // Use the complete parent width.  Unlike the polling control, frequency
+    // editing must not force a minimum that could overflow a narrow command
+    // card; 180pt is the normal target whenever the parent can provide it.
+    available_width.max(1.0)
+}
+
+fn debug_slider_geometry(
+    label: &'static str,
+    parent_rect: egui::Rect,
+    response_rect: egui::Rect,
+    configured_width: f32,
+    enabled: bool,
+) {
+    if !ui_rect_debug_enabled() {
+        return;
+    }
+    eprintln!(
+        "UI_SLIDER {label}: parent_w={:.1} configured_w={:.1} response_w={:.1} response_h={:.1} rail_h=6.0 enabled={enabled}",
+        parent_rect.width(),
+        configured_width,
+        response_rect.width(),
+        response_rect.height(),
+    );
 }
 
 fn integer_parameter_u16(ui: &mut Ui, value: &mut u16, step: &mut u16, presets: &[u16]) {
-    ui.add(
-        egui::Slider::new(value, 0..=u16::MAX)
-            .show_value(false)
-            .step_by(f64::from(*step)),
-    );
-    ui.horizontal(|ui| {
+    let slider_width = ui.available_width().max(140.0);
+    ui.scope(|ui| {
+        let visuals = ui.visuals_mut();
+        visuals.selection.bg_fill = theme::PRIMARY;
+        visuals.widgets.inactive.bg_fill = theme::SURFACE_ALT;
+        visuals.widgets.inactive.bg_stroke = Stroke::new(1.5, theme::PRIMARY);
+        visuals.widgets.hovered.bg_fill = theme::PRIMARY_SOFT;
+        visuals.widgets.hovered.bg_stroke = Stroke::new(2.0, theme::PRIMARY);
+        visuals.widgets.active.bg_fill = theme::PRIMARY;
+        visuals.widgets.active.fg_stroke = Stroke::new(1.5, theme::WHITE);
+        ui.add_sized(
+            [slider_width, theme::CONTROL_HEIGHT],
+            egui::Slider::new(value, 0..=u16::MAX)
+                .show_value(false)
+                .step_by(f64::from(*step)),
+        )
+        .on_hover_text("原始电压设定值：0x0000..=0xFFFF");
+    });
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new("0x0000").small().color(theme::TEXT_MUTED));
         ui.add_sized(
             [78.0, theme::CONTROL_HEIGHT],
             egui::DragValue::new(value)
                 .range(0..=u16::MAX)
                 .speed(f64::from(*step)),
         );
+        ui.label(
+            RichText::new(format!("当前 {value} / 最大 {}", u16::MAX))
+                .small()
+                .color(theme::TEXT_SECONDARY),
+        );
         for preset in presets {
             if ui
-                .selectable_label(*step == *preset, format!("{preset}"))
+                .selectable_label(*value == *preset, format!("{preset}"))
                 .clicked()
             {
-                *step = *preset;
+                *value = *preset;
             }
         }
     });
-}
-
-fn protocol_status_cell(ui: &mut Ui, label: &str, status: u8, fresh: bool) {
-    let value = format!("0x{status:02X}");
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(label).small().color(theme::TEXT_SECONDARY));
-        heartbeat_indicator(ui, fresh);
-        theme::status_badge(ui, &value, theme::PRIMARY);
-    })
-    .response
-    .on_hover_text("协议仅定义状态码字段，未给出各数值的正常/故障语义");
 }
 
 fn work_mode_name(mode: u8) -> String {
@@ -1929,32 +2908,39 @@ fn temperature_bar(ui: &mut Ui, label: &str, temperature: u8, fresh: bool) {
                 .color(theme::TEXT_SECONDARY),
         );
         heartbeat_indicator(ui, fresh);
-        let fraction = (f32::from(temperature) / 100.0).clamp(0.0, 1.0);
-        let color = threshold_color(fraction);
-        ui.add(
-            egui::ProgressBar::new(fraction)
-                .desired_width(ui.available_width())
-                .fill(color)
-                .text(format!("{temperature} ℃   80% 警告 · 90% 严重")),
+        ui.label(
+            RichText::new(format!("{temperature} ℃"))
+                .monospace()
+                .strong()
+                .color(theme::PRIMARY),
         );
     });
+    let fraction = (f32::from(temperature) / 100.0).clamp(0.0, 1.0);
+    let color = threshold_color(fraction);
+    ui.add(
+        egui::ProgressBar::new(fraction)
+            .desired_width(ui.available_width())
+            .fill(color)
+            .text(format!("{temperature}%")),
+    );
+    ui.label(
+        RichText::new("阈值：80% 警告 · 90% 严重")
+            .small()
+            .color(theme::TEXT_MUTED),
+    );
 }
 
 fn heartbeat_indicator(ui: &mut Ui, fresh: bool) {
-    let time = ui.ctx().input(|input| input.time);
-    let bright_phase = time.fract() < 0.5;
+    // A status indicator must communicate state without causing a repaint loop.
+    // The previous time-based pulse made every telemetry update look like a UI
+    // flicker. Alarm emphasis remains handled separately by the alarm panel.
     let color = if fresh {
-        if bright_phase {
-            theme::SUCCESS
-        } else {
-            theme::SUCCESS.gamma_multiply(0.55)
-        }
+        theme::SUCCESS
     } else {
         theme::WARNING
     };
     let (rect, response) = ui.allocate_exact_size(egui::vec2(10.0, 12.0), egui::Sense::hover());
-    ui.painter()
-        .circle_filled(rect.center(), if bright_phase { 4.0 } else { 2.5 }, color);
+    ui.painter().circle_filled(rect.center(), 4.0, color);
     response.on_hover_text(if fresh {
         "实时数据正在更新"
     } else {
@@ -2105,9 +3091,26 @@ fn command_bytes(command: Command) -> [u8; 12] {
 }
 
 fn recalculate_checksum(frame: &mut [u8; 12]) {
-    frame[11] = frame[6..11]
-        .iter()
-        .fold(0_u8, |checksum, byte| checksum.wrapping_add(*byte));
+    CommandFrame::recalculate_checksum(frame);
+}
+
+fn command_checksum(frame: &[u8; 12]) -> u8 {
+    core_command_checksum(frame)
+}
+
+fn telemetry_preset_active(interval_millis: u32, preset_millis: u32) -> bool {
+    interval_millis == preset_millis
+}
+
+fn polling_slider_width(available_width: f32) -> f32 {
+    available_width.max(POLLING_SLIDER_MIN_WIDTH)
+}
+
+/// Validates a manually edited command frame before it can reach the serial
+/// backend. Typed commands are generated by `langmuir_core`; this stricter
+/// check protects the expert raw editor from sending malformed frames.
+fn raw_frame_validation(frame: &[u8; 12]) -> Result<(), String> {
+    validate_command_frame(frame).map_err(|error| error.to_string())
 }
 
 fn format_timestamp(seconds: u32) -> String {
@@ -2116,7 +3119,7 @@ fn format_timestamp(seconds: u32) -> String {
         |date_time| {
             date_time
                 .with_timezone(&Local)
-                .format("%H:%M:%S")
+                .format("%Y-%m-%d %H:%M:%S")
                 .to_string()
         },
     )
@@ -2150,17 +3153,25 @@ fn format_plot_timestamp(seconds: f64, visible_seconds: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use eframe::egui::{Rect, pos2, vec2};
     use langmuir_core::Command;
 
     use super::{
-        adc_counts_to_millivolts, command_bytes, hex_bytes, normalize_plot_points,
-        recalculate_checksum, work_mode_name,
+        CENTRAL_LOG_HEIGHT, CENTRAL_OPERATIONS_HEIGHT, CENTRAL_PLOT_TOOLBAR_HEIGHT,
+        COMMAND_SIDEBAR_MAX_WIDTH, COMMAND_SIDEBAR_MIN_WIDTH, COMMAND_SIDEBAR_WIDTH,
+        COMPACT_COMMAND_SIDEBAR_WIDTH, COMPACT_LAYOUT_BREAKPOINT, COMPACT_TELEMETRY_SIDEBAR_WIDTH,
+        HEADER_COMPACT_BREAKPOINT, HEADER_COMPACT_HEIGHT, HEADER_HEIGHT,
+        TELEMETRY_SIDEBAR_MAX_WIDTH, TELEMETRY_SIDEBAR_MIN_WIDTH, TELEMETRY_SIDEBAR_WIDTH,
+        adc_counts_to_millivolts, central_layout_rects, command_bytes, command_checksum,
+        fixed_panel_size, frequency_slider_width, hex_bytes, nearest_ui_scale,
+        normalize_plot_points, polling_slider_width, raw_frame_validation, recalculate_checksum,
+        telemetry_preset_active, work_mode_name,
     };
 
     #[test]
     fn entering_raw_mode_starts_from_the_typed_command() {
-        let expected = Command::ConfigureVoltage(0x1234).encode().into_bytes();
-        assert_eq!(command_bytes(Command::ConfigureVoltage(0x1234)), expected);
+        let expected = Command::ConfigureDc(0x1234).encode().into_bytes();
+        assert_eq!(command_bytes(Command::ConfigureDc(0x1234)), expected);
     }
 
     #[test]
@@ -2169,11 +3180,54 @@ mod tests {
         frame[5] = 0xFE;
         let before = frame;
         recalculate_checksum(&mut frame);
-        let expected = frame[6..11]
-            .iter()
-            .fold(0_u8, |checksum, byte| checksum.wrapping_add(*byte));
-        assert_eq!(frame[11], expected);
+        assert_eq!(frame[11], command_checksum(&frame));
         assert_eq!(&frame[..11], &before[..11]);
+    }
+
+    #[test]
+    fn raw_validation_rejects_bad_sum_and_accepts_recalculated_frame() {
+        let mut frame = command_bytes(Command::RequestTelemetry);
+        frame[11] ^= 0x01;
+        let error = raw_frame_validation(&frame).expect_err("bad SUM must be rejected");
+        assert!(error.contains("SUM mismatch"));
+        assert_ne!(frame[11], command_checksum(&frame));
+        recalculate_checksum(&mut frame);
+        assert_eq!(raw_frame_validation(&frame), Ok(()));
+    }
+
+    #[test]
+    fn raw_validation_checks_frequency_range_and_protocol_fields() {
+        let mut frame = command_bytes(Command::configure_triangle(50).unwrap());
+        frame[8] = 0x65;
+        recalculate_checksum(&mut frame);
+        let error = raw_frame_validation(&frame).expect_err("out-of-range frequency must fail");
+        assert!(error.contains("0x00..=0x64"));
+        frame = command_bytes(Command::SetLvdsEnabled(false));
+        frame[7] = 0x55;
+        recalculate_checksum(&mut frame);
+        assert_eq!(raw_frame_validation(&frame), Ok(()));
+    }
+
+    #[test]
+    fn telemetry_preset_highlight_tracks_the_actual_interval() {
+        assert!(telemetry_preset_active(1_000, 1_000));
+        assert!(!telemetry_preset_active(1_100, 1_000));
+        assert!(!telemetry_preset_active(1_000, 5_000));
+        assert!(telemetry_preset_active(60_000, 60_000));
+    }
+
+    #[test]
+    fn polling_slider_has_a_visible_minimum_track_width() {
+        assert_eq!(polling_slider_width(120.0), 180.0);
+        assert_eq!(polling_slider_width(284.0), 284.0);
+    }
+
+    #[test]
+    fn frequency_slider_uses_the_parent_width_without_forcing_overflow() {
+        assert_eq!(frequency_slider_width(284.0), 284.0);
+        assert_eq!(frequency_slider_width(180.0), 180.0);
+        assert_eq!(frequency_slider_width(120.0), 120.0);
+        assert_eq!(frequency_slider_width(0.0), 1.0);
     }
 
     #[test]
@@ -2201,5 +3255,131 @@ mod tests {
         assert!(adc_counts_to_millivolts(32_768.0).abs() < 1.0e-12);
         assert!((adc_counts_to_millivolts(32_774.4) - 1.0).abs() < 1.0e-12);
         assert!((adc_counts_to_millivolts(0.0) + 5_120.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn ui_scale_selection_stays_within_the_supported_range() {
+        assert_eq!(nearest_ui_scale(0.8), 0.8);
+        assert_eq!(nearest_ui_scale(1.0), 1.0);
+        assert_eq!(nearest_ui_scale(1.5), 1.5);
+        assert_eq!(nearest_ui_scale(2.0), 1.5);
+    }
+
+    #[test]
+    fn responsive_regions_have_safe_size_ordering() {
+        assert!(COMMAND_SIDEBAR_MIN_WIDTH < COMMAND_SIDEBAR_WIDTH);
+        assert!(COMMAND_SIDEBAR_WIDTH < COMMAND_SIDEBAR_MAX_WIDTH);
+        assert!(TELEMETRY_SIDEBAR_MIN_WIDTH < TELEMETRY_SIDEBAR_WIDTH);
+        assert!(TELEMETRY_SIDEBAR_WIDTH < TELEMETRY_SIDEBAR_MAX_WIDTH);
+        assert!(CENTRAL_PLOT_TOOLBAR_HEIGHT > 0.0);
+        assert!(CENTRAL_OPERATIONS_HEIGHT > CENTRAL_PLOT_TOOLBAR_HEIGHT);
+        assert!(CENTRAL_LOG_HEIGHT > CENTRAL_PLOT_TOOLBAR_HEIGHT);
+        assert!(HEADER_HEIGHT < HEADER_COMPACT_HEIGHT);
+        assert!(HEADER_COMPACT_BREAKPOINT > 1_024.0);
+    }
+
+    #[test]
+    fn compact_layout_keeps_a_usable_central_region() {
+        let compact_total = COMPACT_COMMAND_SIDEBAR_WIDTH + COMPACT_TELEMETRY_SIDEBAR_WIDTH;
+        let normal_total = COMMAND_SIDEBAR_WIDTH + TELEMETRY_SIDEBAR_WIDTH;
+        assert!(compact_total < COMPACT_LAYOUT_BREAKPOINT);
+        assert!(normal_total < 1_360.0);
+        assert_eq!(
+            fixed_panel_size(
+                COMPACT_COMMAND_SIDEBAR_WIDTH,
+                COMMAND_SIDEBAR_MIN_WIDTH,
+                COMMAND_SIDEBAR_MAX_WIDTH,
+            ),
+            COMPACT_COMMAND_SIDEBAR_WIDTH
+        );
+    }
+
+    #[test]
+    fn central_layout_rects_partition_normal_workspace_without_overlap() {
+        let root = Rect::from_min_size(pos2(12.0, 24.0), vec2(920.0, 640.0));
+        let regions = central_layout_rects(root);
+        let ordered = [
+            regions.operations,
+            regions.plot_toolbar,
+            regions.plot_body,
+            regions.logs,
+        ];
+        for region in ordered {
+            assert!(root.contains(region.min));
+            assert!(root.contains(region.max));
+            assert!((region.width() - root.width()).abs() <= f32::EPSILON);
+        }
+        for pair in ordered.windows(2) {
+            assert!(!pair[0].intersects(pair[1]));
+            assert!(pair[1].min.y >= pair[0].max.y);
+        }
+        assert!(regions.plot_body.height() > 0.0);
+        assert_eq!(regions.logs.max.y, root.max.y);
+    }
+
+    #[test]
+    fn central_layout_rects_remain_inside_tiny_workspace() {
+        // A high UI scale or a very short window can leave less than the
+        // nominal three inter-region gaps.  The allocator must still return
+        // in-bounds rectangles instead of allowing the final log panel to
+        // overflow the central panel.
+        for height in [0.0, 1.0, 10.0, 17.9] {
+            let root = Rect::from_min_size(pos2(0.0, 0.0), vec2(320.0, height));
+            let regions = central_layout_rects(root);
+            for region in [
+                regions.operations,
+                regions.plot_toolbar,
+                regions.plot_body,
+                regions.logs,
+            ] {
+                assert!(region.min.y >= root.min.y - f32::EPSILON);
+                assert!(region.max.y <= root.max.y + f32::EPSILON);
+            }
+        }
+    }
+
+    #[test]
+    fn central_layout_rects_geometry_is_content_independent() {
+        let root = Rect::from_min_size(pos2(8.0, 16.0), vec2(600.0, 500.0));
+        let first = central_layout_rects(root);
+        let second = central_layout_rects(root);
+        assert_eq!(first.operations, second.operations);
+        assert_eq!(first.plot_toolbar, second.plot_toolbar);
+        assert_eq!(first.plot_body, second.plot_body);
+        assert_eq!(first.logs, second.logs);
+    }
+
+    #[test]
+    fn central_layout_rects_cover_requested_viewport_matrix() {
+        // These are the central work-area sizes left by the fixed sidebars and
+        // header at the requested desktop window sizes.  The test intentionally
+        // checks geometry only: content, telemetry, and sample counts cannot
+        // change any of the returned rectangles.
+        for (width, height) in [
+            (680.0, 800.0),   // 1360×860, normal dock sizes
+            (920.0, 840.0),   // 1600×900
+            (1240.0, 1020.0), // 1920×1080
+            (600.0, 660.0),   // 1280×720
+            (444.0, 664.0),   // 1024×768, compact header and sidebars
+        ] {
+            let root = Rect::from_min_size(pos2(0.0, 0.0), vec2(width, height));
+            let regions = central_layout_rects(root);
+            let ordered = [
+                regions.operations,
+                regions.plot_toolbar,
+                regions.plot_body,
+                regions.logs,
+            ];
+            for region in ordered {
+                assert!(root.contains(region.min));
+                assert!(root.contains(region.max));
+                assert_eq!(region.width(), root.width());
+            }
+            for pair in ordered.windows(2) {
+                assert!(!pair[0].intersects(pair[1]));
+            }
+            assert_eq!(regions.logs.max, root.max);
+            assert!(regions.plot_body.height() > 0.0);
+        }
     }
 }

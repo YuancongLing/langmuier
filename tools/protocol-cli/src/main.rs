@@ -187,9 +187,27 @@ fn encode_command(arguments: &[String]) -> Result<String, String> {
         .ok_or("missing command kind")?;
     let command = match kind {
         "telemetry" => Command::RequestTelemetry,
-        "frequency" => Command::ConfigureFrequency(parse_number(arguments.get(1), "frequency")?),
-        "mode" => Command::ConfigureMode(parse_number(arguments.get(1), "mode")?),
-        "voltage" => Command::ConfigureVoltage(parse_number(arguments.get(1), "voltage")?),
+        "triangle" => {
+            Command::configure_triangle(parse_number(arguments.get(1), "triangle frequency")?)
+                .map_err(|error| error.to_string())?
+        }
+        "sine" => Command::configure_sine(parse_number(arguments.get(1), "sine frequency")?)
+            .map_err(|error| error.to_string())?,
+        "dc" => Command::ConfigureDc(parse_number(arguments.get(1), "DC voltage")?),
+        "frequency" => {
+            return Err(
+                "'frequency' is ambiguous; use 'triangle <0..=100>' or 'sine <0..=100>'".to_owned(),
+            );
+        }
+        "mode" => {
+            return Err(
+                "'mode' is ambiguous; use 'triangle <0..=100>', 'sine <0..=100>', or 'dc <u16>'"
+                    .to_owned(),
+            );
+        }
+        "voltage" => {
+            return Err("'voltage' is deprecated; use 'dc <raw-u16>'".to_owned());
+        }
         "lvds" => match arguments.get(1).map(String::as_str) {
             Some("on") => Command::SetLvdsEnabled(true),
             Some("off") => Command::SetLvdsEnabled(false),
@@ -256,7 +274,7 @@ fn format_hex(bytes: &[u8]) -> String {
 }
 
 fn usage() -> &'static str {
-    "usage:\n  langmuir-protocol-cli command telemetry\n  langmuir-protocol-cli command frequency <u8>\n  langmuir-protocol-cli command mode <u8>\n  langmuir-protocol-cli command voltage <u16>\n  langmuir-protocol-cli command lvds <on|off>\n  langmuir-protocol-cli decode-rs422 <hex>\n  langmuir-protocol-cli decode-lvds <binary-file>\n  langmuir-protocol-cli receive-udp-lvds <bind-ip:port> <source-ip:port> <frame-count> <output-file> [timeout-seconds]"
+    "usage:\n  langmuir-protocol-cli command telemetry\n  langmuir-protocol-cli command triangle <0..=100>\n  langmuir-protocol-cli command sine <0..=100>\n  langmuir-protocol-cli command dc <raw-u16>\n  langmuir-protocol-cli command lvds <on|off>\n  langmuir-protocol-cli decode-rs422 <hex>\n  langmuir-protocol-cli decode-lvds <binary-file>\n  langmuir-protocol-cli receive-udp-lvds <bind-ip:port> <source-ip:port> <frame-count> <output-file> [timeout-seconds]\n\nLegacy 'frequency', 'mode', and 'voltage' command names are rejected as ambiguous; use the explicit names above."
 }
 
 #[cfg(test)]
@@ -281,18 +299,40 @@ mod tests {
         assert!(
             run(&[
                 "command".to_owned(),
-                "frequency".to_owned(),
-                "256".to_owned()
+                "triangle".to_owned(),
+                "101".to_owned()
             ])
             .is_err()
         );
+        assert!(run(&["command".to_owned(), "sine".to_owned(), "101".to_owned()]).is_err());
+        assert!(run(&["command".to_owned(), "sine".to_owned(), "0".to_owned()]).is_ok());
+        assert!(run(&["command".to_owned(), "dc".to_owned(), "0x1388".to_owned(),]).is_ok());
         assert!(
-            run(&[
-                "command".to_owned(),
-                "voltage".to_owned(),
-                "0x1388".to_owned()
-            ])
-            .is_ok()
+            run(&["command".to_owned(), "mode".to_owned(), "0xAA".to_owned(),])
+                .unwrap_err()
+                .contains("ambiguous")
         );
+    }
+
+    #[test]
+    fn command_cli_matches_all_golden_vectors() {
+        let cases = [
+            (vec!["telemetry"], "EB 90 F0 55 00 06 11 9B 9B 9B 9B 7D"),
+            (
+                vec!["triangle", "50"],
+                "EB 90 F0 55 00 06 21 55 32 9B 9B DE",
+            ),
+            (vec!["sine", "50"], "EB 90 F0 55 00 06 21 AA 32 9B 9B 33"),
+            (vec!["dc", "1000"], "EB 90 F0 55 00 06 21 BB 03 E8 9B 62"),
+            (vec!["lvds", "on"], "EB 90 F0 55 00 06 31 55 9B 9B 9B 57"),
+            (vec!["lvds", "off"], "EB 90 F0 55 00 06 31 AA 9B 9B 9B AC"),
+        ];
+        for (arguments, expected) in cases {
+            let arguments = arguments.into_iter().map(str::to_owned).collect::<Vec<_>>();
+            assert_eq!(
+                run(&[vec!["command".to_owned()], arguments].concat()).unwrap(),
+                expected
+            );
+        }
     }
 }
