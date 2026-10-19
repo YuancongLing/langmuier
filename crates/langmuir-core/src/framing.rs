@@ -220,7 +220,8 @@ stream_decoder!(
 mod tests {
     use super::{LvdsStreamDecoder, Rs422StreamDecoder};
     use crate::{
-        LVDS_FRAME_LEN, RS422_FRAME_LEN, lvds::test_support::valid_frame as valid_lvds,
+        FrameError, LVDS_FRAME_LEN, Protocol, RS422_FRAME_LEN,
+        lvds::test_support::valid_frame as valid_lvds,
         rs422::test_support::valid_frame as valid_rs422,
     };
 
@@ -300,7 +301,7 @@ mod tests {
         let mut decoder = LvdsStreamDecoder::new();
         let mut count = 0;
         let mut error_count = 0;
-        for byte in frame.iter() {
+        for byte in frame.as_slice() {
             decoder.push_with(
                 std::slice::from_ref(byte),
                 |_| count += 1,
@@ -323,6 +324,40 @@ mod tests {
         assert_eq!(batch.errors.len(), 1);
         assert_eq!(batch.frames.len(), 1);
         assert_eq!(decoder.metrics().candidate_frames, 2);
+    }
+
+    #[test]
+    fn lvds_rejects_crc_failure_and_resynchronizes_to_next_valid_frame() {
+        let valid = valid_lvds();
+        let mut corrupt = valid.clone();
+        corrupt[100] ^= 1;
+        let mut input = corrupt.to_vec();
+        input.extend_from_slice(&[0x11, 0x22, 0xEB]);
+        input.extend_from_slice(valid.as_slice());
+        for chunk_size in [1, 7, LVDS_FRAME_LEN, LVDS_FRAME_LEN * 2] {
+            let mut decoder = LvdsStreamDecoder::new();
+            let mut frames = Vec::new();
+            let mut errors = Vec::new();
+            for chunk in input.chunks(chunk_size) {
+                decoder.push_with(
+                    chunk,
+                    |frame| frames.push(frame),
+                    |error| errors.push(error),
+                );
+            }
+            assert_eq!(frames.len(), 1, "chunk size {chunk_size}");
+            assert_eq!(frames[0].channel_1[0], 2048);
+            assert!(matches!(
+                errors.as_slice(),
+                [FrameError::ChecksumMismatch {
+                    protocol: Protocol::Lvds,
+                    ..
+                }]
+            ));
+            assert_eq!(decoder.metrics().frames_rejected, 1);
+            assert_eq!(decoder.metrics().frames_decoded, 1);
+            assert_eq!(decoder.buffered_len(), 0);
+        }
     }
 
     #[test]

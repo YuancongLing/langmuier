@@ -7,6 +7,7 @@
 mod core_adapter;
 mod error;
 mod metrics;
+mod pcapng;
 mod transport;
 mod udp;
 mod worker;
@@ -23,6 +24,7 @@ pub use error::{
     CommandQueueError, ReaderError, ReaderFault, ReaderFaultKind, TransportError, WriteAckError,
 };
 pub use metrics::{DecodeDelta, ReaderMetrics, ReaderMetricsSnapshot};
+pub use pcapng::{CaptureError, CapturePacket, CapturedUdp, PcapNgReader};
 #[cfg(feature = "serial")]
 pub use serial::{SerialConfig, SerialConnector, SerialTransport, available_serial_ports};
 pub use transport::{Connector, Transport};

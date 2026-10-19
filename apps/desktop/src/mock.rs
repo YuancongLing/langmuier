@@ -7,7 +7,7 @@ use std::{
 use langmuir_core::Command;
 
 use crate::bridge::{
-    BackendBridge, BackendEvent, BridgeError, LinkKind, LogLevel,
+    BackendBridge, BackendEvent, BridgeError, LinkKind, LogLevel, LvdsStatusSnapshot,
     TELEMETRY_POLL_INTERVAL_MAX_MILLIS, TELEMETRY_POLL_INTERVAL_MIN_MILLIS, TelemetrySnapshot,
     UiRequest,
 };
@@ -16,11 +16,18 @@ const MOCK_FRAME_INTERVAL: Duration = Duration::from_millis(50);
 const MOCK_SAMPLES_PER_FRAME: u32 = 125;
 const SAMPLE_INTERVAL_SECONDS: f64 = 0.0004;
 
+#[derive(Clone, Copy)]
+enum MockCrcMode {
+    Strict,
+    DiagnosticPreview,
+}
+
 pub struct MockBridge {
     events: VecDeque<BackendEvent>,
     rs422_connected: bool,
     lvds_connected: bool,
     acquisition_running: bool,
+    crc_mode: MockCrcMode,
     telemetry_poll_interval: Option<Duration>,
     next_telemetry_request: Instant,
     next_frame: Instant,
@@ -33,7 +40,7 @@ pub struct MockBridge {
 impl MockBridge {
     #[must_use]
     pub fn new() -> Self {
-        Self {
+        let mut bridge = Self {
             events: VecDeque::from([BackendEvent::Log {
                 level: LogLevel::Warning,
                 message: "显式 MOCK 模式已启动；不会访问真实硬件".to_owned(),
@@ -41,6 +48,7 @@ impl MockBridge {
             rs422_connected: false,
             lvds_connected: false,
             acquisition_running: false,
+            crc_mode: MockCrcMode::DiagnosticPreview,
             telemetry_poll_interval: None,
             next_telemetry_request: Instant::now(),
             next_frame: Instant::now(),
@@ -48,7 +56,9 @@ impl MockBridge {
             sequence: 0,
             accepted_commands: 0,
             rejected_commands: 0,
-        }
+        };
+        bridge.queue_lvds_status();
+        bridge
     }
 
     fn queue_link(&mut self, link: LinkKind, connected: bool, detail: String) {
@@ -57,6 +67,26 @@ impl MockBridge {
             connected,
             detail,
         });
+        if link == LinkKind::Lvds {
+            self.queue_lvds_status();
+        }
+    }
+
+    fn queue_lvds_status(&mut self) {
+        self.events
+            .push_back(BackendEvent::LvdsStatus(Box::new(LvdsStatusSnapshot {
+                diagnostic_preview: matches!(self.crc_mode, MockCrcMode::DiagnosticPreview),
+                source: "MOCK 合成数据（未经过真实 UDP / CRC16 门禁）".to_owned(),
+                receive_state: if self.acquisition_running {
+                    "MOCK 合成波形运行中；不写科学文件"
+                } else if self.lvds_connected {
+                    "MOCK 已连接；未生成波形"
+                } else {
+                    "MOCK 未连接"
+                }
+                .to_owned(),
+                ..LvdsStatusSnapshot::default()
+            })));
     }
 
     fn generate_frame(&mut self) {
@@ -188,6 +218,32 @@ impl MockBridge {
             });
         self.queue_due_telemetry_request(Instant::now());
     }
+
+    fn set_diagnostic_preview(&mut self, enabled: bool) {
+        self.crc_mode = if enabled {
+            MockCrcMode::DiagnosticPreview
+        } else {
+            MockCrcMode::Strict
+        };
+        self.queue_lvds_status();
+    }
+
+    fn reject_pcap_replay(&mut self) {
+        self.events.push_back(BackendEvent::Fault {
+            source: "PCAPNG 回放".to_owned(),
+            message: "MOCK 模式只生成合成波形；请不带 --mock 启动应用，以使用真实只读 PCAPNG 回放"
+                .to_owned(),
+        });
+        self.queue_lvds_status();
+    }
+
+    fn stop_pcap_replay(&mut self) {
+        self.events.push_back(BackendEvent::Log {
+            level: LogLevel::Info,
+            message: "MOCK 模式没有运行 PCAPNG 回放".to_owned(),
+        });
+        self.queue_lvds_status();
+    }
 }
 
 impl BackendBridge for MockBridge {
@@ -203,11 +259,15 @@ impl BackendBridge for MockBridge {
                     LinkKind::Rs422 => self.rs422_connected = true,
                     LinkKind::Lvds => self.lvds_connected = true,
                 }
-                self.queue_link(link, true, format!("{port} @ {baud}"));
+                self.queue_link(link, true, format!("MOCK 合成 {port} @ {baud}"));
             }
             UiRequest::BindLvdsUdp { bind_address, port } => {
                 self.lvds_connected = true;
-                self.queue_link(LinkKind::Lvds, true, format!("UDP {bind_address}:{port}"));
+                self.queue_link(
+                    LinkKind::Lvds,
+                    true,
+                    format!("MOCK 合成（未绑定 UDP）{bind_address}:{port}"),
+                );
             }
             UiRequest::Disconnect { link } => {
                 match link {
@@ -246,12 +306,17 @@ impl BackendBridge for MockBridge {
                 self.next_frame_time_seconds = unix_time_seconds();
                 self.events
                     .push_back(BackendEvent::AcquisitionChanged { running: true });
+                self.queue_lvds_status();
             }
             UiRequest::StopAcquisition => {
                 self.acquisition_running = false;
                 self.events
                     .push_back(BackendEvent::AcquisitionChanged { running: false });
+                self.queue_lvds_status();
             }
+            UiRequest::SetDiagnosticPreview { enabled } => self.set_diagnostic_preview(enabled),
+            UiRequest::StartPcapReplay { .. } => self.reject_pcap_replay(),
+            UiRequest::StopPcapReplay => self.stop_pcap_replay(),
             UiRequest::SetTelemetryPolling {
                 enabled,
                 interval_millis,
@@ -365,5 +430,56 @@ mod tests {
                 matches!(event, BackendEvent::CommandSent(sent) if *sent == frame)
             })
         );
+    }
+
+    #[test]
+    fn mock_preview_status_never_fabricates_crc_validation() {
+        let mut bridge = MockBridge::new();
+        assert!(matches!(
+            bridge.crc_mode,
+            super::MockCrcMode::DiagnosticPreview
+        ));
+        bridge.events.clear();
+        bridge
+            .request(UiRequest::SetDiagnosticPreview { enabled: true })
+            .unwrap();
+        let status = bridge
+            .events
+            .iter()
+            .find_map(|event| match event {
+                BackendEvent::LvdsStatus(status) => Some(status),
+                _ => None,
+            })
+            .unwrap();
+        assert!(status.diagnostic_preview);
+        assert!(status.source.contains("MOCK 合成"));
+        assert_eq!(status.stats, crate::bridge::LvdsDiagnosticStats::default());
+        assert!(status.latest.is_none());
+        assert!(status.replay.is_none());
+        assert_eq!(
+            status.storage,
+            crate::bridge::ScientificStorageStatus::default()
+        );
+    }
+
+    #[test]
+    fn mock_replay_request_is_explicitly_rejected_without_fake_packets() {
+        let mut bridge = MockBridge::new();
+        bridge.events.clear();
+        bridge
+            .request(UiRequest::StartPcapReplay {
+                path: "capture.pcapng".to_owned(),
+            })
+            .unwrap();
+        assert!(bridge.events.iter().any(|event| matches!(
+            event, BackendEvent::Fault { source, message }
+                if source == "PCAPNG 回放" && message.contains("不带 --mock")
+        )));
+        assert!(!bridge.events.iter().any(|event| matches!(
+            event,
+            BackendEvent::ScientificSamples { .. } | BackendEvent::DiagnosticSamples { .. }
+        )));
+        assert!(!bridge.lvds_connected);
+        assert!(!bridge.acquisition_running);
     }
 }

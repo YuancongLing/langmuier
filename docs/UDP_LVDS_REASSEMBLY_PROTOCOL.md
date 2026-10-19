@@ -46,13 +46,16 @@ UTC 时间戳 | 微秒偏移 | 数据域 | 校验码
 - `DATA2..3`：通道 2 第一个点，`u16` 大端绝对值。
 - `DATA4, DATA6, ..., DATA250`：通道 1 后续点相对前一点的 `i8` 差分值。
 - `DATA5, DATA7, ..., DATA251`：通道 2 后续点相对前一点的 `i8` 差分值。
-- 每个通道的相邻采样间隔为 `400 us`，即 `50 ms / 125`。
+- 每个通道的相邻采样间隔为 `400 us`，即 10K / 4 = 2500 samples/s，每帧 125 点占 50ms。
+- 沿用 `i8` 补码差分；厂家负差值规则仍待确认。图表 mV 估算公式 `(ADC - 32768) / 6.4` 未完成厂家校准确认。
 
 ### 长度与校验约定
 
-当前网口协议的固定约定是：经重组后的 LVDS 原始帧为 `269 B`，帧尾校验码为 `2 B` CRC16（高字节在前）。`0x0107 = 263`，表示从数据类型到 CRC16 末尾的有效数据长度；CRC 覆盖 CRC 字段之前的有效数据。实测 UDP 分片头中的 `frame_len` 和 `seg_len` 均为 `0x0000010D`（269），接收端必须以该长度作为帧边界。
+用户最终确认经重组后的 LVDS 原始帧为 `269 B`，帧尾校验码为 `2 B` CRC16（高字节在前）。`0x0107 = 263` 对应从 TYPE 到 CRC16 末尾的长度字段；CRC 输入另行定义为 `frame[7..267]`，即 UTC、微秒和科学 DATA 共 260B，不含 TYPE。单分片外层 `frame_len` 和 `seg_len` 均为 269；生产科学帧入口拒绝其他总长。
 
-实包重组后的 269 字节负载以 `EB 90 55 AA 01 07 AA` 开头。UDP 分片头中的 `frame_seq` 用于重组和采集序号，不属于 LVDS 原始帧字段。CRC16 参数为 `poly=0x1021`、`init=0xFFFF`、不反射、`xorout=0`。按本文“有效数据”范围复算时，实包尾部 CRC 尚不匹配，因此接收端解析并保留 CRC 字段，待下位机确认 `Calculate_CRC16(data, length)` 的实际起点和长度后启用实时拒收。
+269B 负载以 `EB 90 55 AA 01 07 AA` 开头。UDP `frame_seq` 不属于 LVDS 内部字段。CRC 参数为 `poly=0x1021`、`init=0xFFFF`、不反射、`xorout=0`。所有正式接收入口在重组后执行结构、CRC、时间和 ADC 验证，仅完整通过的帧进入正常处理。CRC 错误记录计算值/接收值及计数，不自动试探其他范围。
+
+260B 覆盖范围是新版“有效数据”的工作解释（`SPEC_ASSUMPTION`），厂家实际 `Calculate_CRC16(data, length)` 的起点与长度仍待确认；这一待确认项不关闭当前软件 CRC 门禁。
 
 ## UDP 分片头
 
@@ -82,9 +85,9 @@ byte_offset + seg_len <= frame_len
 
 `flags` 的位定义尚未提供。接收端应保留该值用于日志和诊断，不应在未获得定义前据此丢弃数据。
 
-## 当前抓包示例
+## 历史 UDP 外层示例
 
-Wireshark 已验证连续数据报：
+下列为此前记录的 UDP 外层观测，仅说明封装字段。本轮没有读取或回放旧异常 PCAP，其科学负载不作为正常帧或 CRC 黄金证据：
 
 ```text
 192.168.1.128:1534 -> 192.168.1.100:1534
@@ -118,7 +121,7 @@ period: approximately 50 ms
 
 ## 重组规则
 
-接收端以 `(source_ip, source_port, frame_seq)` 作为一帧重组状态的键。
+每个重组器实例只服务一个经调用方过滤的源端点，实例内部以 `frame_seq` 为键；因此接收链路上的帧归属等价于 `(source_ip, source_port, frame_seq)`。
 
 1. 校验 UDP 分片头的固定字段：`magic = 55 AA`、`version = 01`、`type = A5`。
 2. 校验 UDP 数据报长度及各长度、偏移和分片序号约束。
@@ -127,7 +130,22 @@ period: approximately 50 ms
 5. 重复分片仅在内容完全一致时允许；同一字节区间内容冲突时丢弃该帧并记录错误。
 6. 当所有 `seg_index` 均收到，且字节区间完整覆盖 `[0, frame_len)` 时，输出一帧重组后的原始 LVDS 数据。
 7. 不能仅按 UDP 到达顺序拼接，必须按 `byte_offset` 放置；UDP 本身不保证顺序和可靠传输。
-8. 超时未完成的帧应丢弃。推荐超时为 `250 ms`（五个采样周期），并记录源端点、`frame_seq`、已收分片数和缺失区间。
+8. 不完整帧从首次分片到达起计时，单调时间年龄 `>= 2s` 时自动回收。新片或重复片均不续期；每次输入在解析和容量检查前先清理过期状态。此 TTL 为软件资源策略，不是厂家规定的通信超时。
+9. 最多 64 个未完成帧。若清理后仍满，拒绝新序号并返回 `TooManyInFlightFrames`，不覆盖仍有效状态；已有序号仍可接收后续片并正常完成。过期回收后新帧可进入，无需重新监听。
+
+### 不完整帧生命周期与诊断
+
+默认 TTL 常量为 `DEFAULT_UDP_LVDS_REASSEMBLY_TTL`，可用 `new_with_ttl()` 显式配置非零值。采用首次创建的 `Instant`，通过 `checked_duration_since()` 比较年龄，不使用墙上时间或 `created_at + ttl`，避免校时与时间加法溢出。`push()` 使用当前时间；`push_at()` 与 `expire_at()` 允许确定性注入时间。
+
+2s 为 40 个 50ms 周期：即使每周期产生一个残帧，稳定占用约 40 槽，64 槽还有短时突发余量，同时容许超过单帧周期的抖动。突发 64 槽全满且均未到期时仍会暂时拒绝新序号，这是明确的容量策略。
+
+完成帧立即从重组表中移出并交付下一层，不留“完成待取”槽。冲突片延续原有删除逻辑；超时删除同时释放载荷、覆盖表及分片元数据，且只记一次。迟到分片可按其原 sequence 建立新的不完整状态，不继承过期字节，也不混入其他 sequence。完整科学帧的近期重复在下述独立门禁中处理，不改变重组层的 2s TTL；没有增加残帧 tombstone 或跨帧重排序。
+
+桌面每次 UDP drain 开始时清理，因此空闲或持续异常输入也能回收；CLI 在接收循环及退出统计前清理，100ms socket 读超时使空闲清理无需新线程。只运行核心重组器而无任何调用时不会自行唤醒，调用方可显式使用 `expire()`。
+
+核心 `metrics()` 提供等待帧数、预留 payload 字节、超时回收数、容量拒绝数、完整重组数和分片错误数。桌面沿用现有快照传递这些值，异常按 500ms 聚合；不逐次成功或清理输出日志。CRC/内层帧头错误与重组超时、容量错误分别计数，完整重组数包含随后可能被 CRC 拒绝的帧。
+
+预留 payload 字节不等于整个堆占用：通用默认上限仍为每帧 1MiB、最多 1024 片、64 槽，payload 至多 64MiB，覆盖表和分片元数据另有上述配置边界。桌面/CLI 在进入重组器前限制 269B，因此其未完成 payload 上限为 `64 × 269 = 17216B`。本轮未改变原有容量边界。
 
 对于当前 `seg_count = 1` 的报文，步骤 3 至 6 在单次接收后即可完成：
 
@@ -138,34 +156,78 @@ byte_offset = 0
 seg_len = frame_len = 269
 ```
 
+## 完整科学帧去重门禁（P1-2）
+
+桌面 UDP ingress 和 CLI capture 在完整重组后共用 `UdpLvdsScienceGate`：先执行全部 269B 结构、CRC16、时间和 ADC 解码验证，通过后才登记已接受状态。CRC 或其他科学验证错误不写入缓存，所以同序号的合法重传仍可接收。原始字节流没有可靠的 UDP `u32` 标签，本机制只用于保留了外层帧序号的数据报路径。
+
+每个门禁对象只服务一个已过滤的源端点与一个接收会话；键为该会话内的完整 `u32 frame_seq`，保留全部 269B 逐字节比较，不使用截断的 `u16`、CRC 值或内容哈希替代完整内容。同序号同字节为重复，只计抑制，不调用正常 handler、不写 capture 文件。同序号但字节不同且科学验证合法为序号冲突，单独计数并拒绝交付，保留首条已接受内容。不同序号的相同字节允许分别交付。
+
+缓存默认最多 256 帧、从首次接受起保留 5 秒（约 100 个 50ms 周期），均为软件策略。新输入及空闲轮询清理年龄 `>= 5s` 的记录，重复和冲突不续期；容量满时淘汰最早接受的记录，不按序号大小淘汰。缓存 payload 上限 `256 × 269 = 68864B`，索引与时间元数据另有同一容量上限。这是有界的近期重复防护：超过生命周期或被容量淘汰后，历史帧可以再次被接受，不承诺永久 exactly-once。
+
+厂家尚未定义序号复位、回绕或重连复用语义（`SPEC_ASSUMPTION`）。软件将重新监听/新 CLI 采集调用视为新接收会话，销毁旧缓存；采集启停不重建会话。不依据序号倒退判断重启，不排序。`u32::MAX → 0` 的不同键正常接收；同会话短期复用已有序号时按重复/冲突规则处理，最迟原记录满 5 秒后解除。UDP 本身没有设备会话标记，重新监听后也无法辨认网络中迟到的旧会话包。
+
+诊断区分完整重组数 `reassembled_frames`、全部科学验证通过数 `frames_decoded`（包括合法重复和冲突）、重复抑制数 `duplicate_frames_suppressed`、序号冲突数 `sequence_conflicts`、门禁回调数 `scientific_frames_delivered`。最后一项表示已调用正常处理回调，不等于存储落盘成功或 GUI 事件一定送达；停止采集时 handler 仍可忽略该帧。重复不增加 CRC 或总拒收；冲突增加独立冲突计数与总拒收。异常沿用 500ms 聚合日志，不逐帧刷屏。
+
+## 完整序号质量观察（P1-3）
+
+独立 `UdpLvdsSequenceMonitor` 只观察门禁返回 Accepted 的完整外层 `u32 frame_seq`，随后仍按原到达/重组完成顺序调用 handler 或写 CLI capture。CRC 错误、完整重复、合法序号冲突及错误来源均不推进观察状态。它不读取科学模型的低 `u16`，不拒收、不重排序、不插入样本，也不修改重组 TTL 或去重缓存。
+
+每个已过滤来源与接收会话使用独立监测器。首帧建立参考序号；用 `wrapping_sub()` 计算模 `2^32` 的距离，不转为有符号整数。前进 1 计连续；前进 2–256 且缺口总容量足够时，计一次向前跳号，并登记中间尚未观察到的序号。向前推进跨零同时计一次回绕，例如 `FFFFFFFE → FFFFFFFF → 0 → 1` 为三次连续、一次回绕。
+
+缺口先等待 2 秒；期间收到该序号，移除候选，计一次迟到补齐及一次乱序，参考序号不后退。达到 2 秒边界后，累计一次等待到期事件，另保留 5 秒未解决历史；这期间补齐会降低当前未解决到期量，并增加“到期后补齐”，不会撤销历史到期事件。首次发现后达到 7 秒仍未补齐则遗忘记录。不续期，空闲轮询也维护状态。待补与到期历史合计最多 256 条。
+
+先查询已有缺口，再判断方向。未匹配缺口且向后距离不超过 256 的帧计乱序；超出局部范围、半圈歧义或新增缺口将超出容量时，计无法判定异常，单独累计被遗忘的旧记录，并以当前帧重建观察参考，不猜测设备复位、不生成巨量缺口。门禁窗口外再次接受相同参考序号计异常，但不清除现有缺口。上述 2 秒等待、5 秒额外历史和 256 步范围均为软件策略（`SPEC_ASSUMPTION`），不是厂家序号或网络时延保证。
+
+`ReaderMetricsSnapshot.udp_sequence` 和 UI 桥接中的同名嵌套指标包含累计观察/连续/跳号/候选/到期/迟到/乱序/回绕/异常/遗忘事件，以及当前等待、当前未解决到期两个 gauge。迟到补齐是乱序的子集，到期后补齐是迟到补齐的子集，不能将这些列相加作为帧总数。到期不等于永久缺失，更不证明 UDP 网络丢包：CRC 拒收、设备行为、会话变化等都可能造成有效科学帧未被观察。超出有界历史后无法继续关联原缺口。详细字段定义与回归证据见 [序号质量报告](UDP_LVDS_SEQUENCE_QUALITY_REPORT.md)。
+
 ## 接收伪代码
 
 ```rust
-const UDP_HEADER_LEN: usize = 24;
-
-let socket = UdpSocket::bind("192.168.1.100:1534").await?;
+let socket = std::net::UdpSocket::bind("192.168.1.100:1534")?;
+socket.set_read_timeout(Some(std::time::Duration::from_millis(100)))?;
+let expected_source = "192.168.1.128:1534".parse::<std::net::SocketAddr>()?;
+let mut reassembler = UdpLvdsReassembler::default();
+let mut science_gate = UdpLvdsScienceGate::default(); // 与当前 source/session 一一对应
+let mut sequence_monitor = UdpLvdsSequenceMonitor::default();
 let mut buffer = vec![0_u8; 65_535];
 
 loop {
-    let (size, source) = socket.recv_from(&mut buffer).await?;
-    if source.ip() != "192.168.1.128".parse()? || source.port() != 1534 {
-        continue;
-    }
-    if size < UDP_HEADER_LEN {
+    reassembler.expire(); // 空闲读超时也会回到这里
+    let now = std::time::Instant::now();
+    science_gate.expire_at(now);
+    sequence_monitor.expire_at(now);
+    let (size, source) = match socket.recv_from(&mut buffer) {
+        Ok(result) => result,
+        Err(error) if matches!(error.kind(), std::io::ErrorKind::TimedOut
+            | std::io::ErrorKind::WouldBlock) => continue,
+        Err(error) => return Err(error.into()),
+    };
+    if source != expected_source {
         continue;
     }
 
     let datagram = &buffer[..size];
-    let header = parse_udp_lvds_header(&datagram[..UDP_HEADER_LEN])?;
-    if datagram.len() != UDP_HEADER_LEN + usize::from(header.seg_len) {
+    let Ok(parsed) = parse_udp_lvds_datagram(datagram) else {
+        continue; // 实际接收器同时记录 UDP 分片错误
+    };
+    if parsed.header.frame_length != 269 {
         continue;
     }
 
-    reassembler.push(source, header, &datagram[UDP_HEADER_LEN..])?;
+    if let Ok(Some(raw)) = reassembler.push(datagram) {
+        let now = std::time::Instant::now();
+        let Ok(result) = science_gate.accept_at(&raw, now) else {
+            continue; // 实际接收器分类计数，科学验证错误不登记缓存
+        };
+        if let Some(scientific) = result.into_frame() {
+            sequence_monitor.observe_at(raw.frame_sequence, now);
+            handle_scientific_frame(scientific); // 重复/序号冲突不会进入此处
+        }
+    }
 }
 ```
 
-运行中的接收器必须保留 UDP 数据报边界。`.pcapng` 回放工具也应逐个还原 UDP 负载，再调用同一套 `parse_udp_lvds_header` 和重组逻辑。
+运行中的接收器必须保留 UDP 数据报边界。`.pcapng` 回放工具也应逐个还原 UDP 负载，再调用同一套 `parse_udp_lvds_datagram` 和重组逻辑。
 
 ## 实时接收工具
 
@@ -179,7 +241,11 @@ cargo run -p langmuir-protocol-cli -- `
 
 该命令保存两份文件：
 
-- `udp-lvds-raw.bin`：按完成顺序连续写入的重组原始帧。
+- `udp-lvds-raw.bin`：按完成顺序连续写入、通过科学验证和近期去重门禁的重组原始帧。
 - `udp-lvds-raw.bin.index.csv`：每帧的 `frame_sequence`、字节偏移和长度。
 
-当前实测的单分片流中，采集 20 帧应生成 `20 * 269 = 5380 B` 的原始帧文件。
+成功采集 20 个合法帧时生成 `20 * 269 = 5380 B`；坏帧不计入目标数量、不写入该文件，命令结束或超时会报告科学帧拒收计数和最后错误。本命令不是保留异常 wire 数据的诊断录制器。
+
+命令结束或超时还报告分片错误、完整重组数、超时残帧、容量拒绝、等待帧和预留 payload 字节，以及科学验证通过、重复抑制、序号冲突、实际唯一帧写入数、去重缓存状态和 Accepted 科学帧序号质量；重复/超时不计作 CRC 失败。CLI 目标帧数只在通过去重后写入成功时增加，重复和冲突不占目标数量。序号观察不改变 raw/index 文件的写入顺序或列定义。
+
+去重与序号观察使用完整 UDP `u32`，但桌面科学模型和存储中的序号仍截为 `u16`，格式没有改变。跨帧排序、自动补样本、wire 原始保存和科学 CSV 继续留待独立任务。此前阶段证据见 [去重实施报告](UDP_LVDS_DEDUP_REPORT.md)、[TTL 实施报告](UDP_LVDS_REASSEMBLY_TTL_REPORT.md) 和 [CRC16 实施报告](LVDS_CRC16_IMPLEMENTATION_REPORT.md)。

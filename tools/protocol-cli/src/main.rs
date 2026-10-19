@@ -7,8 +7,9 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use langmuir_core::{
-    Command, DEPLOYED_LVDS_RAW_FRAME_LEN, UdpLvdsReassembler, decode_rs422_telemetry,
-    decode_scientific_frame, parse_udp_lvds_datagram,
+    Command, DEPLOYED_LVDS_RAW_FRAME_LEN, UdpLvdsReassembler, UdpLvdsScienceGate,
+    UdpLvdsSequenceMonitor, decode_rs422_telemetry, decode_scientific_frame,
+    parse_udp_lvds_datagram,
 };
 
 fn main() -> ExitCode {
@@ -41,19 +42,23 @@ fn run(arguments: &[String]) -> Result<String, String> {
         "decode-lvds" => {
             let path = arguments.get(1).ok_or("missing frame file path")?;
             let bytes = fs::read(path).map_err(|error| format!("cannot read {path}: {error}"))?;
-            let frame = decode_scientific_frame(&bytes).map_err(|error| error.to_string())?;
-            Ok(format!(
-                "timestamp={:?}\nsequence={}\nch1_first={}\nch2_first={}\nsamples={}",
-                frame.timestamp,
-                frame.sequence,
-                frame.channel_1[0],
-                frame.channel_2[0],
-                frame.channel_1.len()
-            ))
+            decode_lvds_output(&bytes)
         }
         "receive-udp-lvds" => receive_udp_lvds(&arguments[1..]),
         _ => Err(format!("unknown action: {action}")),
     }
+}
+
+fn decode_lvds_output(bytes: &[u8]) -> Result<String, String> {
+    let frame = decode_scientific_frame(bytes).map_err(|error| error.to_string())?;
+    Ok(format!(
+        "timestamp={:?}\nsequence={}\nch1_first={}\nch2_first={}\nsamples={}",
+        frame.timestamp,
+        frame.sequence,
+        frame.channel_1[0],
+        frame.channel_2[0],
+        frame.channel_1.len()
+    ))
 }
 
 #[allow(clippy::too_many_lines)]
@@ -109,12 +114,24 @@ fn receive_udp_lvds(arguments: &[String]) -> Result<String, String> {
     let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
     let mut buffer = vec![0_u8; 65_535];
     let mut reassembler = UdpLvdsReassembler::default();
+    // One invocation receives one filtered source endpoint in one session.
+    let mut science_gate = UdpLvdsScienceGate::default();
+    let mut sequence_monitor = UdpLvdsSequenceMonitor::default();
     let mut received_datagrams = 0_u64;
     let mut rejected_datagrams = 0_u64;
+    let mut invalid_udp_datagrams = 0_u64;
+    let mut rejected_scientific_frames = 0_u64;
+    let mut last_scientific_error = None;
     let mut completed_frames = 0_usize;
     let mut output_offset = 0_u64;
 
     while completed_frames < frame_count && Instant::now() < deadline {
+        // Also reclaim partial frames while recv_from times out or the source
+        // is idle; push() performs the same cleanup before checking capacity.
+        reassembler.expire();
+        let now = Instant::now();
+        science_gate.expire_at(now);
+        sequence_monitor.expire_at(now);
         let (bytes, source) = match socket.recv_from(&mut buffer) {
             Ok(result) => result,
             Err(error)
@@ -133,10 +150,12 @@ fn receive_udp_lvds(arguments: &[String]) -> Result<String, String> {
         received_datagrams = received_datagrams.saturating_add(1);
         let Ok(datagram) = parse_udp_lvds_datagram(&buffer[..bytes]) else {
             rejected_datagrams = rejected_datagrams.saturating_add(1);
+            invalid_udp_datagrams = invalid_udp_datagrams.saturating_add(1);
             continue;
         };
         if usize::try_from(datagram.header.frame_length).ok() != Some(DEPLOYED_LVDS_RAW_FRAME_LEN) {
             rejected_datagrams = rejected_datagrams.saturating_add(1);
+            invalid_udp_datagrams = invalid_udp_datagrams.saturating_add(1);
             continue;
         }
         let Ok(frame) = reassembler.push(&buffer[..bytes]) else {
@@ -147,6 +166,25 @@ fn receive_udp_lvds(arguments: &[String]) -> Result<String, String> {
             continue;
         };
 
+        // The shared gate validates science before remembering a full u32
+        // sequence and its bytes. Duplicate/conflicting frames never reach
+        // either capture file or the requested unique-frame count.
+        let now = Instant::now();
+        match science_gate.accept_at(&frame, now) {
+            Ok(result) => {
+                if result.into_frame().is_none() {
+                    continue;
+                }
+            }
+            Err(error) => {
+                rejected_scientific_frames = rejected_scientific_frames.saturating_add(1);
+                last_scientific_error = Some(error.to_string());
+                continue;
+            }
+        }
+        // Observe only Accepted science using the untruncated wrapper tag.
+        // This never reorders capture writes or inserts missing samples.
+        sequence_monitor.observe_at(frame.frame_sequence, now);
         debug_assert_eq!(frame.bytes.len(), DEPLOYED_LVDS_RAW_FRAME_LEN);
         output_writer
             .write_all(&frame.bytes)
@@ -170,13 +208,41 @@ fn receive_udp_lvds(arguments: &[String]) -> Result<String, String> {
         .flush()
         .map_err(|error| format!("cannot flush {index_path}: {error}"))?;
 
+    reassembler.expire();
+    let now = Instant::now();
+    science_gate.expire_at(now);
+    sequence_monitor.expire_at(now);
+    let reassembly = reassembler.metrics();
+    let fragment_errors = invalid_udp_datagrams.saturating_add(reassembly.fragment_errors);
+    let reassembly_diagnostics = format!(
+        "UDP fragment errors={fragment_errors}; reassembled={}; expired incomplete frames={}; capacity rejections={}; pending={}; reserved payload bytes={}",
+        reassembly.completed_frames,
+        reassembly.expired_frames,
+        reassembly.capacity_rejections,
+        reassembly.in_flight_frames,
+        reassembly.buffered_payload_bytes,
+    );
+    let dedup = science_gate.metrics();
+    let scientific_diagnostics = format!(
+        "science validated={}; duplicates suppressed={}; sequence conflicts={}; unique frames written={completed_frames}; dedup cached={}; dedup payload bytes={}; rejected scientific frames={rejected_scientific_frames}; last scientific error={}",
+        dedup.validated_frames,
+        dedup.duplicate_frames,
+        dedup.sequence_conflicts,
+        dedup.cached_frames,
+        dedup.cached_payload_bytes,
+        last_scientific_error.as_deref().unwrap_or("none")
+    );
+    let sequence_diagnostics = format!(
+        "Accepted-science sequence quality={:?} (unobserved valid science is not proof of network loss)",
+        sequence_monitor.metrics()
+    );
     if completed_frames != frame_count {
         return Err(format!(
-            "timed out after {timeout_seconds}s: completed {completed_frames}/{frame_count} frames, received {received_datagrams} matching UDP datagrams, rejected {rejected_datagrams}"
+            "timed out after {timeout_seconds}s: completed {completed_frames}/{frame_count} frames, received {received_datagrams} matching UDP datagrams, rejected datagrams={rejected_datagrams}; {reassembly_diagnostics}; {scientific_diagnostics}; {sequence_diagnostics}"
         ));
     }
     Ok(format!(
-        "reassembled {completed_frames} LVDS frames ({output_offset} bytes, {DEPLOYED_LVDS_RAW_FRAME_LEN} bytes/frame) from {received_datagrams} UDP datagrams; index={index_path}"
+        "validated {completed_frames} LVDS frames ({output_offset} bytes, {DEPLOYED_LVDS_RAW_FRAME_LEN} bytes/frame) from {received_datagrams} UDP datagrams; rejected datagrams={rejected_datagrams}; {reassembly_diagnostics}; {scientific_diagnostics}; {sequence_diagnostics}; index={index_path}"
     ))
 }
 
@@ -279,7 +345,34 @@ fn usage() -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_hex, run};
+    use super::{decode_lvds_output, parse_hex, run};
+
+    #[test]
+    fn lvds_cli_decodes_the_independent_golden_frame_and_rejects_bad_crc() {
+        // Fixed CRC 44C8 was calculated using the manufacturer's C reference,
+        // not the production Rust checksum function. DATA is 01 FF x 124.
+        let mut frame = [0_u8; 269];
+        frame[..19].copy_from_slice(&[
+            0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07, 0xAA, 0x65, 0x00, 0x00, 0x00, 0x00, 0x0F, 0x41,
+            0x78, 0x12, 0x34, 0xAB, 0xCD,
+        ]);
+        for offset in (19..267).step_by(2) {
+            frame[offset] = 0x01;
+            frame[offset + 1] = 0xFF;
+        }
+        frame[267..].copy_from_slice(&[0x44, 0xC8]);
+        let output = decode_lvds_output(&frame).unwrap();
+        assert!(output.contains("utc_seconds: 1694498816"));
+        assert!(output.contains("microseconds: 999800"));
+        assert!(output.contains("ch1_first=4660"));
+        assert!(output.contains("ch2_first=43981"));
+        assert!(output.contains("samples=125"));
+
+        frame[268] ^= 1;
+        let error = decode_lvds_output(&frame).unwrap_err();
+        assert!(error.contains("0x44C9"));
+        assert!(error.contains("0x44C8"));
+    }
 
     #[test]
     fn command_cli_matches_python_default() {

@@ -6,6 +6,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TrySendError, bounded};
+use langmuir_core::{
+    LVDS_CRC_CALC_END, LVDS_CRC_CALC_START, LVDS_CRC_FIELD_OFFSET, LVDS_FRAME_LEN,
+    crc16_ccitt_false,
+};
 use parking_lot::Mutex;
 
 use crate::{Transport, TransportError};
@@ -167,8 +171,7 @@ pub fn rs422_packet(sequence: u8, timestamp_seconds: u32) -> [u8; 34] {
 
 #[must_use]
 pub fn lvds_packet(frame_index: u32, timestamp_seconds: u32) -> Vec<u8> {
-    const FRAME_LEN: usize = 269;
-    let mut frame = vec![0_u8; FRAME_LEN];
+    let mut frame = vec![0_u8; LVDS_FRAME_LEN];
     frame[0..6].copy_from_slice(&[0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07]);
     frame[6] = 0xAA;
     frame[7..11].copy_from_slice(&timestamp_seconds.to_be_bytes());
@@ -183,7 +186,8 @@ pub fn lvds_packet(frame_index: u32, timestamp_seconds: u32) -> Vec<u8> {
         frame[offset] = 1;
         frame[offset + 1] = 3;
     }
-    frame[267..269].copy_from_slice(&0_u16.to_be_bytes());
+    let checksum = crc16_ccitt_false(&frame[LVDS_CRC_CALC_START..LVDS_CRC_CALC_END]);
+    frame[LVDS_CRC_FIELD_OFFSET..].copy_from_slice(&checksum.to_be_bytes());
     frame
 }
 
@@ -194,6 +198,11 @@ pub fn checksum8(bytes: &[u8]) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    use langmuir_core::{
+        FrameError, SAMPLE_COUNT, SAMPLE_INTERVAL_MICROS, UDP_LVDS_HEADER_LEN, UdpLvdsReassembler,
+        decode_scientific_frame, decode_scientific_frame_with_sequence, parse_udp_lvds_datagram,
+    };
+
     use super::*;
 
     #[test]
@@ -206,6 +215,80 @@ mod tests {
         let scientific = lvds_packet(9, 1_700_000_000);
         assert_eq!(scientific.len(), 269);
         assert_eq!(&scientific[..6], &[0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07]);
-        assert_eq!(&scientific[267..269], &[0, 0]);
+        let decoded = decode_scientific_frame(&scientific).unwrap();
+        assert_eq!(decoded.channel_1[0], 2_057);
+        assert_eq!(decoded.channel_2[124], 20_390);
+    }
+
+    fn golden_frame(seconds: u32, microseconds: u32, checksum: u16) -> Vec<u8> {
+        let mut frame = vec![0_u8; LVDS_FRAME_LEN];
+        frame[..7].copy_from_slice(&[0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07, 0xAA]);
+        frame[7..11].copy_from_slice(&seconds.to_be_bytes());
+        frame[11..15].copy_from_slice(&microseconds.to_be_bytes());
+        frame[15..19].copy_from_slice(&[0x12, 0x34, 0xAB, 0xCD]);
+        for offset in (19..267).step_by(2) {
+            frame[offset] = 0x01;
+            frame[offset + 1] = 0xFF;
+        }
+        frame[267..].copy_from_slice(&checksum.to_be_bytes());
+        frame
+    }
+
+    fn udp_datagram(sequence: u32, frame: &[u8]) -> Vec<u8> {
+        let mut datagram = vec![0_u8; UDP_LVDS_HEADER_LEN];
+        datagram[..4].copy_from_slice(&[0x55, 0xAA, 0x01, 0xA5]);
+        datagram[4..8].copy_from_slice(&sequence.to_be_bytes());
+        datagram[8..12].copy_from_slice(&u32::try_from(frame.len()).unwrap().to_be_bytes());
+        datagram[14..16].copy_from_slice(&1_u16.to_be_bytes());
+        datagram[20..22].copy_from_slice(&u16::try_from(frame.len()).unwrap().to_be_bytes());
+        datagram.extend_from_slice(frame);
+        datagram
+    }
+
+    #[test]
+    fn protocol_mock_checks_crc_before_delivering_two_channels() {
+        // CRC values independently calculated with the manufacturer's C function.
+        let first = golden_frame(1_694_498_816, 999_800, 0x44C8);
+        let second = golden_frame(1_694_498_817, 49_800, 0x5EF9);
+        let mut corrupt = first.clone();
+        corrupt[267] ^= 0x01;
+        let datagrams = [
+            udp_datagram(41, &first),
+            udp_datagram(42, &corrupt),
+            udp_datagram(43, &second),
+        ];
+        let mut reassembler = UdpLvdsReassembler::default();
+        let mut normal_frames = Vec::new();
+        let mut errors = Vec::new();
+        for datagram in &datagrams {
+            let parsed = parse_udp_lvds_datagram(datagram).unwrap();
+            assert_eq!(parsed.payload.len(), LVDS_FRAME_LEN);
+            let packet = reassembler.push(datagram).unwrap().unwrap();
+            match decode_scientific_frame_with_sequence(
+                &packet.bytes,
+                u16::try_from(packet.frame_sequence).unwrap(),
+            ) {
+                Ok(frame) => normal_frames.push(frame),
+                Err(error) => errors.push(error),
+            }
+        }
+        assert_eq!(normal_frames.len(), 2);
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], FrameError::ChecksumMismatch { .. }));
+        for frame in &normal_frames {
+            assert_eq!(frame.channel_1.len(), SAMPLE_COUNT);
+            assert_eq!(frame.channel_2.len(), SAMPLE_COUNT);
+            for index in 0..SAMPLE_COUNT {
+                let offset = u32::try_from(index).unwrap();
+                assert_eq!(frame.channel_1[index], 4_660 + offset);
+                assert_eq!(frame.channel_2[index], 43_981 - offset);
+            }
+        }
+        assert_eq!(normal_frames[0].sequence, 41);
+        assert_eq!(normal_frames[1].sequence, 43);
+        let elapsed = normal_frames[1].timestamp.as_seconds_f64()
+            - normal_frames[0].timestamp.as_seconds_f64();
+        assert!((elapsed - 0.05).abs() < 0.000_001);
+        assert_eq!(SAMPLE_INTERVAL_MICROS, 400);
     }
 }

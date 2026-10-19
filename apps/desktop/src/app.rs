@@ -8,7 +8,7 @@ use chrono::{DateTime, Local, Utc};
 use eframe::egui::{
     self, Align, Color32, ComboBox, Grid, Layout, PointerButton, RichText, ScrollArea, Stroke, Ui,
 };
-use egui_plot::{Legend, Line, Plot, PlotPoints, VLine};
+use egui_plot::{Legend, Line, Plot, PlotPoint, PlotPoints, VLine};
 use langmuir_core::{
     Command, CommandError, CommandFrame, ScanFrequency, command_checksum as core_command_checksum,
     validate_command_frame,
@@ -17,15 +17,18 @@ use langmuir_core::{
 use crate::{
     bridge::{
         BackendBridge, BackendEvent, BackendStateSnapshot, LinkKind, LinkMetricsSnapshot, LogLevel,
-        TELEMETRY_POLL_INTERVAL_DEFAULT_MILLIS, TELEMETRY_POLL_INTERVAL_MAX_MILLIS,
-        TELEMETRY_POLL_INTERVAL_MIN_MILLIS, TelemetryPollingState, TelemetrySnapshot, UiRequest,
+        LvdsStatusSnapshot, TELEMETRY_POLL_INTERVAL_DEFAULT_MILLIS,
+        TELEMETRY_POLL_INTERVAL_MAX_MILLIS, TELEMETRY_POLL_INTERVAL_MIN_MILLIS,
+        TelemetryPollingState, TelemetrySnapshot, UiRequest,
     },
-    buffer::{SamplePoint, TimeSeriesBuffer},
+    buffer::{SamplePoint, SampleQuality, TimeSeriesBuffer},
     ui::{fonts, theme},
 };
 
-// 20 frames/s × 125 samples/frame × 10 s, plus modest scheduling headroom.
-const PLOT_CAPACITY: usize = 1_100_000;
+// UI history: 20 frames/s × 125 samples/frame × 60 s, plus one frame.
+// Scientific file storage is independent of this bounded display history.
+const PLOT_CAPACITY: usize = 150_125;
+const PLOT_HISTORY_SECONDS: f64 = 60.0;
 const PLOT_WINDOW_SECONDS: f64 = 10.0;
 const MAX_DISPLAY_POINTS: usize = 2_000;
 const MAX_LOGS: usize = 500;
@@ -61,10 +64,14 @@ const MONITOR_LABEL_WIDTH: f32 = 94.0;
 // The central work area is deliberately partitioned into fixed docking
 // regions.  Only the plot body receives elastic height; logs scroll inside
 // their own region and never change the height of the central work area.
-const CENTRAL_OPERATIONS_HEIGHT: f32 = 136.0;
-const CENTRAL_PLOT_TOOLBAR_HEIGHT: f32 = 68.0;
+const CENTRAL_OPERATIONS_HEIGHT: f32 = 216.0;
+const CENTRAL_PLOT_TOOLBAR_HEIGHT: f32 = 86.0;
 const CENTRAL_LOG_HEIGHT: f32 = 160.0;
 const CENTRAL_GAP: f32 = 6.0;
+const CENTRAL_CONTROL_HEIGHT: f32 = 32.0;
+const CENTRAL_COMPACT_OPERATIONS_HEIGHT: f32 = 154.0;
+const CENTRAL_COMPACT_LOG_HEIGHT: f32 = 80.0;
+const CENTRAL_SHORT_HEIGHT: f32 = 620.0;
 const UI_SCALE_OPTIONS: [f32; 6] = [0.8, 0.9, 1.0, 1.1, 1.25, 1.5];
 const ADC_ZERO_COUNTS: f64 = 32_768.0;
 const ADC_COUNTS_PER_MILLIVOLT: f64 = 6.4;
@@ -153,6 +160,35 @@ enum PlotLayout {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LvdsDialog {
+    CrcDetails,
+    Replay,
+}
+
+#[derive(Debug)]
+struct LvdsDiagnosticView {
+    status: Option<LvdsStatusSnapshot>,
+    dialog: Option<LvdsDialog>,
+    strict_crc_only: bool,
+    pending_filter: Option<bool>,
+    plotted_frames: u64,
+    replay_path: String,
+}
+
+impl Default for LvdsDiagnosticView {
+    fn default() -> Self {
+        Self {
+            status: None,
+            dialog: None,
+            strict_crc_only: false,
+            pending_filter: None,
+            plotted_frames: 0,
+            replay_path: "2026101902--朗缪尔.pcapng".to_owned(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CommandEditMode {
     Typed,
     Raw,
@@ -220,14 +256,25 @@ struct FaultEntry {
 
 #[derive(Debug)]
 struct FrozenPlot {
-    channel_1: Vec<[f64; 2]>,
-    channel_2: Vec<[f64; 2]>,
+    channel_1: TimeSeriesBuffer,
+    channel_2: TimeSeriesBuffer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum PlotViewMode {
+    #[default]
+    FollowLatest,
+    ManualView,
 }
 
 #[derive(Debug)]
 struct OperatorViewState {
     frozen_plot: Option<FrozenPlot>,
     plot_cursor_seconds: Option<f64>,
+    plot_view: PlotViewMode,
+    plot_x_range: Option<[f64; 2]>,
+    plot_reset_pending: bool,
+    plot_width_points: Option<f32>,
     alarm_filter: AlarmState,
     emergency_stop_confirmation_open: bool,
     last_telemetry_update: Option<Instant>,
@@ -239,6 +286,10 @@ impl Default for OperatorViewState {
         Self {
             frozen_plot: None,
             plot_cursor_seconds: None,
+            plot_view: PlotViewMode::FollowLatest,
+            plot_x_range: None,
+            plot_reset_pending: true,
+            plot_width_points: None,
             alarm_filter: AlarmState::Unacknowledged,
             emergency_stop_confirmation_open: false,
             last_telemetry_update: None,
@@ -249,17 +300,69 @@ impl Default for OperatorViewState {
 
 #[derive(Debug)]
 struct ParameterStepState {
-    frequency: u8,
-    voltage: u16,
     telemetry_interval: u32,
 }
 
 impl Default for ParameterStepState {
     fn default() -> Self {
         Self {
-            frequency: 10,
-            voltage: 100,
             telemetry_interval: 1_000,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct IntegerParameterEdit {
+    text: String,
+    dirty: bool,
+    error: Option<String>,
+}
+
+impl IntegerParameterEdit {
+    fn new(value: u16) -> Self {
+        Self {
+            text: value.to_string(),
+            dirty: false,
+            error: None,
+        }
+    }
+
+    fn parsed_value(&self, maximum: u16) -> Result<u16, String> {
+        if self.text.is_empty() || !self.text.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(format!("请输入 0–{maximum} 的整数，不接受小数或其他字符"));
+        }
+        self.text
+            .parse::<u16>()
+            .ok()
+            .filter(|value| *value <= maximum)
+            .ok_or_else(|| format!("数值超出范围，请输入 0–{maximum}"))
+    }
+
+    fn set_confirmed(&mut self, value: u16) {
+        self.text = value.to_string();
+        self.dirty = false;
+        self.error = None;
+    }
+
+    fn confirm(&mut self, maximum: u16) -> Option<u16> {
+        match self.parsed_value(maximum) {
+            Ok(value) => {
+                self.set_confirmed(value);
+                Some(value)
+            }
+            Err(error) => {
+                self.error = Some(error);
+                None
+            }
+        }
+    }
+
+    fn ensure_confirmed(&self, value: u16, maximum: u16) -> Result<(), String> {
+        let parsed = self.parsed_value(maximum)?;
+        if self.dirty || parsed != value {
+            Err("精确输入尚未确认，请按 Enter 或移开焦点".to_owned())
+        } else {
+            Ok(())
         }
     }
 }
@@ -272,16 +375,20 @@ impl Default for ParameterStepState {
     )
 )]
 pub struct LangmuirDesktopApp {
+    measurements: crate::perf::PlotMeasurements,
     bridge: Box<dyn BackendBridge>,
     rs422: ConnectionPanelState,
     lvds: LvdsUdpPanelState,
+    diagnostic: LvdsDiagnosticView,
     acquisition_running: bool,
     telemetry_polling: TelemetryPollingState,
     telemetry_polling_edit_millis: u32,
     command_family: CommandFamily,
     configuration_mode: ConfigurationMode,
     frequency: u8,
+    frequency_edit: IntegerParameterEdit,
     voltage: u16,
+    voltage_edit: IntegerParameterEdit,
     lvds_enabled: bool,
     command_edit_mode: CommandEditMode,
     raw_command: [u8; 12],
@@ -312,31 +419,40 @@ impl LangmuirDesktopApp {
             eprintln!("CJK FONT LOAD WARNING: {warning}");
         }
         theme::configure(&context.egui_ctx);
+        Self::with_bridge(
+            bridge,
+            font_report.warning,
+            #[cfg(feature = "mock")]
+            mock_mode,
+        )
+    }
+
+    fn with_bridge(
+        bridge: Box<dyn BackendBridge>,
+        font_warning: Option<String>,
+        #[cfg(feature = "mock")] mock_mode: bool,
+    ) -> Self {
         let mut app = Self {
+            measurements: crate::perf::PlotMeasurements::default(),
             bridge,
             rs422: ConnectionPanelState::default(),
             lvds: LvdsUdpPanelState::default(),
+            diagnostic: LvdsDiagnosticView::default(),
             acquisition_running: false,
             telemetry_polling: TelemetryPollingState::default(),
             telemetry_polling_edit_millis: TELEMETRY_POLL_INTERVAL_DEFAULT_MILLIS,
             command_family: CommandFamily::Telemetry,
             configuration_mode: ConfigurationMode::Triangle,
             frequency: 10,
+            frequency_edit: IntegerParameterEdit::new(10),
             voltage: 5_000,
+            voltage_edit: IntegerParameterEdit::new(5_000),
             lvds_enabled: true,
             command_edit_mode: CommandEditMode::Typed,
             raw_command: command_bytes(Command::RequestTelemetry),
             telemetry: None,
-            channel_1: TimeSeriesBuffer::with_display_cache(
-                PLOT_CAPACITY,
-                PLOT_WINDOW_SECONDS,
-                MAX_DISPLAY_POINTS,
-            ),
-            channel_2: TimeSeriesBuffer::with_display_cache(
-                PLOT_CAPACITY,
-                PLOT_WINDOW_SECONDS,
-                MAX_DISPLAY_POINTS,
-            ),
+            channel_1: scientific_plot_buffer(),
+            channel_2: scientific_plot_buffer(),
             show_channels: [true, true],
             plot_layout: PlotLayout::Overlay,
             overlay_normalized: false,
@@ -344,7 +460,7 @@ impl LangmuirDesktopApp {
             faults: VecDeque::new(),
             operator: OperatorViewState::default(),
             parameter_steps: ParameterStepState::default(),
-            font_warning: font_report.warning,
+            font_warning,
             #[cfg(feature = "mock")]
             mock_mode,
         };
@@ -427,24 +543,152 @@ impl LangmuirDesktopApp {
     fn toggle_display_freeze(&mut self) {
         if self.operator.frozen_plot.is_some() {
             self.operator.frozen_plot = None;
-            self.push_log(LogLevel::Info, "画面更新已恢复，后台采集未中断");
+            self.push_log(LogLevel::Info, "画面更新已恢复，后台接收未中断");
         } else {
             self.operator.frozen_plot = Some(FrozenPlot {
-                channel_1: self.channel_1.decimated(MAX_DISPLAY_POINTS),
-                channel_2: self.channel_2.decimated(MAX_DISPLAY_POINTS),
+                channel_1: self.channel_1.clone(),
+                channel_2: self.channel_2.clone(),
             });
-            self.push_log(LogLevel::Info, "画面已冻结，后台采集继续运行");
+            self.push_log(LogLevel::Info, "画面已冻结，后台接收继续运行");
         }
     }
 
+    #[cfg(test)]
     fn display_plot_points(&mut self) -> (Vec<[f64; 2]>, Vec<[f64; 2]>) {
-        if let Some(frozen) = &self.operator.frozen_plot {
-            return (frozen.channel_1.clone(), frozen.channel_2.clone());
+        let range = self.plot_range();
+        let (channel_1, channel_2) = self.display_histories_mut();
+        channel_1.prepare_visible(range, MAX_DISPLAY_POINTS, false);
+        channel_2.prepare_visible(range, MAX_DISPLAY_POINTS, false);
+        let coordinates = |buffer: &TimeSeriesBuffer| {
+            buffer.visible_points().iter().map(|p| [p.x, p.y]).collect()
+        };
+        (coordinates(channel_1), coordinates(channel_2))
+    }
+
+    fn display_histories(&self) -> (&TimeSeriesBuffer, &TimeSeriesBuffer) {
+        self.operator
+            .frozen_plot
+            .as_ref()
+            .map_or((&self.channel_1, &self.channel_2), |frozen| {
+                (&frozen.channel_1, &frozen.channel_2)
+            })
+    }
+
+    fn display_histories_mut(&mut self) -> (&mut TimeSeriesBuffer, &mut TimeSeriesBuffer) {
+        if let Some(frozen) = &mut self.operator.frozen_plot {
+            (&mut frozen.channel_1, &mut frozen.channel_2)
+        } else {
+            (&mut self.channel_1, &mut self.channel_2)
         }
-        (
-            self.channel_1.decimated(MAX_DISPLAY_POINTS),
-            self.channel_2.decimated(MAX_DISPLAY_POINTS),
-        )
+    }
+
+    fn plot_range(&self) -> [f64; 2] {
+        if self.operator.plot_view == PlotViewMode::ManualView
+            && let Some(range) = self.operator.plot_x_range
+        {
+            return range;
+        }
+        let (channel_1, channel_2) = self.display_histories();
+        let latest = channel_1
+            .latest_time()
+            .into_iter()
+            .chain(channel_2.latest_time())
+            .reduce(f64::max)
+            .unwrap_or(PLOT_WINDOW_SECONDS);
+        [latest - PLOT_WINDOW_SECONDS, latest]
+    }
+
+    fn follow_latest(&mut self) {
+        self.operator.plot_view = PlotViewMode::FollowLatest;
+        self.operator.plot_x_range = None;
+        self.operator.plot_reset_pending = true;
+        if ui_rect_debug_enabled() {
+            eprintln!(
+                "PLOT_VIEW FollowLatest epoch={:.6} frozen={}",
+                plot_debug_epoch_seconds(),
+                self.operator.frozen_plot.is_some()
+            );
+        }
+    }
+
+    #[cfg(test)]
+    fn current_plot_contains_unverified(&self) -> bool {
+        let latest = self
+            .channel_1
+            .latest_time()
+            .into_iter()
+            .chain(self.channel_2.latest_time())
+            .reduce(f64::max)
+            .unwrap_or(PLOT_WINDOW_SECONDS);
+        let range = [latest - PLOT_WINDOW_SECONDS, latest];
+        self.channel_1.range_contains_unverified(range)
+            || self.channel_2.range_contains_unverified(range)
+    }
+
+    #[cfg(test)]
+    fn displayed_plot_contains_unverified(&self) -> bool {
+        let range = self.plot_range();
+        let (channel_1, channel_2) = self.display_histories();
+        channel_1.range_contains_unverified(range) || channel_2.range_contains_unverified(range)
+    }
+
+    fn reset_plot_interaction(&mut self) {
+        self.operator.frozen_plot = None;
+        self.operator.plot_cursor_seconds = None;
+        self.operator.plot_width_points = None;
+        self.follow_latest();
+    }
+
+    fn clear_current_plot(&mut self) {
+        self.channel_1.clear();
+        self.channel_2.clear();
+        self.diagnostic.plotted_frames = 0;
+        self.reset_plot_interaction();
+    }
+
+    fn set_crc_filter(&mut self, strict: bool) {
+        if let Err(error) = self
+            .bridge
+            .request(UiRequest::SetDiagnosticPreview { enabled: !strict })
+        {
+            // A rejected send must not replace the active setting or an older
+            // request that is still waiting for its backend acknowledgement.
+            self.push_fault(
+                "CRC 绘图过滤",
+                format!("切换请求未发送，保留原过滤设置：{error}"),
+            );
+            return;
+        }
+        self.diagnostic.strict_crc_only = strict;
+        self.diagnostic.pending_filter = Some(strict);
+        self.clear_current_plot();
+        self.push_log(
+            LogLevel::Info,
+            "CRC 绘图过滤已切换；已清空波形、冻结和绘图计数，等待新数据。正式保存仍严格校验",
+        );
+    }
+
+    fn apply_lvds_status(&mut self, status: LvdsStatusSnapshot) {
+        let source_changed = self
+            .diagnostic
+            .status
+            .as_ref()
+            .is_some_and(|previous| previous.source != status.source);
+        let strict = !status.diagnostic_preview;
+        let can_apply_filter = self
+            .diagnostic
+            .pending_filter
+            .is_none_or(|pending| pending == strict);
+        let filter_changed = can_apply_filter && self.diagnostic.strict_crc_only != strict;
+        if can_apply_filter {
+            self.diagnostic.strict_crc_only = strict;
+            self.diagnostic.pending_filter = None;
+        }
+        if source_changed || filter_changed {
+            self.clear_current_plot();
+            self.operator.last_scientific_update = None;
+        }
+        self.diagnostic.status = Some(status);
     }
 
     fn emergency_stop_dialog(&mut self, context: &egui::Context) {
@@ -558,9 +802,9 @@ impl LangmuirDesktopApp {
                 self.push_log(
                     LogLevel::Info,
                     if running {
-                        "采集已开始"
+                        "正式科学保存已开始"
                     } else {
-                        "采集已停止"
+                        "正式科学保存已停止"
                     },
                 );
             }
@@ -581,11 +825,11 @@ impl LangmuirDesktopApp {
             } => match link {
                 LinkKind::Rs422 => {
                     self.rs422.connected = connected;
-                    self.rs422.metrics = Some(metrics);
+                    self.rs422.metrics = Some(*metrics);
                 }
                 LinkKind::Lvds => {
                     self.lvds.connected = connected;
-                    self.lvds.metrics = Some(metrics);
+                    self.lvds.metrics = Some(*metrics);
                 }
             },
             BackendEvent::ScientificSamples {
@@ -601,6 +845,8 @@ impl LangmuirDesktopApp {
                 channel_1,
                 channel_2,
             ),
+            BackendEvent::LvdsStatus(status) => self.apply_lvds_status(*status),
+            event @ BackendEvent::DiagnosticSamples { .. } => self.handle_diagnostic_event(event),
             BackendEvent::CommandSent(frame) => {
                 self.push_log(
                     LogLevel::Info,
@@ -624,28 +870,54 @@ impl LangmuirDesktopApp {
         channel_2: Vec<f64>,
     ) {
         self.operator.last_scientific_update = Some(Instant::now());
-        self.channel_1.extend(channel_1.into_iter().scan(
+        self.diagnostic.plotted_frames = self.diagnostic.plotted_frames.saturating_add(1);
+        extend_scientific_channel(
+            &mut self.channel_1,
             channel_1_start_seconds,
-            |time_seconds, value| {
-                let point = SamplePoint {
-                    time_seconds: *time_seconds,
-                    value: adc_counts_to_millivolts(value),
-                };
-                *time_seconds += sample_interval_seconds;
-                Some(point)
-            },
-        ));
-        self.channel_2.extend(channel_2.into_iter().scan(
+            sample_interval_seconds,
+            channel_1,
+            SampleQuality::Accepted,
+        );
+        extend_scientific_channel(
+            &mut self.channel_2,
             channel_2_start_seconds,
-            |time_seconds, value| {
-                let point = SamplePoint {
-                    time_seconds: *time_seconds,
-                    value: adc_counts_to_millivolts(value),
-                };
-                *time_seconds += sample_interval_seconds;
-                Some(point)
-            },
-        ));
+            sample_interval_seconds,
+            channel_2,
+            SampleQuality::Accepted,
+        );
+    }
+
+    fn handle_diagnostic_event(&mut self, event: BackendEvent) {
+        let BackendEvent::DiagnosticSamples {
+            channel_1_start_seconds,
+            channel_2_start_seconds,
+            sample_interval_seconds,
+            channel_1,
+            channel_2,
+            ..
+        } = event
+        else {
+            return;
+        };
+        // A delayed diagnostic event must never repopulate strict mode.
+        if !self.diagnostic.strict_crc_only {
+            self.operator.last_scientific_update = Some(Instant::now());
+            self.diagnostic.plotted_frames = self.diagnostic.plotted_frames.saturating_add(1);
+            extend_scientific_channel(
+                &mut self.channel_1,
+                channel_1_start_seconds,
+                sample_interval_seconds,
+                channel_1,
+                SampleQuality::CrcUnverified,
+            );
+            extend_scientific_channel(
+                &mut self.channel_2,
+                channel_2_start_seconds,
+                sample_interval_seconds,
+                channel_2,
+                SampleQuality::CrcUnverified,
+            );
+        }
     }
 
     fn apply_state_snapshot(&mut self, snapshot: BackendStateSnapshot) {
@@ -686,8 +958,20 @@ impl LangmuirDesktopApp {
         }
     }
 
-    fn typed_command_bytes(&self) -> Result<[u8; 12], CommandError> {
-        self.command().map(command_bytes)
+    fn typed_command_bytes(&self) -> Result<[u8; 12], String> {
+        if self.command_family == CommandFamily::Configuration {
+            match self.configuration_mode {
+                ConfigurationMode::Triangle | ConfigurationMode::Sine => self
+                    .frequency_edit
+                    .ensure_confirmed(u16::from(self.frequency), u16::from(ScanFrequency::MAX))?,
+                ConfigurationMode::Dc => {
+                    self.voltage_edit.ensure_confirmed(self.voltage, u16::MAX)?
+                }
+            }
+        }
+        self.command()
+            .map(command_bytes)
+            .map_err(|error| error.to_string())
     }
 
     fn record_telemetry_anomalies(&mut self, snapshot: &TelemetrySnapshot) {
@@ -843,7 +1127,16 @@ impl LangmuirDesktopApp {
         );
         ui.horizontal_wrapped(|ui| {
             for family in CommandFamily::ALL {
-                ui.selectable_value(&mut self.command_family, family, family.label());
+                let response =
+                    ui.selectable_value(&mut self.command_family, family, family.label());
+                debug_ui_rect(
+                    match family {
+                        CommandFamily::Telemetry => "left.command_family.telemetry",
+                        CommandFamily::Configuration => "left.command_family.configuration",
+                        CommandFamily::Lvds => "left.command_family.lvds",
+                    },
+                    response.rect,
+                );
             }
         });
 
@@ -872,28 +1165,28 @@ impl LangmuirDesktopApp {
                 );
                 ui.horizontal_wrapped(|ui| {
                     for mode in ConfigurationMode::ALL {
-                        ui.selectable_value(&mut self.configuration_mode, mode, mode.label());
+                        let response =
+                            ui.selectable_value(&mut self.configuration_mode, mode, mode.label());
+                        debug_ui_rect(
+                            match mode {
+                                ConfigurationMode::Triangle => "left.configuration_mode.triangle",
+                                ConfigurationMode::Sine => "left.configuration_mode.sine",
+                                ConfigurationMode::Dc => "left.configuration_mode.dc",
+                            },
+                            response.rect,
+                        );
                     }
                 });
                 ui.add_space(4.0);
                 match self.configuration_mode {
                     ConfigurationMode::Triangle | ConfigurationMode::Sine => {
-                        frequency_parameter(
-                            ui,
-                            &mut self.frequency,
-                            &mut self.parameter_steps.frequency,
-                        );
+                        frequency_parameter(ui, &mut self.frequency, &mut self.frequency_edit);
                     }
                     ConfigurationMode::Dc => {
-                        ui.label(
-                            RichText::new("原始电压设定值（协议未定义物理单位）")
-                                .small()
-                                .color(theme::TEXT_SECONDARY),
-                        );
                         integer_parameter_u16(
                             ui,
                             &mut self.voltage,
-                            &mut self.parameter_steps.voltage,
+                            &mut self.voltage_edit,
                             &[1, 10, 100],
                         );
                     }
@@ -1066,8 +1359,8 @@ impl LangmuirDesktopApp {
                         ui.ctx().copy_text(preview.clone());
                     }
                 });
-            } else {
-                ui.colored_label(theme::DANGER, "频率超出协议范围 0x00..=0x64，无法生成指令");
+            } else if let Err(error) = self.typed_command_bytes() {
+                ui.colored_label(theme::DANGER, error);
             }
         });
         let can_send = if raw_mode {
@@ -1083,7 +1376,9 @@ impl LangmuirDesktopApp {
                 self.command_family = CommandFamily::Telemetry;
                 self.configuration_mode = ConfigurationMode::Triangle;
                 self.frequency = 10;
+                self.frequency_edit.set_confirmed(10);
                 self.voltage = 5_000;
+                self.voltage_edit.set_confirmed(5_000);
                 self.lvds_enabled = true;
                 self.command_edit_mode = CommandEditMode::Typed;
                 self.raw_command = command_bytes(Command::RequestTelemetry);
@@ -1092,15 +1387,14 @@ impl LangmuirDesktopApp {
             if raw_mode && ui.button("重算 SUM").clicked() {
                 recalculate_checksum(&mut self.raw_command);
             }
-            if ui
-                .add_enabled(
-                    can_send,
-                    egui::Button::new(RichText::new("发送指令").strong().color(theme::WHITE))
-                        .min_size(egui::vec2(104.0, 28.0))
-                        .fill(theme::PRIMARY),
-                )
-                .clicked()
-            {
+            let send_response = ui.add_enabled(
+                can_send,
+                egui::Button::new(RichText::new("发送指令").strong().color(theme::WHITE))
+                    .min_size(egui::vec2(104.0, 28.0))
+                    .fill(theme::PRIMARY),
+            );
+            debug_ui_rect("left.send_command", send_response.rect);
+            if send_response.clicked() {
                 if raw_mode {
                     match raw_frame_validation(&self.raw_command) {
                         Ok(()) => self.submit(UiRequest::SendCommand(self.raw_command)),
@@ -1108,10 +1402,13 @@ impl LangmuirDesktopApp {
                             self.push_fault("RS422 指令", format!("原始帧无效，未发送：{reason}"))
                         }
                     }
-                } else if let Some(frame) = self.typed_command_bytes().ok() {
-                    self.submit(UiRequest::SendCommand(frame));
                 } else {
-                    self.push_fault("RS422 指令", "频率超出协议范围 0x00..=0x64，指令未发送");
+                    match self.typed_command_bytes() {
+                        Ok(frame) => self.submit(UiRequest::SendCommand(frame)),
+                        Err(error) => {
+                            self.push_fault("RS422 指令", format!("参数无效，指令未发送：{error}"))
+                        }
+                    }
                 }
             }
         });
@@ -1529,6 +1826,7 @@ impl LangmuirDesktopApp {
     }
 
     fn plot_toolbar_modes(&mut self, ui: &mut Ui, menu: bool) {
+        let normalized_before = self.overlay_normalized;
         if menu {
             ui.menu_button("显示模式", |ui| {
                 ui.selectable_value(&mut self.plot_layout, PlotLayout::Overlay, "叠加");
@@ -1543,6 +1841,11 @@ impl LangmuirDesktopApp {
             if self.plot_layout == PlotLayout::Overlay {
                 ui.checkbox(&mut self.overlay_normalized, "独立归一化");
             }
+        }
+        if self.overlay_normalized != normalized_before {
+            // Values change scale; fit Y again without taking away the user's
+            // manually chosen time range or switching back to live follow.
+            self.operator.plot_reset_pending = true;
         }
     }
 
@@ -1562,18 +1865,36 @@ impl LangmuirDesktopApp {
         };
         if menu {
             ui.menu_button("图表操作", |ui| {
+                if ui.button("跟随最新").clicked() {
+                    self.follow_latest();
+                    ui.close();
+                }
+                if ui.button("重置视图").clicked() {
+                    self.follow_latest();
+                    ui.close();
+                }
                 if ui.button(freeze_label).clicked() {
                     self.toggle_display_freeze();
                     ui.close();
                 }
                 if ui.button("清空").clicked() {
-                    self.channel_1.clear();
-                    self.channel_2.clear();
-                    self.operator.plot_cursor_seconds = None;
+                    self.clear_current_plot();
                     ui.close();
                 }
             });
         } else {
+            if ui
+                .selectable_label(
+                    self.operator.plot_view == PlotViewMode::FollowLatest,
+                    "跟随最新",
+                )
+                .clicked()
+            {
+                self.follow_latest();
+            }
+            if ui.button("重置视图").clicked() {
+                self.follow_latest();
+            }
             if ui
                 .add(egui::Button::new(freeze_label).fill(if frozen {
                     theme::PRIMARY
@@ -1585,9 +1906,7 @@ impl LangmuirDesktopApp {
                 self.toggle_display_freeze();
             }
             if ui.button("清空").clicked() {
-                self.channel_1.clear();
-                self.channel_2.clear();
-                self.operator.plot_cursor_seconds = None;
+                self.clear_current_plot();
             }
         }
     }
@@ -1596,72 +1915,37 @@ impl LangmuirDesktopApp {
         let width = ui.available_width();
         let compact = width < 560.0;
         let ultra_compact = width < 360.0;
-        let frozen = self.operator.frozen_plot.is_some();
+        let range = self.plot_range();
         let cache = format!(
-            "固定 {:.0}s · {}/{} 点",
-            PLOT_WINDOW_SECONDS,
+            "视图 {:.1}s / 历史 {:.0}s · {}/{} 点",
+            range[1] - range[0],
+            PLOT_HISTORY_SECONDS,
             self.channel_1.len(),
             self.channel_2.len()
         );
-
-        if !compact {
-            ui.allocate_ui_with_layout(
-                egui::vec2(width, 50.0),
-                Layout::left_to_right(Align::Center),
-                |ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    self.plot_toolbar_channels(ui, false, true);
-                    ui.add_space(6.0);
-                    self.plot_toolbar_modes(ui, false);
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(&cache).small().color(theme::TEXT_MUTED),
-                            )
-                            .truncate(),
-                        );
-                        self.plot_toolbar_actions(ui, false);
-                    });
-                },
-            );
-        } else {
-            ui.allocate_ui_with_layout(
-                egui::vec2(width, 25.0),
-                Layout::left_to_right(Align::Center),
-                |ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    if ultra_compact {
-                        // At the minimum window width the title and two
-                        // checkboxes cannot share a row with the mode menu.
-                        // Keep both channel controls accessible through an
-                        // explicit menu instead of allowing an accidental
-                        // third toolbar row.
-                        self.plot_toolbar_channels_menu(ui);
-                        self.plot_toolbar_modes(ui, true);
-                    } else {
-                        self.plot_toolbar_channels(ui, true, true);
-                        ui.add_space(6.0);
-                        self.plot_toolbar_modes(ui, false);
-                    }
-                },
-            );
-            ui.allocate_ui_with_layout(
-                egui::vec2(width, 25.0),
-                Layout::left_to_right(Align::Center),
-                |ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    self.plot_toolbar_actions(ui, ultra_compact);
-                    if frozen && !ultra_compact {
-                        theme::status_badge(ui, "画面冻结", theme::PRIMARY);
-                    }
-                    ui.add_sized(
-                        [ui.available_width().max(0.0), 25.0],
-                        egui::Label::new(RichText::new(&cache).small().color(theme::TEXT_MUTED))
-                            .truncate(),
-                    );
-                },
-            );
-        }
+        central_control_style(ui);
+        ui.spacing_mut().item_spacing.y = 8.0;
+        central_control_row(ui, |ui| {
+            if ultra_compact {
+                ui.strong("波形");
+                self.plot_toolbar_channels_menu(ui);
+                self.plot_toolbar_modes(ui, true);
+            } else {
+                if compact {
+                    ui.strong("波形");
+                }
+                self.plot_toolbar_channels(ui, compact, !compact);
+                self.plot_toolbar_modes(ui, compact);
+            }
+        });
+        central_control_row(ui, |ui| {
+            self.plot_toolbar_actions(ui, ultra_compact);
+            ui.add_sized(
+                    [ui.available_width().max(0.0), CENTRAL_CONTROL_HEIGHT],
+                    egui::Label::new(RichText::new(&cache).small().color(theme::TEXT_MUTED))
+                        .truncate(),
+                ).on_hover_text(format!("{cache}\n左键拖动平移 · 滚轮围绕鼠标缩放 · 移动鼠标查看原值\n手动视图不会被新数据抢回；跟随最新恢复实时窗口。"));
+        });
     }
 
     #[expect(
@@ -1669,445 +1953,662 @@ impl LangmuirDesktopApp {
         reason = "overlay and split plots share rendering logic"
     )]
     fn plot_panel(&mut self, ui: &mut Ui) {
+        let prepare_start = Instant::now();
         debug_ui_rect("central.plot_body_inner", ui.available_rect_before_wrap());
-        let (mut channel_1, mut channel_2) = self.display_plot_points();
-        let cursor_channel_1 = channel_1.clone();
-        let cursor_channel_2 = channel_2.clone();
-        // Reserve the readout row even when no cursor is active.  This keeps
-        // the actual plot rect stable when a pointer interaction creates or
-        // clears the cursor.
-        let readout_height = ui.available_height().min(20.0).max(0.0);
+        let mut range = self.plot_range();
+        let normalized = self.plot_layout == PlotLayout::Overlay && self.overlay_normalized;
+        let show_channels = self.show_channels;
+        let pixel_width = self
+            .operator
+            .plot_width_points
+            .unwrap_or(ui.available_width())
+            * ui.ctx().pixels_per_point();
+        let point_limit =
+            f32::from(u16::try_from(MAX_DISPLAY_POINTS).expect("the display point cap fits u16"));
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "the integral physical pixel budget is clamped to 128..2000 before conversion"
+        )]
+        let budget = (pixel_width * 2.0).ceil().clamp(128.0, point_limit) as usize;
+        let (channel_1, channel_2) = self.display_histories_mut();
+        channel_1.prepare_visible(range, budget, normalized);
+        channel_2.prepare_visible(range, budget, normalized);
+        let rendered = [
+            if show_channels[0] {
+                channel_1.visible_points().len()
+            } else {
+                0
+            },
+            if show_channels[1] {
+                channel_2.visible_points().len()
+            } else {
+                0
+            },
+        ];
+        let quality = (show_channels[0] && channel_1.visible_contains_unverified())
+            || (show_channels[1] && channel_2.visible_contains_unverified());
+        self.measurements.prepare_ms = prepare_start.elapsed().as_secs_f64() * 1000.0;
+        self.measurements.rendered = rendered;
+
+        // Both rows are always reserved: quality warnings and hover readouts
+        // never move the plot or the fixed log dock.
+        let readout_row_height = if ui.available_height() < 100.0 {
+            16.0
+        } else {
+            20.0
+        };
+        let readout_height = ui.available_height().clamp(0.0, readout_row_height * 2.0);
         ui.allocate_ui_with_layout(
             egui::vec2(ui.available_width().max(0.0), readout_height),
-            Layout::left_to_right(Align::Center),
+            Layout::top_down(Align::Min),
             |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.add_sized(
+                    [ui.available_width(), readout_row_height],
+                    egui::Label::new(
+                        RichText::new(if quality {
+                            "CRC16 未通过：当前包含未经验证的数据"
+                        } else if rendered == [0, 0] {
+                            "尚无可校验数据"
+                        } else {
+                            "当前视图不含 CRC 未通过的样本"
+                        })
+                        .small()
+                        .color(if quality {
+                            theme::WARNING
+                        } else {
+                            theme::TEXT_MUTED
+                        }),
+                    )
+                    .truncate(),
+                );
                 if let Some(cursor) = self.operator.plot_cursor_seconds {
-                    plot_cursor_readout(ui, cursor, &cursor_channel_1, &cursor_channel_2);
+                    let (one, two) = self.display_histories();
+                    let values = [one.nearest_value(cursor), two.nearest_value(cursor)];
+                    let value_text = |value: Option<f64>| {
+                        value.map_or_else(|| "—".to_owned(), |v| format!("{v:.2}"))
+                    };
+                    ui.add_sized(
+                        [ui.available_width(), readout_row_height],
+                        egui::Label::new(
+                            RichText::new(format!(
+                                "{}  通道1 {} mV  通道2 {} mV",
+                                format_plot_timestamp(cursor, 0.0),
+                                value_text(values[0]),
+                                value_text(values[1])
+                            ))
+                            .monospace()
+                            .small()
+                            .color(theme::TEXT_SECONDARY),
+                        )
+                        .truncate(),
+                    );
+                } else {
+                    ui.add_sized(
+                        [ui.available_width(), readout_row_height],
+                        egui::Label::new(RichText::new("").small().color(theme::TEXT_MUTED))
+                            .truncate(),
+                    );
                 }
             },
         );
-        // The parent central layout owns the plot height.  Never grow this
-        // region to a minimum that could overflow the fixed log dock.
-        let available_plot_height = ui.available_height().max(0.0);
-        let has_visible_samples = (self.show_channels[0] && !channel_1.is_empty())
-            || (self.show_channels[1] && !channel_2.is_empty());
-        if !has_visible_samples {
+        let height = ui.available_height().max(0.0);
+        let (one, two) = self.display_histories();
+        let has_history = (self.show_channels[0] && !one.is_empty())
+            || (self.show_channels[1] && !two.is_empty());
+        if !has_history {
             let empty_rect = ui.available_rect_before_wrap();
             debug_ui_rect("central.plot_empty_state", empty_rect);
-            let channels_hidden = !self.show_channels[0] && !self.show_channels[1];
-            let state = if channels_hidden {
+            let hidden = !self.show_channels[0] && !self.show_channels[1];
+            let state = if hidden {
                 "通道 1 和通道 2 当前均已隐藏"
-            } else if !self.lvds.connected {
-                "LVDS / UDP 未连接"
-            } else if !self.acquisition_running {
-                "采集未启动，点击“开始采集”后等待样本"
-            } else if self.operator.frozen_plot.is_some() {
-                "画面已冻结，恢复更新后等待新样本"
             } else {
-                "采集已启动，等待 LVDS 样本"
+                "请开始 UDP 监听或离线 PCAP 回放"
             };
-            ui.allocate_ui_with_layout(
-                empty_rect.size(),
-                Layout::centered_and_justified(egui::Direction::TopDown),
+            if empty_rect.height() < 50.0 {
+                ui.add_sized(
+                    empty_rect.size(),
+                    egui::Label::new(RichText::new(state).small().color(theme::TEXT_MUTED))
+                        .truncate(),
+                );
+                return;
+            }
+            // Align one measured two-line group within the remaining plot
+            // body. No spacer widgets participate in the plot's input rect.
+            let group_height = ui.text_style_height(&egui::TextStyle::Body)
+                + ui.text_style_height(&egui::TextStyle::Small)
+                + ui.spacing().item_spacing.y;
+            let group = egui::Align2::CENTER_CENTER
+                .align_size_within_rect(egui::vec2(empty_rect.width(), group_height), empty_rect);
+            ui.scope_builder(
+                egui::UiBuilder::new()
+                    .max_rect(group)
+                    .layout(Layout::top_down(Align::Center)),
                 |ui| {
-                    ui.vertical(|ui| {
-                        ui.label(
-                            RichText::new(if channels_hidden {
-                                "请选择显示通道"
-                            } else {
-                                "暂无 LVDS 数据"
-                            })
-                            .strong()
-                            .size(16.0)
-                            .color(if channels_hidden {
-                                theme::WARNING
-                            } else {
-                                theme::TEXT_SECONDARY
-                            }),
-                        );
-                        ui.label(RichText::new(state).small().color(theme::TEXT_SECONDARY));
-                        ui.label(
-                            RichText::new("接收到数据后，图表会自动显示最近 10 秒")
-                                .small()
-                                .color(theme::TEXT_MUTED),
-                        );
-                    });
+                    ui.label(
+                        RichText::new(if hidden {
+                            "请选择显示通道"
+                        } else {
+                            "暂无 LVDS 数据"
+                        })
+                        .strong()
+                        .color(theme::TEXT_SECONDARY),
+                    );
+                    ui.label(RichText::new(state).small().color(theme::TEXT_MUTED));
                 },
             );
+            ui.advance_cursor_after_rect(empty_rect);
             return;
         }
-        let cursor = self.operator.plot_cursor_seconds;
-        let mut cursor_update = None;
-        match self.plot_layout {
-            PlotLayout::Overlay => {
-                let channel_1_range = if self.overlay_normalized {
-                    normalize_plot_points(&mut channel_1)
-                } else {
-                    None
-                };
-                let channel_2_range = if self.overlay_normalized {
-                    normalize_plot_points(&mut channel_2)
-                } else {
-                    None
-                };
-                let channel_1_name = overlay_channel_name("通道 1", channel_1_range);
-                let channel_2_name = overlay_channel_name("通道 2", channel_2_range);
-                Plot::new("scientific_plot_overlay")
-                    .legend(Legend::default())
-                    .show_axes([true, true])
-                    .x_axis_label("时间")
-                    .y_axis_label(if self.overlay_normalized {
+
+        let mut manual = self.operator.plot_view == PlotViewMode::ManualView;
+        let mut cursor = self.operator.plot_cursor_seconds;
+        let reset = self.operator.plot_reset_pending;
+        let overlay = self.plot_layout == PlotLayout::Overlay;
+        let mut return_to_follow = false;
+        let mut plot_width = ui.available_width();
+        let (one, two) = self.display_histories();
+        if overlay {
+            let names = [
+                overlay_channel_name(
+                    "通道 1",
+                    normalized.then(|| one.visible_value_range()).flatten(),
+                ),
+                overlay_channel_name(
+                    "通道 2",
+                    normalized.then(|| two.visible_value_range()).flatten(),
+                ),
+            ];
+            let outcome = show_scientific_plot(
+                ui,
+                ScientificPlotConfig {
+                    id: "scientific_plot_overlay",
+                    height,
+                    range,
+                    reset,
+                    y_label: if normalized {
                         "独立归一化幅值（实际量程见图例）"
                     } else {
-                        "电压 (mV)"
-                    })
-                    .x_axis_formatter(|mark, range| {
-                        format_plot_timestamp(mark.value, range.end() - range.start())
-                    })
-                    .allow_scroll(false)
-                    .allow_drag(false)
-                    .allow_zoom(true)
-                    .allow_boxed_zoom(true)
-                    .show_background(true)
-                    .height(available_plot_height)
-                    .show(ui, |plot_ui| {
-                        if let Some(cursor) = cursor {
-                            plot_ui
-                                .vline(VLine::new("游标", cursor).color(theme::WARNING).width(1.5));
-                        }
-                        if self.show_channels[0] && !channel_1.is_empty() {
-                            plot_ui.line(
-                                Line::new(channel_1_name, PlotPoints::from(channel_1.clone()))
-                                    .color(theme::PRIMARY),
-                            );
-                        }
-                        if self.show_channels[1] && !channel_2.is_empty() {
-                            plot_ui.line(
-                                Line::new(channel_2_name, PlotPoints::from(channel_2.clone()))
-                                    .color(theme::DANGER),
-                            );
-                        }
-                        update_plot_cursor_from_pointer(plot_ui, &mut cursor_update);
-                    });
-            }
-            PlotLayout::Split => {
-                let show_channel_1 = self.show_channels[0];
-                let show_channel_2 = self.show_channels[1];
-                let visible_channel_count =
-                    usize::from(show_channel_1) + usize::from(show_channel_2);
-                let split_height = if visible_channel_count == 2 {
-                    ((available_plot_height - 8.0) / 2.0).max(1.0)
-                } else {
-                    // A single visible channel owns the whole elastic plot
-                    // region; do not leave an unexplained empty half below it.
-                    available_plot_height.max(1.0)
-                };
-                if show_channel_1 {
-                    Plot::new("scientific_plot_channel_1")
-                        .show_axes([true, true])
-                        .x_axis_label("通道 1 时间")
-                        .y_axis_label("通道 1 电压 (mV)")
-                        .x_axis_formatter(|mark, range| {
-                            format_plot_timestamp(mark.value, range.end() - range.start())
-                        })
-                        .allow_scroll(false)
-                        .allow_drag(false)
-                        .allow_zoom(true)
-                        .allow_boxed_zoom(true)
-                        .show_background(true)
-                        .height(split_height)
-                        .show(ui, |plot_ui| {
-                            if let Some(cursor) = cursor {
-                                plot_ui.vline(
-                                    VLine::new("游标", cursor).color(theme::WARNING).width(1.5),
-                                );
-                            }
-                            if !channel_1.is_empty() {
-                                plot_ui.line(
-                                    Line::new("通道 1", PlotPoints::from(channel_1.clone()))
-                                        .color(theme::PRIMARY),
-                                );
-                            }
-                            update_plot_cursor_from_pointer(plot_ui, &mut cursor_update);
-                        });
+                        "电压估算 (mV，未校准)"
+                    },
+                    channels: show_channels,
+                    names: [&names[0], &names[1]],
+                },
+                one.visible_points(),
+                two.visible_points(),
+                cursor,
+            );
+            range = outcome.range;
+            manual |= outcome.interacted;
+            cursor = outcome.cursor.or(cursor);
+            return_to_follow |= outcome.reset;
+            plot_width = outcome.width;
+        } else {
+            let count = usize::from(show_channels[0]) + usize::from(show_channels[1]);
+            let split_height = if count == 2 {
+                ((height - ui.spacing().item_spacing.y) / 2.0).max(1.0)
+            } else {
+                height
+            };
+            for (channel, visible) in show_channels.iter().copied().enumerate() {
+                if !visible {
+                    continue;
                 }
-                if show_channel_2 {
-                    Plot::new("scientific_plot_channel_2")
-                        .show_axes([true, true])
-                        .x_axis_label("通道 2 时间")
-                        .y_axis_label("通道 2 电压 (mV)")
-                        .x_axis_formatter(|mark, range| {
-                            format_plot_timestamp(mark.value, range.end() - range.start())
-                        })
-                        .allow_scroll(false)
-                        .allow_drag(false)
-                        .allow_zoom(true)
-                        .allow_boxed_zoom(true)
-                        .show_background(true)
-                        .height(split_height)
-                        .show(ui, |plot_ui| {
-                            if let Some(cursor) = cursor {
-                                plot_ui.vline(
-                                    VLine::new("游标", cursor).color(theme::WARNING).width(1.5),
-                                );
-                            }
-                            if !channel_2.is_empty() {
-                                plot_ui.line(
-                                    Line::new("通道 2", PlotPoints::from(channel_2.clone()))
-                                        .color(theme::DANGER),
-                                );
-                            }
-                            update_plot_cursor_from_pointer(plot_ui, &mut cursor_update);
-                        });
-                }
+                let outcome = show_scientific_plot(
+                    ui,
+                    ScientificPlotConfig {
+                        id: if channel == 0 {
+                            "scientific_plot_channel_1"
+                        } else {
+                            "scientific_plot_channel_2"
+                        },
+                        height: split_height,
+                        range,
+                        reset,
+                        y_label: if channel == 0 {
+                            "通道 1 电压估算 (mV，未校准)"
+                        } else {
+                            "通道 2 电压估算 (mV，未校准)"
+                        },
+                        channels: [channel == 0, channel == 1],
+                        names: ["通道 1", "通道 2"],
+                    },
+                    one.visible_points(),
+                    two.visible_points(),
+                    cursor,
+                );
+                range = outcome.range;
+                manual |= outcome.interacted;
+                cursor = outcome.cursor.or(cursor);
+                return_to_follow |= outcome.reset;
+                plot_width = plot_width.min(outcome.width);
             }
         }
-        if let Some(cursor) = cursor_update {
-            self.operator.plot_cursor_seconds = Some(cursor);
+        self.operator.plot_reset_pending = false;
+        self.operator.plot_cursor_seconds = cursor;
+        self.operator.plot_width_points = Some(plot_width);
+        if manual {
+            self.operator.plot_view = PlotViewMode::ManualView;
+            self.operator.plot_x_range = Some(range);
+        }
+        if return_to_follow {
+            self.follow_latest();
         }
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "the LVDS toolbar keeps its responsive controls in one render function"
-    )]
     fn operations_panel(&mut self, ui: &mut Ui) {
         let mut request = None;
-        full_width_card(ui, |ui| {
+        let compact = ui.available_height() < 200.0;
+        let inner_size = ui.available_size() - egui::Vec2::splat(if compact { 18.0 } else { 26.0 });
+        theme::card().inner_margin(egui::Margin::same(if compact { 8 } else { 12 })).show(ui, |ui| {
+            ui.set_min_size(inner_size.max(egui::Vec2::ZERO));
             debug_ui_rect("central.operations_card", ui.available_rect_before_wrap());
-            let row_width = ui.available_width().max(0.0);
-            let compact = row_width < 560.0;
-            let ultra_compact = row_width < 360.0;
-            ui.spacing_mut().item_spacing.y = 0.0;
-            ui.allocate_ui_with_layout(
-                egui::vec2(row_width, theme::CRITICAL_CONTROL_HEIGHT),
-                Layout::left_to_right(Align::Center),
-                |ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    status_dot(ui, self.lvds.connected);
-                    ui.strong("LVDS / UDP");
-                    if !compact {
-                        ui.label(RichText::new("本机").small().color(theme::TEXT_SECONDARY));
-                    }
-                    let ip_response = ui
-                        .add_enabled_ui(!self.lvds.connected, |ui| {
-                            ui.add_sized(
-                                [
-                                    if ultra_compact {
-                                        82.0
-                                    } else if compact {
-                                        96.0
-                                    } else {
-                                        150.0
-                                    },
-                                    theme::CONTROL_HEIGHT,
-                                ],
-                                egui::TextEdit::singleline(&mut self.lvds.bind_address)
-                                    .hint_text("192.168.1.100"),
-                            )
-                        })
-                        .inner;
-                    debug_ui_rect("central.operations.ip_input", ip_response.rect);
-                    if !ultra_compact {
-                        ui.label(
-                            RichText::new(if compact { "端" } else { "端口" })
-                                .small()
-                                .color(theme::TEXT_SECONDARY),
-                        );
-                    }
-                    let port_response = ui.add_sized(
-                        [
-                            if ultra_compact {
-                                34.0
-                            } else if compact {
-                                42.0
-                            } else {
-                                64.0
-                            },
-                            theme::CONTROL_HEIGHT,
-                        ],
-                        egui::DragValue::new(&mut self.lvds.port).range(1..=u16::MAX),
-                    );
-                    debug_ui_rect("central.operations.port_input", port_response.rect);
-                    if !compact {
-                        let connection_label = if self.lvds.connected {
-                            "断开"
-                        } else {
-                            "连接"
-                        };
-                        let response = ui.add_sized(
-                            [56.0, theme::CONTROL_HEIGHT],
-                            egui::Button::new(connection_label),
-                        );
-                        debug_ui_rect("central.operations.connection_button", response.rect);
-                        if response.clicked() {
-                            request = if self.lvds.connected {
-                                Some(UiRequest::Disconnect {
-                                    link: LinkKind::Lvds,
-                                })
-                            } else {
-                                Some(UiRequest::BindLvdsUdp {
-                                    bind_address: self.lvds.bind_address.trim().to_owned(),
-                                    port: self.lvds.port,
-                                })
-                            };
-                        }
-
-                        let (action_text, action_color) = if self.acquisition_running {
-                            ("停止采集", theme::DANGER)
-                        } else {
-                            ("开始采集", theme::SUCCESS)
-                        };
-                        let response = ui.add_sized(
-                            [112.0, theme::CRITICAL_CONTROL_HEIGHT],
-                            egui::Button::new(
-                                RichText::new(action_text).strong().color(theme::WHITE),
-                            )
-                            .fill(action_color),
-                        );
-                        debug_ui_rect("central.operations.acquisition_button", response.rect);
-                        if response.clicked() {
-                            request = Some(if self.acquisition_running {
-                                UiRequest::StopAcquisition
-                            } else {
-                                UiRequest::StartAcquisition
-                            });
-                        }
-                    }
-                },
-            );
-
-            let row_two_height = if compact {
-                theme::CRITICAL_CONTROL_HEIGHT
-            } else {
-                theme::CONTROL_HEIGHT
-            };
-            ui.allocate_ui_with_layout(
-                egui::vec2(row_width, row_two_height),
-                Layout::left_to_right(Align::Center),
-                |ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    if compact {
-                        let connection_label = if self.lvds.connected {
-                            "断开"
-                        } else {
-                            "连接"
-                        };
-                        let response = ui.add_sized(
-                            [44.0, theme::CONTROL_HEIGHT],
-                            egui::Button::new(connection_label),
-                        );
-                        debug_ui_rect("central.operations.connection_button", response.rect);
-                        if response.clicked() {
-                            request = if self.lvds.connected {
-                                Some(UiRequest::Disconnect {
-                                    link: LinkKind::Lvds,
-                                })
-                            } else {
-                                Some(UiRequest::BindLvdsUdp {
-                                    bind_address: self.lvds.bind_address.trim().to_owned(),
-                                    port: self.lvds.port,
-                                })
-                            };
-                        }
-
-                        let (action_text, action_color) = if self.acquisition_running {
-                            ("停止采集", theme::DANGER)
-                        } else {
-                            ("开始采集", theme::SUCCESS)
-                        };
-                        let response = ui.add_sized(
-                            [70.0, theme::CRITICAL_CONTROL_HEIGHT],
-                            egui::Button::new(
-                                RichText::new(action_text).strong().color(theme::WHITE),
-                            )
-                            .fill(action_color),
-                        );
-                        debug_ui_rect("central.operations.acquisition_button", response.rect);
-                        if response.clicked() {
-                            request = Some(if self.acquisition_running {
-                                UiRequest::StopAcquisition
-                            } else {
-                                UiRequest::StartAcquisition
-                            });
-                        }
-
-                        ui.menu_button("更多操作", |ui| {
-                            if ui.button("刷新串口").clicked() {
-                                request = Some(UiRequest::RefreshPorts);
-                                ui.close();
-                            }
-                            if ui.button("导出遥测 (CSV)").clicked() {
-                                request = Some(UiRequest::ExportCsv {
-                                    suggested_name: format!(
-                                        "langmuir-{}.csv",
-                                        Local::now().format("%Y%m%d-%H%M%S")
-                                    ),
-                                });
-                                ui.close();
-                            }
-                            #[cfg(feature = "mock")]
-                            if self.mock_mode && ui.button("注入模拟异常").clicked() {
-                                request = Some(UiRequest::InjectMockFault);
-                                ui.close();
-                            }
+            let width = ui.available_width().max(0.0);
+            central_control_style(ui);
+            ui.spacing_mut().item_spacing.y = if compact { 4.0 } else { 12.0 };
+            if compact {
+                central_control_row(ui, |ui| self.lvds_listen_inputs(ui));
+                central_control_row(ui, |ui| {
+                    if width < 320.0 {
+                        ui.menu_button("操作", |ui| {
+                            self.lvds_listen_buttons(ui, &mut request, false);
+                            self.lvds_save_button(ui, &mut request, false);
                         });
                     } else {
-                        if ui.button("刷新串口").clicked() {
-                            request = Some(UiRequest::RefreshPorts);
-                        }
-                        if ui.button("导出遥测 (CSV)").clicked() {
-                            request = Some(UiRequest::ExportCsv {
-                                suggested_name: format!(
-                                    "langmuir-{}.csv",
-                                    Local::now().format("%Y%m%d-%H%M%S")
-                                ),
-                            });
-                        }
-                        #[cfg(feature = "mock")]
-                        if self.mock_mode && ui.button("注入模拟异常").clicked() {
-                            request = Some(UiRequest::InjectMockFault);
-                        }
+                        self.lvds_listen_buttons(ui, &mut request, true);
                     }
-                    let listener_status = if self.lvds.connected {
-                        format!(
-                            "监听 {}:{} · {}",
-                            self.lvds.bind_address, self.lvds.port, self.lvds.detail
-                        )
-                    } else {
-                        format!("未监听 · {}:{}", self.lvds.bind_address, self.lvds.port)
-                    };
-                    ui.add_space(4.0);
-                    ui.add_sized(
-                        [ui.available_width().max(0.0), row_two_height],
-                        egui::Label::new(
-                            RichText::new(listener_status.clone())
-                                .small()
-                                .color(theme::TEXT_SECONDARY),
-                        )
-                        .truncate(),
-                    )
-                    .on_hover_text(listener_status);
-                },
-            );
-
-            ui.allocate_ui_with_layout(
-                egui::vec2(row_width, 22.0),
-                Layout::left_to_right(Align::Center),
-                |ui| {
-                    let protocol =
-                        "UDP 24B + LVDS 269B · 源端 192.168.1.128:1534 · 详细信息悬停查看";
-                    ui.add_sized(
-                        [row_width, 22.0],
-                        egui::Label::new(
-                            RichText::new(protocol).size(9.0).color(theme::TEXT_MUTED),
-                        )
-                        .truncate(),
-                    )
-                    .on_hover_text("网口协议：24B UDP 封装 + 269B LVDS；源端 192.168.1.128:1534");
-                },
-            );
+                    if ui.button(if width < 320.0 { "回放" } else { "离线回放 PCAP" }).clicked() {
+                        self.diagnostic.dialog = Some(LvdsDialog::Replay);
+                    }
+                    if width >= 320.0 {
+                        self.lvds_save_button(ui, &mut request, true);
+                    }
+                    self.lvds_more_menu(ui, &mut request, true);
+                });
+                self.lvds_receive_status(ui, true);
+            } else {
+                ui.scope(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    central_control_row(ui, |ui| {
+                        self.lvds_listen_inputs(ui);
+                        if width >= 540.0 {
+                            self.lvds_listen_buttons(ui, &mut request, false);
+                        }
+                    });
+                    if width < 540.0 {
+                        central_control_row(ui, |ui| self.lvds_listen_buttons(ui, &mut request, false));
+                        ui.add_space(8.0);
+                    }
+                    self.lvds_receive_status(ui, false);
+                });
+                central_control_row(ui, |ui| {
+                    if ui.button("离线回放 PCAP").clicked() {
+                        self.diagnostic.dialog = Some(LvdsDialog::Replay);
+                    }
+                    self.crc_controls(ui, false);
+                });
+                central_control_row(ui, |ui| {
+                    self.lvds_save_button(ui, &mut request, false);
+                    self.lvds_more_menu(ui, &mut request, false);
+                    let text = self.lvds_save_summary();
+                    ui.add_sized([ui.available_width().max(0.0), CENTRAL_CONTROL_HEIGHT],
+                        egui::Label::new(RichText::new(&text).small().monospace()).truncate())
+                        .on_hover_text(format!("{text}\n仅 CRC 合格的 Accepted 数据进入正式保存；入队、sink 写入与成功关闭分别统计。"));
+                });
+            }
+            self.lvds_quality_grid(ui);
         });
+        if let Some(request) = request {
+            self.submit(request);
+        }
+    }
+
+    fn lvds_listen_inputs(&mut self, ui: &mut Ui) {
+        if ui.available_width() >= 300.0 {
+            ui.strong("LVDS / UDP");
+        }
+        ui.add_enabled_ui(!self.lvds.connected, |ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            let ip = ui.add_sized(
+                [124.0, CENTRAL_CONTROL_HEIGHT],
+                egui::TextEdit::singleline(&mut self.lvds.bind_address)
+                    .font(egui::TextStyle::Button)
+                    .vertical_align(Align::Center)
+                    .hint_text("192.168.1.100"),
+            );
+            debug_ui_rect("central.operations.ip_input", ip.rect);
+            ip.on_hover_text("本地监听 IPv4：必须已配置在本机网卡上；手动填写，不会自动替换地址。");
+            let port = ui.add_sized(
+                [48.0, CENTRAL_CONTROL_HEIGHT],
+                egui::DragValue::new(&mut self.lvds.port).range(1..=u16::MAX),
+            );
+            debug_ui_rect("central.operations.port_input", port.rect);
+            port.on_hover_text("本地 UDP 监听端口");
+        });
+    }
+
+    fn lvds_listen_buttons(&self, ui: &mut Ui, request: &mut Option<UiRequest>, short: bool) {
+        let start = ui.add_enabled(
+            !self.lvds.connected,
+            egui::Button::new(if short { "监听" } else { "开始监听" }).min_size(egui::vec2(
+                if short { 44.0 } else { 80.0 },
+                CENTRAL_CONTROL_HEIGHT,
+            )),
+        );
+        debug_ui_rect("central.operations.connection_button", start.rect);
+        if start.clicked() {
+            *request = Some(UiRequest::BindLvdsUdp {
+                bind_address: self.lvds.bind_address.trim().to_owned(),
+                port: self.lvds.port,
+            });
+        }
+        if ui
+            .add_enabled(
+                self.lvds.connected,
+                egui::Button::new(if short { "停止" } else { "停止监听" }).min_size(egui::vec2(
+                    if short { 44.0 } else { 80.0 },
+                    CENTRAL_CONTROL_HEIGHT,
+                )),
+            )
+            .clicked()
+        {
+            *request = Some(UiRequest::Disconnect {
+                link: LinkKind::Lvds,
+            });
+        }
+    }
+
+    fn lvds_save_button(&self, ui: &mut Ui, request: &mut Option<UiRequest>, short: bool) {
+        let saving = self.acquisition_running;
+        let label = if saving {
+            "停止保存"
+        } else {
+            "开始保存"
+        };
+        let response = ui.add_sized(
+            [if short { 68.0 } else { 80.0 }, CENTRAL_CONTROL_HEIGHT],
+            egui::Button::new(RichText::new(label).color(theme::WHITE)).fill(if saving {
+                theme::DANGER
+            } else {
+                theme::SUCCESS
+            }),
+        );
+        debug_ui_rect("central.operations.acquisition_button", response.rect);
+        if response.on_hover_text(self.lvds_save_summary()).clicked() {
+            *request = Some(if saving {
+                UiRequest::StopAcquisition
+            } else {
+                UiRequest::StartAcquisition
+            });
+        }
+    }
+
+    fn lvds_save_summary(&self) -> String {
+        let storage = self.diagnostic.status.as_ref().map(|s| &s.storage);
+        let state = if storage.is_some_and(|s| s.error.is_some()) {
+            "保存错误"
+        } else if self.acquisition_running {
+            "保存中"
+        } else if storage.is_some_and(|s| s.closed) {
+            "已关闭"
+        } else {
+            "未保存"
+        };
+        format!(
+            "{state} · 入队 {} / sink写入 {}",
+            storage.map_or(0, |s| s.enqueued),
+            storage.map_or(0, |s| s.sink_written)
+        )
+    }
+
+    fn lvds_more_menu(&mut self, ui: &mut Ui, request: &mut Option<UiRequest>, compact: bool) {
+        ui.menu_button("更多", |ui| {
+            if compact {
+                self.crc_controls(ui, false);
+                ui.label(self.lvds_save_summary());
+                ui.separator();
+            }
+            if ui.button("刷新串口").clicked() {
+                *request = Some(UiRequest::RefreshPorts);
+                ui.close();
+            }
+            if ui.button("导出遥测 (CSV)").clicked() {
+                *request = Some(UiRequest::ExportCsv {
+                    suggested_name: format!(
+                        "langmuir-{}.csv",
+                        Local::now().format("%Y%m%d-%H%M%S")
+                    ),
+                });
+                ui.close();
+            }
+            #[cfg(feature = "mock")]
+            if self.mock_mode && ui.button("注入模拟异常").clicked() {
+                *request = Some(UiRequest::InjectMockFault);
+                ui.close();
+            }
+        });
+    }
+
+    fn lvds_receive_status(&self, ui: &mut Ui, compact: bool) {
+        let raw = self
+            .diagnostic
+            .status
+            .as_ref()
+            .map_or(self.lvds.detail.as_str(), |s| s.receive_state.as_str());
+        let summary = lvds_receive_summary(raw, self.lvds.connected);
+        let detail = if compact {
+            format!("{raw}\n{}", self.lvds_save_summary())
+        } else {
+            raw.to_owned()
+        };
+        let response = ui.add_sized(
+            [ui.available_width().max(0.0), 20.0],
+            egui::Label::new(RichText::new(summary).small().color(
+                if raw.contains("异常") || raw.contains("address") {
+                    theme::WARNING
+                } else {
+                    theme::TEXT_MUTED
+                },
+            ))
+            .truncate(),
+        );
+        debug_ui_rect("central.operations.receive_status", response.rect);
+        response.on_hover_text(detail);
+    }
+
+    fn lvds_quality_grid(&self, ui: &mut Ui) {
+        let stats = self.diagnostic.status.as_ref().map(|s| &s.stats);
+        let values = [
+            stats.map_or(0, |s| s.udp_packets),
+            stats.map_or(0, |s| s.structure_valid_frames),
+            stats.map_or(0, |s| s.crc_passed),
+            stats.map_or(0, |s| s.crc_failed),
+            self.diagnostic.plotted_frames,
+        ];
+        let labels = ["接收", "结构合法", "CRC正确", "CRC错误", "绘图"];
+        let width = ui.available_width();
+        ui.spacing_mut().item_spacing.y = 0.0;
+        for is_value in [false, true] {
+            ui.allocate_ui_with_layout(egui::vec2(width, if is_value { 22.0 } else { 16.0 }), Layout::left_to_right(Align::Center), |ui| {
+                let cell = ((width - 32.0) / 5.0).max(0.0);
+                for (label, value) in labels.into_iter().zip(values) {
+                    let text = if is_value { RichText::new(value.to_string()).monospace().color(theme::TEXT_SECONDARY) }
+                        else { RichText::new(label).small().color(theme::TEXT_MUTED) };
+                    let response = ui.add_sized([cell, if is_value { 22.0 } else { 16.0 }], egui::Label::new(text).truncate());
+                    response.on_hover_text(format!("{label}：{value}\n接收为匹配来源的 UDP；结构不等于 CRC 合格；绘图不等于正式保存。"));
+                }
+            });
+        }
+    }
+
+    fn crc_controls(&mut self, ui: &mut Ui, compact: bool) {
+        let mut strict = self.diagnostic.strict_crc_only;
+        if ui.checkbox(&mut strict, "仅显示 CRC 正确的数据")
+            .on_hover_text("默认允许 CRC 失败且结构、时间、ADC 合法的候选绘图。切换会清空当前波形、冻结和绘图计数；正式保存始终要求 CRC 合格。")
+            .changed() {
+            self.set_crc_filter(strict);
+        }
+        if !compact && ui.button("CRC16 详情").clicked() {
+            self.diagnostic.dialog = Some(LvdsDialog::CrcDetails);
+        }
+    }
+
+    fn lvds_dialog(&mut self, context: &egui::Context) {
+        let Some(dialog) = self.diagnostic.dialog else {
+            return;
+        };
+        let mut open = true;
+        match dialog {
+            LvdsDialog::CrcDetails => self.crc_details_dialog(context, &mut open),
+            LvdsDialog::Replay => self.replay_dialog(context, &mut open),
+        }
+        if !open {
+            self.diagnostic.dialog = None;
+        }
+    }
+
+    fn crc_details_dialog(&self, context: &egui::Context, open: &mut bool) {
+        egui::Window::new("CRC16 校验与接收详情")
+            .collapsible(false)
+            .resizable(false)
+            .default_width(600.0)
+            .vscroll(true)
+            .open(open)
+            .show(context, |ui| {
+                Grid::new("crc_algorithm_details")
+                    .num_columns(2)
+                    .show(ui, |ui| {
+                        detail_row(ui, "算法", "CRC16-CCITT-FALSE");
+                        detail_row(ui, "参数", "Poly 0x1021 · Init 0xFFFF · XorOut 0x0000");
+                        detail_row(ui, "反射", "RefIn false · RefOut false · 收到 CRC 为大端");
+                        detail_row(
+                            ui,
+                            "当前覆盖范围",
+                            "frame[7..267]，260B（厂家尚未最终确认）",
+                        );
+                    });
+                ui.separator();
+                if let Some(status) = &self.diagnostic.status {
+                    crc_runtime_details(ui, status);
+                    if let Some(detail) = &status.latest {
+                        ui.separator();
+                        Grid::new("crc_latest_details")
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                detail_row(
+                                    ui,
+                                    "完整 UDP u32 序号",
+                                    &detail.sequence.map_or_else(
+                                        || "未知（没有外层标签）".to_owned(),
+                                        |value| value.to_string(),
+                                    ),
+                                );
+                                detail_row(ui, "收到 CRC16", &format_crc(detail.received_crc));
+                                detail_row(ui, "计算 CRC16", &format_crc(detail.calculated_crc));
+                                detail_row(
+                                    ui,
+                                    "最近完整性结果",
+                                    detail.error.as_deref().unwrap_or("完整科学验证通过"),
+                                );
+                            });
+                        if ui.button("复制最近原始帧 HEX").clicked() {
+                            ui.ctx().copy_text(hex_bytes(&detail.raw));
+                        }
+                        ScrollArea::vertical()
+                            .id_salt("crc_raw_hex")
+                            .max_height(120.0)
+                            .show(ui, |ui| {
+                                ui.add(
+                                    egui::Label::new(
+                                        RichText::new(hex_bytes(&detail.raw)).monospace(),
+                                    )
+                                    .wrap(),
+                                );
+                            });
+                    } else {
+                        ui.label("尚无可校验数据");
+                    }
+                    ui.separator();
+                    scientific_storage_status(ui, status);
+                } else {
+                    ui.label("严格模式 · 尚无可校验数据");
+                }
+            });
+    }
+
+    fn replay_dialog(&mut self, context: &egui::Context, open: &mut bool) {
+        let mut request = None;
+        egui::Window::new("离线回放 PCAP / PCAPNG")
+            .collapsible(false)
+            .resizable(false)
+            .default_width(560.0)
+            .open(open)
+            .show(context, |ui| {
+                ui.label(
+                    "离线来源：只读文件，不向网络发送报文。启动回放会切换当前接收来源并清空波形。",
+                );
+                ui.label("捕获文件路径");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.diagnostic.replay_path)
+                        .desired_width(f32::INFINITY),
+                );
+                let replay_running = self
+                    .diagnostic
+                    .status
+                    .as_ref()
+                    .and_then(|status| status.replay.as_ref())
+                    .is_some_and(|replay| !replay.finished);
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(
+                            !self.acquisition_running
+                                && !replay_running
+                                && !self.diagnostic.replay_path.trim().is_empty(),
+                            egui::Button::new("开始回放"),
+                        )
+                        .clicked()
+                    {
+                        request = Some(UiRequest::StartPcapReplay {
+                            path: self.diagnostic.replay_path.trim().to_owned(),
+                        });
+                    }
+                    if ui
+                        .add_enabled(replay_running, egui::Button::new("停止回放"))
+                        .clicked()
+                    {
+                        request = Some(UiRequest::StopPcapReplay);
+                    }
+                    if self.acquisition_running {
+                        ui.colored_label(theme::WARNING, "请先停止正式保存，再切换来源");
+                    }
+                });
+                if let Some(status) = &self.diagnostic.status {
+                    ui.label(if status.diagnostic_preview {
+                        "默认绘图：CRC 失败但其余检查合格的数据直接显示；正式保存仍严格校验。"
+                    } else {
+                        "严格绘图过滤：仅显示 CRC 正确的数据。"
+                    });
+                    if let Some(replay) = &status.replay {
+                        ui.label(format!(
+                            "{} · 总包 {} · 目标 UDP {}",
+                            if replay.finished {
+                                "回放已结束"
+                            } else {
+                                "回放进行中"
+                            },
+                            replay.total_packets,
+                            replay.target_udp_packets
+                        ));
+                        ui.add(egui::Label::new(&replay.path).wrap());
+                        if let Some(error) = &replay.error {
+                            ui.colored_label(theme::DANGER, error);
+                        }
+                    } else {
+                        ui.label("尚未开始离线回放");
+                    }
+                }
+            });
         if let Some(request) = request {
             self.submit(request);
         }
@@ -2136,6 +2637,7 @@ impl LangmuirDesktopApp {
             .id_salt("system_log_scroll")
             .auto_shrink([false, false])
             .stick_to_bottom(true)
+            .min_scrolled_height(0.0)
             .max_height(ui.available_height().max(0.0))
             .show(ui, |ui| {
                 for entry in &self.logs {
@@ -2194,19 +2696,21 @@ impl LangmuirDesktopApp {
                 header_link_status(
                     ui,
                     if self.acquisition_running {
-                        "采集 · 运行中"
+                        "保存 · 运行中"
                     } else {
-                        "采集 · 已停止"
+                        "保存 · 已停止"
                     },
                     self.acquisition_running,
                     self.scientific_data_is_fresh(),
                 );
                 header_link_status(
                     ui,
-                    if self.lvds.connected {
-                        "LVDS · 已连接"
+                    if !self.lvds.connected {
+                        "LVDS · 未监听"
+                    } else if self.scientific_data_is_fresh() {
+                        "LVDS · 波形更新"
                     } else {
-                        "LVDS · 未连接"
+                        "LVDS · 监听中"
                     },
                     self.lvds.connected,
                     self.scientific_data_is_fresh(),
@@ -2337,6 +2841,7 @@ impl eframe::App for LangmuirDesktopApp {
         reason = "the desktop shell keeps the fixed industrial console regions together"
     )]
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+        let update_start = Instant::now();
         self.drain_backend();
         let compact_header = ui.available_width() < HEADER_COMPACT_BREAKPOINT;
 
@@ -2452,16 +2957,284 @@ impl eframe::App for LangmuirDesktopApp {
         });
 
         self.emergency_stop_dialog(ui.ctx());
+        self.lvds_dialog(ui.ctx());
 
         ui.ctx().request_repaint_after(
             if self.acquisition_running || self.scientific_data_is_fresh() {
-                // Scientific samples are time-sensitive; keep the plot responsive.
-                Duration::from_millis(50)
+                // Drawing cadence is independent of the 20 Hz receive cadence.
+                Duration::from_millis(16)
             } else {
                 // Telemetry is event-driven and does not need a high-rate repaint loop.
                 Duration::from_millis(250)
             },
         );
+        self.measurements.record(
+            update_start,
+            [self.channel_1.len(), self.channel_2.len()],
+            self.diagnostic.plotted_frames,
+        );
+    }
+}
+
+fn scientific_plot_buffer() -> TimeSeriesBuffer {
+    TimeSeriesBuffer::with_history(
+        PLOT_CAPACITY,
+        PLOT_HISTORY_SECONDS,
+        PLOT_WINDOW_SECONDS,
+        MAX_DISPLAY_POINTS,
+    )
+}
+
+#[derive(Clone, Copy)]
+struct ScientificPlotConfig<'a> {
+    id: &'static str,
+    height: f32,
+    range: [f64; 2],
+    reset: bool,
+    y_label: &'static str,
+    channels: [bool; 2],
+    names: [&'a str; 2],
+}
+
+struct ScientificPlotOutcome {
+    range: [f64; 2],
+    cursor: Option<f64>,
+    interacted: bool,
+    reset: bool,
+    width: f32,
+}
+
+fn show_scientific_plot(
+    ui: &mut Ui,
+    config: ScientificPlotConfig<'_>,
+    channel_1: &[PlotPoint],
+    channel_2: &[PlotPoint],
+    cursor: Option<f64>,
+) -> ScientificPlotOutcome {
+    let plot = Plot::new(config.id)
+        .min_size(egui::vec2(1.0, 1.0))
+        .show_axes([config.height >= 100.0; 2])
+        .x_axis_label("时间")
+        .y_axis_label(config.y_label)
+        .x_axis_formatter(|mark, range| {
+            format_plot_timestamp(mark.value, range.end() - range.start())
+        })
+        .allow_drag(true)
+        .pan_pointer_button(PointerButton::Primary)
+        .allow_scroll(false)
+        .allow_zoom(true)
+        .allow_axis_zoom_drag(false)
+        .allow_double_click_reset(false)
+        .allow_boxed_zoom(true)
+        .auto_bounds([false, true])
+        .height(config.height);
+    let plot = if config.height >= 100.0 {
+        plot.legend(Legend::default())
+    } else {
+        plot
+    };
+    let response = plot.show(ui, |plot_ui| {
+        let hovered = plot_ui.response().contains_pointer();
+        let (wheel, zoom) = plot_ui.ctx().input(|input| {
+            (
+                if hovered {
+                    input.smooth_scroll_delta.y
+                } else {
+                    0.0
+                },
+                if hovered {
+                    input.zoom_delta_2d()
+                } else {
+                    egui::Vec2::splat(1.0)
+                },
+            )
+        });
+        let dragging = plot_ui.response().dragged();
+        let interacted = dragging || wheel != 0.0 || zoom != egui::Vec2::splat(1.0);
+        // This is the shared X range for overlay and split plots. A
+        // native pan or zoom runs after this base range is applied.
+        plot_ui.set_plot_bounds_x(config.range[0]..=config.range[1]);
+        if config.reset {
+            plot_ui.set_auto_bounds([false, true]);
+        }
+        if wheel != 0.0 && zoom == egui::Vec2::splat(1.0) {
+            let factor = (wheel * 0.005).clamp(-0.5, 0.5).exp();
+            plot_ui.zoom_bounds_around_hovered(egui::Vec2::splat(factor));
+        }
+        let pointer = hovered
+            .then(|| plot_ui.pointer_coordinate())
+            .flatten()
+            .map(|p| p.x);
+        if let Some(position) = pointer.or(cursor) {
+            plot_ui.vline(
+                VLine::new("游标", position)
+                    .color(theme::WARNING)
+                    .width(1.0),
+            );
+        }
+        for (index, points) in [channel_1, channel_2].into_iter().enumerate() {
+            if config.channels[index] && !points.is_empty() {
+                plot_ui.line(
+                    Line::new(config.names[index], PlotPoints::Borrowed(points)).color(
+                        if index == 0 {
+                            theme::PRIMARY
+                        } else {
+                            theme::DANGER
+                        },
+                    ),
+                );
+            }
+        }
+        (pointer, interacted, plot_ui.response().double_clicked())
+    });
+    let bounds = response.transform.bounds();
+    debug_ui_rect(config.id, response.response.rect);
+    debug_ui_rect(
+        if config.id == "scientific_plot_overlay" {
+            "plot.overlay.frame"
+        } else if config.id == "scientific_plot_channel_1" {
+            "plot.channel_1.frame"
+        } else {
+            "plot.channel_2.frame"
+        },
+        *response.transform.frame(),
+    );
+    if ui_rect_debug_enabled() && response.inner.1 {
+        eprintln!(
+            "PLOT_VIEW ManualView epoch={:.6} id={} x=[{:.6},{:.6}] y=[{:.6},{:.6}]",
+            plot_debug_epoch_seconds(),
+            config.id,
+            bounds.min()[0],
+            bounds.max()[0],
+            bounds.min()[1],
+            bounds.max()[1]
+        );
+    }
+    ScientificPlotOutcome {
+        range: [bounds.min()[0], bounds.max()[0]],
+        cursor: response.inner.0,
+        interacted: response.inner.1,
+        reset: response.inner.2,
+        width: response.transform.frame().width(),
+    }
+}
+
+fn extend_scientific_channel(
+    buffer: &mut TimeSeriesBuffer,
+    start_seconds: f64,
+    sample_interval_seconds: f64,
+    values: Vec<f64>,
+    quality: SampleQuality,
+) {
+    buffer.extend(
+        values
+            .into_iter()
+            .scan(start_seconds, |time_seconds, value| {
+                let point = SamplePoint {
+                    time_seconds: *time_seconds,
+                    value: adc_counts_to_millivolts(value),
+                    quality,
+                };
+                *time_seconds += sample_interval_seconds;
+                Some(point)
+            }),
+    );
+}
+
+fn detail_row(ui: &mut Ui, label: &str, value: &str) {
+    ui.label(RichText::new(label).color(theme::TEXT_SECONDARY));
+    ui.add(egui::Label::new(value).wrap());
+    ui.end_row();
+}
+
+fn format_crc(value: Option<u16>) -> String {
+    value.map_or_else(
+        || "未知 / 数据不足".to_owned(),
+        |crc| format!("0x{crc:04X}"),
+    )
+}
+
+fn crc_runtime_details(ui: &mut Ui, status: &LvdsStatusSnapshot) {
+    Grid::new("crc_runtime_details")
+        .num_columns(2)
+        .show(ui, |ui| {
+            detail_row(
+                ui,
+                "绘图过滤",
+                if status.diagnostic_preview {
+                    "允许 CRC 失败的合法候选；正式保存仍严格校验"
+                } else {
+                    "仅显示 CRC 正确的数据"
+                },
+            );
+            detail_row(ui, "数据来源", &status.source);
+            detail_row(ui, "接收状态", &status.receive_state);
+            detail_row(
+                ui,
+                "完整帧 / 正式有效",
+                &format!(
+                    "{} / {}",
+                    status.stats.complete_frames, status.stats.accepted_frames
+                ),
+            );
+            detail_row(
+                ui,
+                "CRC 通过 / 失败",
+                &format!("{} / {}", status.stats.crc_passed, status.stats.crc_failed),
+            );
+            detail_row(
+                ui,
+                "帧头 / 长度 / 固定字段错误",
+                &format!(
+                    "{} / {} / {}",
+                    status.stats.header_errors,
+                    status.stats.length_errors,
+                    status.stats.field_errors
+                ),
+            );
+            detail_row(
+                ui,
+                "时间 / ADC 错误",
+                &format!(
+                    "{} / {}",
+                    status.stats.timestamp_errors, status.stats.adc_errors
+                ),
+            );
+            detail_row(
+                ui,
+                "诊断候选 / 重复 / 冲突",
+                &format!(
+                    "{} / {} / {}",
+                    status.stats.diagnostic_candidates,
+                    status.stats.duplicates,
+                    status.stats.conflicts
+                ),
+            );
+        });
+}
+
+fn scientific_storage_status(ui: &mut Ui, status: &LvdsStatusSnapshot) {
+    let storage = &status.storage;
+    ui.label(format!(
+        "正式保存：入队 {} · sink 写入 {} · {}",
+        storage.enqueued,
+        storage.sink_written,
+        if storage.closed {
+            "已关闭"
+        } else {
+            "未关闭"
+        },
+    ));
+    ui.label(
+        RichText::new("入队和 sink 成功不等于断电持久化；停止保存后以实际关闭结果为准。")
+            .small()
+            .color(theme::TEXT_SECONDARY),
+    );
+    if let Some(path) = &storage.path {
+        ui.add(egui::Label::new(path).wrap());
+    }
+    if let Some(error) = &storage.error {
+        ui.colored_label(theme::DANGER, error);
     }
 }
 
@@ -2469,6 +3242,16 @@ fn ui_rect_debug_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var_os(UI_RECT_DEBUG_ENV).is_some())
 }
+
+fn plot_debug_epoch_seconds() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0.0, |duration| duration.as_secs_f64())
+}
+
+#[cfg(test)]
+#[path = "app_plot_tests.rs"]
+mod plot_tests;
 
 /// Logs a region once and again only when its geometry moves by more than one
 /// logical point. This makes a 60-second Mock run useful for detecting layout
@@ -2532,6 +3315,43 @@ fn fixed_panel_size(default: f32, minimum: f32, maximum: f32) -> f32 {
     default.clamp(minimum, maximum)
 }
 
+fn central_control_style(ui: &mut Ui) {
+    ui.spacing_mut().interact_size.y = CENTRAL_CONTROL_HEIGHT;
+    ui.spacing_mut().button_padding = egui::vec2(8.0, 5.0);
+    ui.spacing_mut().item_spacing.x = 8.0;
+}
+
+fn central_control_row<R>(ui: &mut Ui, contents: impl FnOnce(&mut Ui) -> R) -> R {
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width().max(0.0), CENTRAL_CONTROL_HEIGHT),
+        Layout::left_to_right(Align::Center),
+        contents,
+    )
+    .inner
+}
+
+/// Presentation only: retain the complete socket error in the status tooltip.
+fn lvds_receive_summary(raw: &str, connected: bool) -> &str {
+    let address_code = if cfg!(target_os = "macos") {
+        "(os error 49)"
+    } else if cfg!(target_os = "linux") {
+        "(os error 99)"
+    } else if cfg!(windows) {
+        "(os error 10049)"
+    } else {
+        ""
+    };
+    if !connected
+        && (raw.contains("Can't assign requested address")
+            || raw.contains("Cannot assign requested address")
+            || (!address_code.is_empty() && raw.contains(address_code)))
+    {
+        "监听失败：本机未配置该 IP 地址"
+    } else {
+        raw
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct CentralLayoutRects {
     root: egui::Rect,
@@ -2553,11 +3373,26 @@ fn central_layout_rects(root: egui::Rect) -> CentralLayoutRects {
     // extend outside the central panel.
     let gap = CENTRAL_GAP.min(root.height().max(0.0) / 3.0);
     let available = (root.height() - gap * 3.0).max(0.0);
-    let normal_fixed = CENTRAL_OPERATIONS_HEIGHT + CENTRAL_PLOT_TOOLBAR_HEIGHT + CENTRAL_LOG_HEIGHT;
+    // Presets depend only on the assigned viewport, never on status strings,
+    // counters or save state. The short preset keeps 32 pt controls reachable.
+    let compact = root.height() < CENTRAL_SHORT_HEIGHT || root.width() < 320.0;
+    let operations = if compact {
+        CENTRAL_COMPACT_OPERATIONS_HEIGHT
+    } else if root.width() < 566.0 {
+        CENTRAL_OPERATIONS_HEIGHT + 40.0
+    } else {
+        CENTRAL_OPERATIONS_HEIGHT
+    };
+    let logs = if compact {
+        CENTRAL_COMPACT_LOG_HEIGHT
+    } else {
+        CENTRAL_LOG_HEIGHT
+    };
+    let normal_fixed = operations + CENTRAL_PLOT_TOOLBAR_HEIGHT + logs;
     let scale = (available / normal_fixed).min(1.0);
-    let operations_height = CENTRAL_OPERATIONS_HEIGHT * scale;
+    let operations_height = operations * scale;
     let toolbar_height = CENTRAL_PLOT_TOOLBAR_HEIGHT * scale;
-    let logs_height = CENTRAL_LOG_HEIGHT * scale;
+    let logs_height = logs * scale;
     let plot_height = (available - operations_height - toolbar_height - logs_height).max(0.0);
 
     let x = root.min.x;
@@ -2703,20 +3538,37 @@ fn protocol_status_row(ui: &mut Ui, label: &str, status: u8, fresh: bool) {
     ui.add_space(2.0);
 }
 
-fn frequency_parameter(ui: &mut Ui, value: &mut u8, step: &mut u8) {
-    let parent_rect = ui.available_rect_before_wrap();
-    debug_ui_rect("left.scan_frequency_parameter", parent_rect);
-    let slider_width = frequency_slider_width(parent_rect.width());
+fn frequency_parameter(ui: &mut Ui, value: &mut u8, edit: &mut IntegerParameterEdit) {
+    parameter_header(ui, "扫描频率设定值", u16::from(*value));
+    let response = full_width_integer_slider(
+        ui,
+        value,
+        ScanFrequency::MIN..=ScanFrequency::MAX,
+        "left.scan_frequency_slider",
+    )
+    .on_hover_text("扫描频率：0..=100；拖动或键盘逐整数调整，精确输入按 Enter 确认");
+    if response.changed() {
+        edit.set_confirmed(u16::from(*value));
+    }
+    parameter_limits(ui, u16::from(ScanFrequency::MAX));
+    let mut edited = u16::from(*value);
+    integer_parameter_actions(
+        ui,
+        &mut edited,
+        edit,
+        u16::from(ScanFrequency::MAX),
+        &[1, 50, u16::from(ScanFrequency::MAX)],
+        "left.scan_frequency_input",
+    );
+    *value = u8::try_from(edited).expect("frequency editor validates the u8 protocol range");
+}
 
+fn parameter_header(ui: &mut Ui, title: &str, value: u16) {
     ui.allocate_ui_with_layout(
-        egui::vec2(parent_rect.width().max(0.0), theme::CONTROL_HEIGHT),
+        egui::vec2(ui.available_width(), theme::CONTROL_HEIGHT),
         Layout::left_to_right(Align::Center),
         |ui| {
-            ui.label(
-                RichText::new("扫描频率设定值")
-                    .small()
-                    .color(theme::TEXT_SECONDARY),
-            );
+            ui.label(RichText::new(title).small().color(theme::TEXT_SECONDARY));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label(
                     RichText::new(format!("当前值 {value}"))
@@ -2727,7 +3579,16 @@ fn frequency_parameter(ui: &mut Ui, value: &mut u8, step: &mut u8) {
             });
         },
     );
+}
 
+fn full_width_integer_slider<Num: egui::emath::Numeric>(
+    ui: &mut Ui,
+    value: &mut Num,
+    range: std::ops::RangeInclusive<Num>,
+    debug_label: &'static str,
+) -> egui::Response {
+    let parent_rect = ui.available_rect_before_wrap();
+    let slider_width = frequency_slider_width(parent_rect.width());
     let slider_response = ui
         .scope(|ui| {
             let visuals = ui.visuals_mut();
@@ -2747,70 +3608,126 @@ fn frequency_parameter(ui: &mut Ui, value: &mut u8, step: &mut u8) {
             ui.spacing_mut().slider_rail_height = 6.0;
             ui.add_sized(
                 [slider_width, theme::CONTROL_HEIGHT],
-                egui::Slider::new(value, ScanFrequency::MIN..=ScanFrequency::MAX)
+                egui::Slider::new(value, range)
                     .show_value(false)
-                    .step_by(f64::from(*step))
+                    .step_by(1.0)
+                    .smart_aim(false)
                     .trailing_fill(true),
             )
-            .on_hover_text("扫描频率：0..=100；可拖动、键盘调整或精确输入")
         })
         .inner;
-    debug_ui_rect("left.scan_frequency_slider", slider_response.rect);
+    debug_ui_rect(debug_label, slider_response.rect);
     debug_slider_geometry(
-        "left.scan_frequency_slider",
+        debug_label,
         parent_rect,
         slider_response.rect,
         slider_width,
         true,
     );
+    slider_response
+}
 
+fn parameter_limits(ui: &mut Ui, maximum: u16) {
     ui.allocate_ui_with_layout(
-        egui::vec2(slider_width, 20.0),
+        egui::vec2(ui.available_width(), 20.0),
         Layout::left_to_right(Align::Center),
         |ui| {
             ui.label(RichText::new("最小 0").small().color(theme::TEXT_MUTED));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label(
-                    RichText::new(format!("最大 {}", ScanFrequency::MAX))
+                    RichText::new(format!("最大 {maximum}"))
                         .small()
                         .color(theme::TEXT_MUTED),
                 );
             });
         },
     );
+}
 
-    ui.allocate_ui_with_layout(
-        egui::vec2(parent_rect.width().max(0.0), theme::CONTROL_HEIGHT),
-        Layout::left_to_right(Align::Center),
-        |ui| {
-            ui.spacing_mut().item_spacing.x = 3.0;
-            ui.label(
-                RichText::new("快速设置")
-                    .small()
-                    .color(theme::TEXT_SECONDARY),
-            );
-            for preset in [1, 50, ScanFrequency::MAX] {
-                if ui
-                    .selectable_label(*value == preset, format!("{preset}"))
-                    .clicked()
-                {
-                    *value = preset;
-                }
+fn integer_parameter_actions(
+    ui: &mut Ui,
+    value: &mut u16,
+    edit: &mut IntegerParameterEdit,
+    maximum: u16,
+    presets: &[u16],
+    debug_label: &'static str,
+) {
+    let compact = ui.available_width() < 260.0;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 3.0;
+        ui.label(
+            RichText::new("快速设置")
+                .small()
+                .color(theme::TEXT_SECONDARY),
+        );
+        for &preset in presets {
+            if ui
+                .selectable_label(*value == preset, format!("{preset}"))
+                .clicked()
+            {
+                *value = preset;
+                edit.set_confirmed(preset);
             }
+        }
+        if !compact {
             ui.separator();
-            ui.label(
-                RichText::new("精确输入")
-                    .small()
-                    .color(theme::TEXT_SECONDARY),
-            );
-            ui.add_sized(
-                [64.0, theme::CONTROL_HEIGHT],
-                egui::DragValue::new(value)
-                    .range(ScanFrequency::MIN..=ScanFrequency::MAX)
-                    .speed(f64::from(*step)),
-            );
-        },
+            let _ = integer_parameter_input(ui, value, edit, maximum, debug_label);
+        }
+    });
+    if compact {
+        ui.horizontal(|ui| {
+            let _ = integer_parameter_input(ui, value, edit, maximum, debug_label);
+        });
+    }
+    let feedback = edit
+        .error
+        .as_deref()
+        .unwrap_or("精确输入按 Enter 或移开焦点确认");
+    ui.add(
+        egui::Label::new(
+            RichText::new(feedback)
+                .size(9.0)
+                .color(if edit.error.is_some() {
+                    theme::DANGER
+                } else {
+                    theme::TEXT_MUTED
+                }),
+        )
+        .wrap(),
     );
+}
+
+fn integer_parameter_input(
+    ui: &mut Ui,
+    value: &mut u16,
+    edit: &mut IntegerParameterEdit,
+    maximum: u16,
+    debug_label: &'static str,
+) -> egui::Response {
+    ui.label(
+        RichText::new("精确输入")
+            .small()
+            .color(theme::TEXT_SECONDARY),
+    );
+    let response = ui.add_sized(
+        [64.0, theme::CONTROL_HEIGHT],
+        egui::TextEdit::singleline(&mut edit.text)
+            .id_salt(debug_label)
+            .font(egui::TextStyle::Monospace)
+            .desired_width(64.0),
+    );
+    debug_ui_rect(debug_label, response.rect);
+    if response.changed() {
+        edit.dirty = true;
+        edit.error = None;
+    }
+    if (response.lost_focus()
+        || (response.has_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter))))
+        && let Some(confirmed) = edit.confirm(maximum)
+    {
+        *value = confirmed;
+    }
+    response
 }
 
 fn frequency_slider_width(available_width: f32) -> f32 {
@@ -2830,6 +3747,22 @@ fn debug_slider_geometry(
     if !ui_rect_debug_enabled() {
         return;
     }
+    // Geometry diagnostics should not add continuous I/O to a live plot.
+    static LAST: OnceLock<Mutex<HashMap<&'static str, [u32; 5]>>> = OnceLock::new();
+    let geometry = [
+        parent_rect.width().to_bits(),
+        configured_width.to_bits(),
+        response_rect.width().to_bits(),
+        response_rect.height().to_bits(),
+        u32::from(enabled),
+    ];
+    let Ok(mut last) = LAST.get_or_init(|| Mutex::new(HashMap::new())).lock() else {
+        return;
+    };
+    if last.get(label) == Some(&geometry) {
+        return;
+    }
+    last.insert(label, geometry);
     eprintln!(
         "UI_SLIDER {label}: parent_w={:.1} configured_w={:.1} response_w={:.1} response_h={:.1} rail_h=6.0 enabled={enabled}",
         parent_rect.width(),
@@ -2839,47 +3772,20 @@ fn debug_slider_geometry(
     );
 }
 
-fn integer_parameter_u16(ui: &mut Ui, value: &mut u16, step: &mut u16, presets: &[u16]) {
-    let slider_width = ui.available_width().max(140.0);
-    ui.scope(|ui| {
-        let visuals = ui.visuals_mut();
-        visuals.selection.bg_fill = theme::PRIMARY;
-        visuals.widgets.inactive.bg_fill = theme::SURFACE_ALT;
-        visuals.widgets.inactive.bg_stroke = Stroke::new(1.5, theme::PRIMARY);
-        visuals.widgets.hovered.bg_fill = theme::PRIMARY_SOFT;
-        visuals.widgets.hovered.bg_stroke = Stroke::new(2.0, theme::PRIMARY);
-        visuals.widgets.active.bg_fill = theme::PRIMARY;
-        visuals.widgets.active.fg_stroke = Stroke::new(1.5, theme::WHITE);
-        ui.add_sized(
-            [slider_width, theme::CONTROL_HEIGHT],
-            egui::Slider::new(value, 0..=u16::MAX)
-                .show_value(false)
-                .step_by(f64::from(*step)),
-        )
-        .on_hover_text("原始电压设定值：0x0000..=0xFFFF");
-    });
-    ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new("0x0000").small().color(theme::TEXT_MUTED));
-        ui.add_sized(
-            [78.0, theme::CONTROL_HEIGHT],
-            egui::DragValue::new(value)
-                .range(0..=u16::MAX)
-                .speed(f64::from(*step)),
-        );
-        ui.label(
-            RichText::new(format!("当前 {value} / 最大 {}", u16::MAX))
-                .small()
-                .color(theme::TEXT_SECONDARY),
-        );
-        for preset in presets {
-            if ui
-                .selectable_label(*value == *preset, format!("{preset}"))
-                .clicked()
-            {
-                *value = *preset;
-            }
-        }
-    });
+fn integer_parameter_u16(
+    ui: &mut Ui,
+    value: &mut u16,
+    edit: &mut IntegerParameterEdit,
+    presets: &[u16],
+) {
+    parameter_header(ui, "原始电压设定值", *value);
+    let response = full_width_integer_slider(ui, value, 0..=u16::MAX, "left.dc_voltage_slider")
+        .on_hover_text("协议原始 u16：0..=65535；协议未定义物理电压单位");
+    if response.changed() {
+        edit.set_confirmed(*value);
+    }
+    parameter_limits(ui, u16::MAX);
+    integer_parameter_actions(ui, value, edit, u16::MAX, presets, "left.dc_voltage_input");
 }
 
 fn work_mode_name(mode: u8) -> String {
@@ -2996,64 +3902,7 @@ fn command_counter(ui: &mut Ui, title: &str, value: u8, color: Color32, backgrou
         });
 }
 
-fn update_plot_cursor_from_pointer(plot_ui: &egui_plot::PlotUi<'_>, cursor: &mut Option<f64>) {
-    let response = plot_ui.response();
-    if (response.clicked_by(PointerButton::Primary) || response.dragged_by(PointerButton::Primary))
-        && let Some(pointer) = plot_ui.pointer_coordinate()
-    {
-        *cursor = Some(pointer.x);
-    }
-}
-
-fn plot_cursor_readout(
-    ui: &mut Ui,
-    cursor_seconds: f64,
-    channel_1: &[[f64; 2]],
-    channel_2: &[[f64; 2]],
-) {
-    let channel_1_value = closest_plot_value(channel_1, cursor_seconds);
-    let channel_2_value = closest_plot_value(channel_2, cursor_seconds);
-    ui.horizontal(|ui| {
-        ui.label(
-            RichText::new(format!(
-                "游标 {}",
-                format_plot_timestamp(cursor_seconds, 0.0)
-            ))
-            .small()
-            .color(theme::WARNING),
-        );
-        if let Some(value) = channel_1_value {
-            ui.label(
-                RichText::new(format!("通道 1 {value:.2} mV"))
-                    .monospace()
-                    .small()
-                    .color(theme::PRIMARY),
-            );
-        }
-        if let Some(value) = channel_2_value {
-            ui.label(
-                RichText::new(format!("通道 2 {value:.2} mV"))
-                    .monospace()
-                    .small()
-                    .color(theme::DANGER),
-            );
-        }
-    });
-}
-
-fn closest_plot_value(points: &[[f64; 2]], cursor_seconds: f64) -> Option<f64> {
-    let mut closest = None;
-    let mut distance = f64::INFINITY;
-    for point in points {
-        let candidate_distance = (point[0] - cursor_seconds).abs();
-        if candidate_distance < distance {
-            distance = candidate_distance;
-            closest = Some(point[1]);
-        }
-    }
-    closest
-}
-
+#[cfg(test)]
 fn normalize_plot_points(points: &mut [[f64; 2]]) -> Option<(f64, f64)> {
     let mut values = points.iter().map(|point| point[1]);
     let first = values.next()?;
@@ -3152,21 +4001,434 @@ fn format_plot_timestamp(seconds: f64, visible_seconds: f64) -> String {
 }
 
 #[cfg(test)]
+#[path = "app_parameter_tests.rs"]
+mod parameter_tests;
+
+#[cfg(test)]
 mod tests {
-    use eframe::egui::{Rect, pos2, vec2};
+    use eframe::egui::{
+        Context, Event, FullOutput, Modifiers, PointerButton, Pos2, RawInput, Rect, Shape, pos2,
+        vec2,
+    };
     use langmuir_core::Command;
+
+    use crate::bridge::{
+        BackendEndpoint, BackendEvent, LvdsStatusSnapshot, UiRequest, channel_bridge,
+    };
 
     use super::{
         CENTRAL_LOG_HEIGHT, CENTRAL_OPERATIONS_HEIGHT, CENTRAL_PLOT_TOOLBAR_HEIGHT,
         COMMAND_SIDEBAR_MAX_WIDTH, COMMAND_SIDEBAR_MIN_WIDTH, COMMAND_SIDEBAR_WIDTH,
         COMPACT_COMMAND_SIDEBAR_WIDTH, COMPACT_LAYOUT_BREAKPOINT, COMPACT_TELEMETRY_SIDEBAR_WIDTH,
-        HEADER_COMPACT_BREAKPOINT, HEADER_COMPACT_HEIGHT, HEADER_HEIGHT,
-        TELEMETRY_SIDEBAR_MAX_WIDTH, TELEMETRY_SIDEBAR_MIN_WIDTH, TELEMETRY_SIDEBAR_WIDTH,
-        adc_counts_to_millivolts, central_layout_rects, command_bytes, command_checksum,
-        fixed_panel_size, frequency_slider_width, hex_bytes, nearest_ui_scale,
+        HEADER_COMPACT_BREAKPOINT, HEADER_COMPACT_HEIGHT, HEADER_HEIGHT, LangmuirDesktopApp,
+        LvdsDialog, TELEMETRY_SIDEBAR_MAX_WIDTH, TELEMETRY_SIDEBAR_MIN_WIDTH,
+        TELEMETRY_SIDEBAR_WIDTH, adc_counts_to_millivolts, central_layout_rects, command_bytes,
+        command_checksum, fixed_panel_size, frequency_slider_width, hex_bytes, nearest_ui_scale,
         normalize_plot_points, polling_slider_width, raw_frame_validation, recalculate_checksum,
         telemetry_preset_active, work_mode_name,
     };
+
+    fn lvds_test_app() -> (LangmuirDesktopApp, BackendEndpoint) {
+        let (bridge, endpoint) = channel_bridge(16);
+        let app = LangmuirDesktopApp::with_bridge(
+            Box::new(bridge),
+            None,
+            #[cfg(feature = "mock")]
+            false,
+        );
+        assert_eq!(
+            endpoint.request_rx.try_recv().unwrap(),
+            UiRequest::RefreshPorts
+        );
+        (app, endpoint)
+    }
+
+    fn status(source: &str, diagnostic_preview: bool) -> LvdsStatusSnapshot {
+        LvdsStatusSnapshot {
+            source: source.to_owned(),
+            diagnostic_preview,
+            ..LvdsStatusSnapshot::default()
+        }
+    }
+
+    fn diagnostic_event(value: f64) -> BackendEvent {
+        BackendEvent::DiagnosticSamples {
+            sequence: Some(0),
+            channel_1_start_seconds: 100.0,
+            channel_2_start_seconds: 100.0,
+            sample_interval_seconds: 0.0004,
+            channel_1: vec![value; 125],
+            channel_2: vec![value + 64.0; 125],
+        }
+    }
+
+    fn render_lvds_ui(
+        app: &mut LangmuirDesktopApp,
+        context: &Context,
+        events: Vec<Event>,
+    ) -> FullOutput {
+        context.run_ui(
+            RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(900.0, 700.0))),
+                events,
+                ..RawInput::default()
+            },
+            |ui| {
+                app.operations_panel(ui);
+                app.lvds_dialog(ui.ctx());
+            },
+        )
+    }
+
+    fn click_lvds_button(app: &mut LangmuirDesktopApp, context: &Context, text: &str) {
+        let _ = render_lvds_ui(app, context, Vec::new());
+        let output = render_lvds_ui(app, context, Vec::new());
+        let position = output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                Shape::Text(shape) if shape.galley.text() == text => {
+                    Some(shape.pos + shape.galley.rect.center().to_vec2())
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("button {text} was not rendered"));
+        for pressed in [true, false] {
+            let _ = render_lvds_ui(
+                app,
+                context,
+                vec![
+                    Event::PointerMoved(position),
+                    Event::PointerButton {
+                        pos: position,
+                        button: PointerButton::Primary,
+                        pressed,
+                        modifiers: Modifiers::NONE,
+                    },
+                ],
+            );
+        }
+    }
+
+    #[test]
+    fn crc_candidates_plot_by_default_and_strict_filter_discards_late_diagnostics() {
+        let (mut app, _endpoint) = lvds_test_app();
+        assert!(!app.diagnostic.strict_crc_only);
+        app.handle_backend_event(diagnostic_event(32_768.0));
+        assert_eq!(app.channel_1.len(), 125);
+        assert_eq!(app.channel_2.len(), 125);
+        assert!(app.displayed_plot_contains_unverified());
+        assert_eq!(app.diagnostic.plotted_frames, 1);
+
+        app.handle_scientific_samples(
+            101.0,
+            101.0,
+            0.0004,
+            vec![32_832.0; 125],
+            vec![32_896.0; 125],
+        );
+        assert_eq!(app.channel_1.len(), 250);
+        let (combined, _) = app.display_plot_points();
+        assert_eq!(combined[0], [100.0, 0.0]);
+        assert_eq!(combined.last().unwrap()[1], 10.0);
+        app.toggle_display_freeze();
+        app.set_crc_filter(true);
+        // An old status cannot override an in-flight strict filter request.
+        app.apply_lvds_status(status("UDP session 1", true));
+        app.handle_backend_event(diagnostic_event(32_000.0));
+        assert!(app.channel_1.is_empty());
+        assert!(app.channel_2.is_empty());
+        assert!(app.operator.frozen_plot.is_none());
+        assert!(!app.displayed_plot_contains_unverified());
+        assert_eq!(app.diagnostic.plotted_frames, 0);
+        app.apply_lvds_status(status("UDP session 1", false));
+        app.handle_scientific_samples(
+            101.0,
+            101.0,
+            0.0004,
+            vec![32_832.0; 125],
+            vec![32_896.0; 125],
+        );
+        assert_eq!(app.diagnostic.plotted_frames, 1);
+        assert_eq!(app.display_plot_points().0[0], [101.0, 10.0]);
+    }
+
+    #[test]
+    fn source_switch_clears_both_histories_but_status_refresh_keeps_display_freeze() {
+        let (mut app, _endpoint) = lvds_test_app();
+        app.apply_lvds_status(status("UDP session 1", false));
+        app.handle_scientific_samples(
+            100.0,
+            100.0,
+            0.0004,
+            vec![32_768.0; 125],
+            vec![32_768.0; 125],
+        );
+        app.toggle_display_freeze();
+        app.apply_lvds_status(status("UDP session 1", false));
+        assert!(app.operator.frozen_plot.is_some());
+        app.apply_lvds_status(status("offline PCAP session 2", true));
+        app.handle_backend_event(diagnostic_event(32_768.0));
+        assert_eq!(app.channel_1.len(), 125);
+        app.apply_lvds_status(status("UDP session 3", true));
+        assert!(app.channel_1.is_empty());
+        assert!(app.channel_2.is_empty());
+        assert_eq!(app.diagnostic.plotted_frames, 0);
+        assert!(app.operator.frozen_plot.is_none());
+        assert!(app.operator.last_scientific_update.is_none());
+    }
+
+    #[test]
+    fn mixed_waveform_quality_follows_window_freeze_clear_and_clock_restart() {
+        let (mut app, _endpoint) = lvds_test_app();
+        app.handle_backend_event(diagnostic_event(32_768.0));
+        app.handle_scientific_samples(
+            101.0,
+            101.0,
+            0.0004,
+            vec![32_832.0; 125],
+            vec![32_896.0; 125],
+        );
+        assert_eq!(app.diagnostic.plotted_frames, 2);
+        assert!(app.current_plot_contains_unverified());
+        assert_eq!(app.display_plot_points().0[0], [100.0, 0.0]);
+        app.toggle_display_freeze();
+        // Accepted traffic ages the unverified frame out of live history.
+        app.handle_scientific_samples(
+            112.0,
+            112.0,
+            0.0004,
+            vec![32_832.0; 125],
+            vec![32_896.0; 125],
+        );
+        assert!(!app.current_plot_contains_unverified());
+        assert!(app.displayed_plot_contains_unverified());
+        app.toggle_display_freeze();
+        assert!(!app.displayed_plot_contains_unverified());
+        // Restarting device time clears the previous epoch and its quality.
+        app.handle_backend_event(diagnostic_event(32_768.0));
+        assert!(app.current_plot_contains_unverified());
+        app.handle_scientific_samples(1.0, 1.0, 0.0004, vec![32_768.0; 125], vec![32_768.0; 125]);
+        assert!(!app.current_plot_contains_unverified());
+        app.clear_current_plot();
+        assert_eq!(app.diagnostic.plotted_frames, 0);
+        assert!(app.channel_1.is_empty());
+        assert!(!app.displayed_plot_contains_unverified());
+    }
+
+    #[test]
+    fn mixed_400_frame_stream_uses_one_bounded_dual_channel_plot() {
+        let (mut app, _endpoint) = lvds_test_app();
+        for index in 0..400 {
+            let start = 100.0 + f64::from(index) * 0.05;
+            if index % 2 == 0 {
+                app.handle_scientific_samples(
+                    start,
+                    start,
+                    0.0004,
+                    vec![32_768.0; 125],
+                    vec![32_832.0; 125],
+                );
+            } else {
+                app.handle_backend_event(BackendEvent::DiagnosticSamples {
+                    sequence: Some(index),
+                    channel_1_start_seconds: start,
+                    channel_2_start_seconds: start,
+                    sample_interval_seconds: 0.0004,
+                    channel_1: vec![32_768.0; 125],
+                    channel_2: vec![32_832.0; 125],
+                });
+            }
+        }
+        assert_eq!(app.diagnostic.plotted_frames, 400);
+        assert_eq!(
+            app.channel_1.len(),
+            50_000,
+            "20 seconds remain in the 60 second history"
+        );
+        assert_eq!(app.channel_1.len(), app.channel_2.len());
+        assert!(app.current_plot_contains_unverified());
+        let (channel_1, channel_2) = app.display_plot_points();
+        assert!(channel_1.len() <= super::MAX_DISPLAY_POINTS);
+        assert!(channel_2.len() <= super::MAX_DISPLAY_POINTS);
+        assert_eq!(channel_1.first().unwrap()[1], 0.0);
+        assert_eq!(channel_2.last().unwrap()[1], 10.0);
+    }
+
+    #[test]
+    fn real_time_science_updates_without_saving_and_preserves_device_sample_times() {
+        let (mut app, _endpoint) = lvds_test_app();
+        assert!(!app.acquisition_running);
+        for frame in 0..400 {
+            let start = 1_800_000_000.0 + f64::from(frame) * 0.05;
+            app.handle_backend_event(BackendEvent::ScientificSamples {
+                channel_1_start_seconds: start,
+                channel_2_start_seconds: start + 0.0002,
+                sample_interval_seconds: 0.0004,
+                channel_1: vec![32_768.0; 125],
+                channel_2: vec![32_832.0; 125],
+            });
+        }
+        assert!(app.scientific_data_is_fresh());
+        assert_eq!(app.channel_1.len(), 50_000);
+        let (channel_1, channel_2) = app.display_plot_points();
+        assert!(channel_1.len() <= super::MAX_DISPLAY_POINTS);
+        let last_1 = channel_1.last().unwrap();
+        let last_2 = channel_2.last().unwrap();
+        assert!((last_1[0] - 1_800_000_019.999_6).abs() < 0.000_05);
+        assert!((last_2[0] - last_1[0] - 0.0002).abs() < 0.000_001);
+        assert_eq!(last_1[1], 0.0);
+        assert_eq!(last_2[1], 10.0);
+    }
+
+    #[test]
+    fn diagnostic_dialogs_render_headlessly_without_enabling_preview_or_saving() {
+        let (mut app, endpoint) = lvds_test_app();
+        let context = Context::default();
+        for dialog in [LvdsDialog::CrcDetails, LvdsDialog::Replay] {
+            app.diagnostic.dialog = Some(dialog);
+            let output = context.run_ui(RawInput::default(), |ui| {
+                app.operations_panel(ui);
+                app.lvds_dialog(ui.ctx());
+            });
+            assert!(!output.shapes.is_empty());
+        }
+        assert!(endpoint.request_rx.try_recv().is_err());
+        assert!(!app.acquisition_running);
+        assert!(app.diagnostic.status.is_none());
+        assert!(!app.diagnostic.strict_crc_only);
+        // Measure actual themed widgets inside the existing fixed dock.
+        super::theme::configure(&context);
+        for (width, height, sidebar_width, header_height) in [
+            (800.0, 600.0, 580.0, super::HEADER_COMPACT_HEIGHT),
+            (1_120.0, 720.0, 680.0, super::HEADER_COMPACT_HEIGHT),
+            (1_360.0, 860.0, 680.0, super::HEADER_HEIGHT),
+        ] {
+            for preview_enabled in [false, true] {
+                app.apply_lvds_status(status("headless UI session", preview_enabled));
+                let root = Rect::from_min_size(
+                    pos2(8.0, header_height + 8.0),
+                    vec2(width - sidebar_width - 16.0, height - header_height - 16.0),
+                );
+                let dock = central_layout_rects(root).operations;
+                let mut actual = Rect::NOTHING;
+                let _ = context.run_ui(
+                    RawInput {
+                        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(width, height))),
+                        ..RawInput::default()
+                    },
+                    |ui| {
+                        ui.scope_builder(eframe::egui::UiBuilder::new().max_rect(dock), |ui| {
+                            app.operations_panel(ui);
+                            actual = ui.min_rect();
+                        });
+                    },
+                );
+                assert!(
+                    actual.max.x <= dock.max.x + 1.0,
+                    "{width}px dock {dock:?}, widgets {actual:?}"
+                );
+                assert!(
+                    actual.max.y <= dock.max.y + 1.0,
+                    "{height}px dock {dock:?}, widgets {actual:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn crc_checkbox_is_directly_usable_while_saving_without_confirmation() {
+        let (mut app, endpoint) = lvds_test_app();
+        let context = Context::default();
+        app.acquisition_running = true;
+        click_lvds_button(&mut app, &context, "仅显示 CRC 正确的数据");
+        assert_eq!(
+            endpoint.request_rx.try_recv().unwrap(),
+            UiRequest::SetDiagnosticPreview { enabled: false },
+        );
+        assert!(app.diagnostic.strict_crc_only);
+        click_lvds_button(&mut app, &context, "仅显示 CRC 正确的数据");
+        assert_eq!(
+            endpoint.request_rx.try_recv().unwrap(),
+            UiRequest::SetDiagnosticPreview { enabled: true }
+        );
+        assert!(endpoint.request_rx.try_recv().is_err());
+        assert!(app.diagnostic.dialog.is_none());
+        assert!(!app.diagnostic.strict_crc_only);
+        let (fresh, _) = lvds_test_app();
+        assert!(!fresh.diagnostic.strict_crc_only);
+    }
+
+    #[test]
+    fn crc_filter_rejected_send_preserves_effective_setting_and_prior_pending_request() {
+        let (bridge, endpoint) = channel_bridge(1);
+        let mut app = LangmuirDesktopApp::with_bridge(
+            Box::new(bridge),
+            None,
+            #[cfg(feature = "mock")]
+            false,
+        );
+        app.apply_lvds_status(status("UDP session", false));
+        // Initial RefreshPorts fills the real bounded request channel.
+        app.set_crc_filter(false);
+        assert!(app.diagnostic.strict_crc_only);
+        assert_eq!(app.diagnostic.pending_filter, None);
+        assert!(
+            app.faults
+                .front()
+                .unwrap()
+                .message
+                .contains("切换请求未发送")
+        );
+        assert_eq!(
+            endpoint.request_rx.try_recv().unwrap(),
+            UiRequest::RefreshPorts
+        );
+
+        app.set_crc_filter(false);
+        assert!(!app.diagnostic.strict_crc_only);
+        assert_eq!(app.diagnostic.pending_filter, Some(false));
+        // A second rejected request must not overwrite the earlier pending target.
+        app.set_crc_filter(true);
+        assert!(!app.diagnostic.strict_crc_only);
+        assert_eq!(app.diagnostic.pending_filter, Some(false));
+        assert_eq!(
+            endpoint.request_rx.try_recv().unwrap(),
+            UiRequest::SetDiagnosticPreview { enabled: true }
+        );
+        app.apply_lvds_status(status("UDP session", true));
+        assert_eq!(app.diagnostic.pending_filter, None);
+
+        drop(endpoint);
+        app.set_crc_filter(true);
+        assert!(!app.diagnostic.strict_crc_only);
+        assert_eq!(app.diagnostic.pending_filter, None);
+        assert!(
+            app.faults
+                .front()
+                .unwrap()
+                .message
+                .contains("切换请求未发送")
+        );
+    }
+
+    #[test]
+    fn pcap_replay_starts_directly_without_a_mode_or_plot_source_selection() {
+        let (mut app, endpoint) = lvds_test_app();
+        let context = Context::default();
+        click_lvds_button(&mut app, &context, "离线回放 PCAP");
+        assert_eq!(app.diagnostic.dialog, Some(LvdsDialog::Replay));
+        assert!(endpoint.request_rx.try_recv().is_err());
+        click_lvds_button(&mut app, &context, "开始回放");
+        assert_eq!(
+            endpoint.request_rx.try_recv().unwrap(),
+            UiRequest::StartPcapReplay {
+                path: "2026101902--朗缪尔.pcapng".to_owned(),
+            }
+        );
+        assert!(!app.diagnostic.strict_crc_only);
+        assert!(endpoint.request_rx.try_recv().is_err());
+    }
 
     #[test]
     fn entering_raw_mode_starts_from_the_typed_command() {
@@ -3214,6 +4476,35 @@ mod tests {
         assert!(!telemetry_preset_active(1_100, 1_000));
         assert!(!telemetry_preset_active(1_000, 5_000));
         assert!(telemetry_preset_active(60_000, 60_000));
+    }
+
+    #[test]
+    fn bind_address_error_summary_preserves_other_failure_meanings() {
+        for raw in [
+            "接收异常：Can't assign requested address (os error 49)",
+            "Cannot assign requested address (os error 99)",
+            "Cannot assign requested address (os error 10049)",
+        ] {
+            assert_eq!(
+                super::lvds_receive_summary(raw, false),
+                "监听失败：本机未配置该 IP 地址"
+            );
+            assert_eq!(super::lvds_receive_summary(raw, true), raw);
+        }
+        for raw in [
+            "Address already in use (os error 48)",
+            "Permission denied (os error 13)",
+            "LVDS 校验失败",
+            "尚未监听",
+            "bind failed (os error 490)",
+        ] {
+            assert_eq!(super::lvds_receive_summary(raw, false), raw);
+        }
+        #[cfg(target_os = "macos")]
+        assert_eq!(
+            super::lvds_receive_summary("Not a STREAM (os error 99)", false),
+            "Not a STREAM (os error 99)"
+        );
     }
 
     #[test]
@@ -3383,3 +4674,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "app_layout_tests.rs"]
+mod layout_tests;

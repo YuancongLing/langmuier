@@ -76,5 +76,36 @@ datagram boundaries and reassemble the deployed wrapper. The desktop backend bin
 `192.168.1.100:1534` by default and filters `192.168.1.128:1534`; it exposes live
 reassembly and rejection counters, decodes the reassembled 269-byte frame, and sends its
 125-point channels to storage and plots. The UDP wrapper sequence tags each stored frame;
-the LVDS body has no sequence field. CRC16 uses the lower computer's CCITT-FALSE
-parameters; live rejection awaits confirmation of the CRC coverage call site.
+the LVDS body has no sequence field. The desktop still truncates the UDP `u32` tag to
+`u16`, pending a separate reliability/storage revision. CRC16 uses the manufacturer's
+CCITT-FALSE parameters and is mandatory over `frame[7..267]` (260B) before time/ADC
+decoding and storage/display. This range is the updated-table working interpretation
+(`SPEC_ASSUMPTION`), awaiting the manufacturer's actual `data` and `length` arguments;
+there is no fallback to a different CRC range.
+
+Incomplete UDP assemblies expire two seconds after their first fragment, using
+`Instant`; duplicates do not renew their lifetime. Cleanup runs before fragment
+admission and on the desktop receiver's idle polls. With all 64 live slots occupied,
+new sequences are explicitly rejected until a slot completes or expires. Reassembly
+timeouts, capacity rejections, fragment errors, and scientific CRC failures have
+separate counters; existing 500ms diagnostics aggregate anomalies.
+
+After full scientific validation, a source/session-scoped `UdpLvdsScienceGate`
+compares the complete UDP `u32` sequence and all 269 raw bytes. It suppresses
+identical repeats and separately rejects valid same-sequence content conflicts
+before the normal controller or CLI capture writes. Its independent five-second,
+256-entry FIFO history is bounded and never renewed by duplicates or conflicts.
+Rebinding creates a fresh session; sequence rollback alone does not clear history.
+This adds no cross-frame ordering or storage-format change.
+
+Only Accepted frames then update a separate source/session-scoped
+`UdpLvdsSequenceMonitor`, using the untruncated outer `u32` before the original
+callback or CLI write. Local modular advances reveal unobserved valid-science
+candidates; they wait two seconds and retain unresolved expired history for five
+more seconds. Waiting and expired records together are bounded to 256. Late fills
+resolve records without moving the frontier backward. Large ambiguous changes or
+capacity pressure re-anchor observation and explicitly account for forgotten
+records, without inferring a device restart. Wraps, disorder, deadline events and
+ambiguities flow through existing snapshots and aggregate diagnostics. Expiry is
+not proof of UDP network loss. Monitoring neither reorders data nor inserts samples;
+the original TTL, deduplication and storage formats remain independent.

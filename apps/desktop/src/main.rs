@@ -4,6 +4,7 @@ mod bridge;
 mod buffer;
 #[cfg(feature = "mock")]
 mod mock;
+mod perf;
 mod ui;
 
 use app::LangmuirDesktopApp;
@@ -11,6 +12,21 @@ use backend::RealBackendBridge;
 use bridge::BackendBridge;
 
 fn main() -> eframe::Result<()> {
+    let arguments: Vec<String> = std::env::args().collect();
+    if let Some(index) = arguments.iter().position(|arg| arg == "--audit-pcap") {
+        let Some(path) = arguments.get(index + 1) else {
+            eprintln!("--audit-pcap requires a PCAPNG path");
+            std::process::exit(2);
+        };
+        match backend::audit_pcap(path, arguments.iter().any(|arg| arg == "--diagnostic")) {
+            Ok(report) => println!("{report}"),
+            Err(error) => {
+                eprintln!("PCAP audit failed: {error}");
+                std::process::exit(1);
+            }
+        }
+        return Ok(());
+    }
     let mock_requested = std::env::args().any(|argument| argument == "--mock");
 
     #[cfg(not(feature = "mock"))]

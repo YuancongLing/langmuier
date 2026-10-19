@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 /// Bytes preceding every LVDS fragment carried in one UDP datagram.
 pub const UDP_LVDS_HEADER_LEN: usize = 24;
@@ -7,6 +8,9 @@ pub const DEPLOYED_LVDS_RAW_FRAME_LEN: usize = 269;
 pub const UDP_LVDS_MAGIC: [u8; 2] = [0x55, 0xAA];
 pub const UDP_LVDS_VERSION: u8 = 0x01;
 pub const UDP_LVDS_TYPE: u8 = 0xA5;
+/// Software resource-recovery policy, measured from a partial frame's first
+/// fragment. At 20 Hz this allows about 40 frame periods of network jitter.
+pub const DEFAULT_UDP_LVDS_REASSEMBLY_TTL: Duration = Duration::from_secs(2);
 
 /// Parsed 24-byte header that wraps a fragment of one LVDS frame.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -34,6 +38,19 @@ pub struct UdpLvdsDatagram<'a> {
 pub struct ReassembledLvdsFrame {
     pub frame_sequence: u32,
     pub bytes: Vec<u8>,
+}
+
+/// Reassembly-layer diagnostics, independent of inner LVDS science validation.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct UdpLvdsReassemblyMetrics {
+    pub in_flight_frames: usize,
+    /// Declared payload buffers currently reserved by partial frames. This
+    /// excludes coverage/index metadata and is not a total heap estimate.
+    pub buffered_payload_bytes: usize,
+    pub expired_frames: u64,
+    pub capacity_rejections: u64,
+    pub completed_frames: u64,
+    pub fragment_errors: u64,
 }
 
 /// Errors detected in the UDP wrapper before LVDS science-data decoding.
@@ -257,7 +274,9 @@ pub struct UdpLvdsReassembler {
     maximum_frame_bytes: usize,
     maximum_segments: usize,
     maximum_in_flight_frames: usize,
+    ttl: Duration,
     frames: BTreeMap<u32, PendingFrame>,
+    counters: UdpLvdsReassemblyMetrics,
 }
 
 impl Default for UdpLvdsReassembler {
@@ -278,6 +297,26 @@ impl UdpLvdsReassembler {
         maximum_segments: usize,
         maximum_in_flight_frames: usize,
     ) -> Result<Self, UdpLvdsError> {
+        Self::new_with_ttl(
+            maximum_frame_bytes,
+            maximum_segments,
+            maximum_in_flight_frames,
+            DEFAULT_UDP_LVDS_REASSEMBLY_TTL,
+        )
+    }
+
+    /// Creates a bounded reassembler with a non-zero partial-frame lifetime.
+    /// New or repeated fragments never extend a frame's initial deadline.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any bound or the TTL is zero.
+    pub fn new_with_ttl(
+        maximum_frame_bytes: usize,
+        maximum_segments: usize,
+        maximum_in_flight_frames: usize,
+        ttl: Duration,
+    ) -> Result<Self, UdpLvdsError> {
         if maximum_frame_bytes == 0 {
             return Err(UdpLvdsError::InvalidConfiguration {
                 field: "maximum_frame_bytes",
@@ -293,11 +332,16 @@ impl UdpLvdsReassembler {
                 field: "maximum_in_flight_frames",
             });
         }
+        if ttl.is_zero() {
+            return Err(UdpLvdsError::InvalidConfiguration { field: "ttl" });
+        }
         Ok(Self {
             maximum_frame_bytes,
             maximum_segments,
             maximum_in_flight_frames,
+            ttl,
             frames: BTreeMap::new(),
+            counters: UdpLvdsReassemblyMetrics::default(),
         })
     }
 
@@ -312,6 +356,47 @@ impl UdpLvdsReassembler {
     ///
     /// Panics only if an internal reassembly bookkeeping invariant is violated.
     pub fn push(&mut self, datagram: &[u8]) -> Result<Option<ReassembledLvdsFrame>, UdpLvdsError> {
+        self.push_at(datagram, Instant::now())
+    }
+
+    /// Adds one datagram at an injected monotonic time. Expired partial frames
+    /// are removed before parsing or checking capacity, even for bad input.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for malformed, conflicting, or out-of-bound segments.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if an internal reassembly bookkeeping invariant is violated.
+    pub fn push_at(
+        &mut self,
+        datagram: &[u8],
+        now: Instant,
+    ) -> Result<Option<ReassembledLvdsFrame>, UdpLvdsError> {
+        self.expire_at(now);
+        let result = self.push_inner(datagram, now);
+        match &result {
+            Ok(Some(_)) => {
+                self.counters.completed_frames = self.counters.completed_frames.saturating_add(1);
+            }
+            Err(UdpLvdsError::TooManyInFlightFrames { .. }) => {
+                self.counters.capacity_rejections =
+                    self.counters.capacity_rejections.saturating_add(1);
+            }
+            Err(_) => {
+                self.counters.fragment_errors = self.counters.fragment_errors.saturating_add(1);
+            }
+            Ok(None) => {}
+        }
+        result
+    }
+
+    fn push_inner(
+        &mut self,
+        datagram: &[u8],
+        now: Instant,
+    ) -> Result<Option<ReassembledLvdsFrame>, UdpLvdsError> {
         let datagram = parse_udp_lvds_datagram(datagram)?;
         let header = datagram.header;
         let frame_length =
@@ -340,14 +425,14 @@ impl UdpLvdsReassembler {
                 });
             }
         } else {
-            if self.frames.len() == self.maximum_in_flight_frames {
+            if self.frames.len() >= self.maximum_in_flight_frames {
                 return Err(UdpLvdsError::TooManyInFlightFrames {
                     maximum: self.maximum_in_flight_frames,
                 });
             }
             self.frames.insert(
                 header.frame_sequence,
-                PendingFrame::new(frame_length, header.segment_count),
+                PendingFrame::new(frame_length, header.segment_count, now),
             );
         }
 
@@ -377,7 +462,41 @@ impl UdpLvdsReassembler {
         }))
     }
 
-    /// Drops one incomplete frame after the caller's receive timeout expires.
+    /// Removes partial frames whose age is greater than or equal to the TTL.
+    /// The first-fragment timestamp is never renewed. Earlier injected times
+    /// are treated as zero age, without subtraction or deadline overflow.
+    pub fn expire_at(&mut self, now: Instant) -> usize {
+        let before = self.frames.len();
+        let ttl = self.ttl;
+        self.frames.retain(|_, frame| {
+            now.checked_duration_since(frame.created_at)
+                .is_none_or(|age| age < ttl)
+        });
+        let expired = before - self.frames.len();
+        self.counters.expired_frames = self
+            .counters
+            .expired_frames
+            .saturating_add(u64::try_from(expired).unwrap_or(u64::MAX));
+        expired
+    }
+
+    /// Removes expired partial frames using the current monotonic time.
+    pub fn expire(&mut self) -> usize {
+        self.expire_at(Instant::now())
+    }
+
+    #[must_use]
+    pub fn metrics(&self) -> UdpLvdsReassemblyMetrics {
+        UdpLvdsReassemblyMetrics {
+            in_flight_frames: self.frames.len(),
+            buffered_payload_bytes: self.frames.values().fold(0_usize, |total, frame| {
+                total.saturating_add(frame.bytes.len())
+            }),
+            ..self.counters
+        }
+    }
+
+    /// Explicitly drops one incomplete frame, without counting a TTL expiry.
     pub fn discard(&mut self, frame_sequence: u32) -> bool {
         self.frames.remove(&frame_sequence).is_some()
     }
@@ -390,6 +509,7 @@ impl UdpLvdsReassembler {
 
 #[derive(Debug)]
 struct PendingFrame {
+    created_at: Instant,
     frame_length: usize,
     segment_count: u16,
     bytes: Vec<u8>,
@@ -404,8 +524,9 @@ struct SegmentRange {
 }
 
 impl PendingFrame {
-    fn new(frame_length: usize, segment_count: u16) -> Self {
+    fn new(frame_length: usize, segment_count: u16, created_at: Instant) -> Self {
         Self {
+            created_at,
             frame_length,
             segment_count,
             bytes: vec![0_u8; frame_length],
@@ -462,9 +583,14 @@ impl PendingFrame {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
+    use crate::lvds::test_support::golden_frame;
+    use crate::{FrameError, decode_scientific_frame};
+
     use super::{
-        DEPLOYED_LVDS_RAW_FRAME_LEN, UDP_LVDS_HEADER_LEN, UdpLvdsError, UdpLvdsReassembler,
-        parse_udp_lvds_datagram,
+        DEFAULT_UDP_LVDS_REASSEMBLY_TTL, DEPLOYED_LVDS_RAW_FRAME_LEN, UDP_LVDS_HEADER_LEN,
+        UdpLvdsError, UdpLvdsReassembler, parse_udp_lvds_datagram,
     };
 
     fn datagram(
@@ -486,6 +612,320 @@ mod tests {
         datagram.extend_from_slice(&0_u16.to_be_bytes());
         datagram.extend_from_slice(payload);
         datagram
+    }
+
+    fn golden_datagram(sequence: u32) -> Vec<u8> {
+        datagram(sequence, 269, 0, 1, 0, &golden_frame())
+    }
+
+    fn golden_fragments(sequence: u32) -> [Vec<u8>; 3] {
+        let frame = golden_frame();
+        [
+            datagram(sequence, 269, 0, 3, 0, &frame[..89]),
+            datagram(sequence, 269, 1, 3, 89, &frame[89..179]),
+            datagram(sequence, 269, 2, 3, 179, &frame[179..]),
+        ]
+    }
+
+    fn bounded_reassembler() -> UdpLvdsReassembler {
+        UdpLvdsReassembler::new(269, 16, 64).unwrap()
+    }
+
+    #[test]
+    fn ttl_t1_single_fragment_preserves_bytes_without_pending_state() {
+        let now = Instant::now();
+        let mut reassembler = bounded_reassembler();
+        let complete = reassembler
+            .push_at(&golden_datagram(1), now)
+            .unwrap()
+            .unwrap();
+        assert_eq!(complete.bytes, golden_frame());
+        assert_eq!(complete.frame_sequence, 1);
+        assert_eq!(
+            reassembler.expire_at(now + DEFAULT_UDP_LVDS_REASSEMBLY_TTL),
+            0
+        );
+        let metrics = reassembler.metrics();
+        assert_eq!(metrics.completed_frames, 1);
+        assert_eq!(metrics.expired_frames, 0);
+        assert_eq!(metrics.in_flight_frames, 0);
+        assert_eq!(metrics.buffered_payload_bytes, 0);
+    }
+
+    #[test]
+    fn ttl_t2_multiple_fragments_reassemble_in_order() {
+        let now = Instant::now();
+        let mut reassembler = bounded_reassembler();
+        let fragments = golden_fragments(2);
+        assert_eq!(reassembler.push_at(&fragments[0], now).unwrap(), None);
+        assert_eq!(reassembler.push_at(&fragments[1], now).unwrap(), None);
+        let complete = reassembler.push_at(&fragments[2], now).unwrap().unwrap();
+        assert_eq!(complete.bytes, golden_frame());
+        assert_eq!(reassembler.metrics().completed_frames, 1);
+        assert_eq!(reassembler.metrics().buffered_payload_bytes, 0);
+    }
+
+    #[test]
+    fn ttl_t3_interleaved_sequences_reassemble_reversed_fragments() {
+        let now = Instant::now();
+        let mut reassembler = bounded_reassembler();
+        let first = golden_fragments(3);
+        let second = golden_fragments(4);
+        for index in [2, 1] {
+            assert_eq!(reassembler.push_at(&first[index], now).unwrap(), None);
+            assert_eq!(reassembler.push_at(&second[index], now).unwrap(), None);
+        }
+        assert_eq!(reassembler.metrics().in_flight_frames, 2);
+        assert_eq!(reassembler.metrics().buffered_payload_bytes, 538);
+        for fragment in [&second[0], &first[0]] {
+            let complete = reassembler.push_at(fragment, now).unwrap().unwrap();
+            assert_eq!(complete.bytes, golden_frame());
+        }
+        assert_eq!(reassembler.metrics().completed_frames, 2);
+        assert_eq!(reassembler.metrics().expired_frames, 0);
+    }
+
+    #[test]
+    fn ttl_t4_incomplete_frame_expires_once_and_releases_its_buffers() {
+        let now = Instant::now();
+        let mut reassembler = bounded_reassembler();
+        reassembler.push_at(&golden_fragments(5)[0], now).unwrap();
+        assert_eq!(reassembler.metrics().buffered_payload_bytes, 269);
+        let later = now + DEFAULT_UDP_LVDS_REASSEMBLY_TTL + Duration::from_millis(1);
+        assert_eq!(reassembler.expire_at(later), 1);
+        assert_eq!(reassembler.expire_at(later), 0);
+        let metrics = reassembler.metrics();
+        assert_eq!(metrics.expired_frames, 1);
+        assert_eq!(metrics.in_flight_frames, 0);
+        assert_eq!(metrics.buffered_payload_bytes, 0);
+        assert_eq!(metrics.fragment_errors, 0);
+    }
+
+    #[test]
+    fn ttl_t5_boundary_uses_first_fragment_and_handles_earlier_times() {
+        let now = Instant::now();
+        let ttl = DEFAULT_UDP_LVDS_REASSEMBLY_TTL;
+        for elapsed in [
+            ttl.checked_sub(Duration::from_nanos(1)).unwrap(),
+            ttl,
+            ttl + Duration::from_nanos(1),
+        ] {
+            let mut reassembler = bounded_reassembler();
+            let fragments = golden_fragments(6);
+            reassembler.push_at(&fragments[0], now).unwrap();
+            let earlier = now.checked_sub(Duration::from_secs(1)).unwrap();
+            assert_eq!(reassembler.expire_at(earlier), 0);
+            // Neither a duplicate nor a new valid fragment renews creation time.
+            let almost_due = (now + ttl).checked_sub(Duration::from_millis(1)).unwrap();
+            reassembler.push_at(&fragments[0], almost_due).unwrap();
+            reassembler.push_at(&fragments[1], almost_due).unwrap();
+            let expected = usize::from(elapsed >= ttl);
+            assert_eq!(reassembler.expire_at(now + elapsed), expected);
+            assert_eq!(
+                reassembler.metrics().expired_frames,
+                u64::try_from(expected).unwrap()
+            );
+        }
+        assert!(matches!(
+            UdpLvdsReassembler::new_with_ttl(269, 16, 64, Duration::ZERO),
+            Err(UdpLvdsError::InvalidConfiguration { field: "ttl" })
+        ));
+    }
+
+    #[test]
+    fn ttl_t6_full_capacity_rejects_new_sequence_without_evicting_live_frames() {
+        let now = Instant::now();
+        let mut reassembler = bounded_reassembler();
+        for sequence in 0..64 {
+            reassembler
+                .push_at(&golden_fragments(sequence)[0], now)
+                .unwrap();
+        }
+        assert_eq!(reassembler.metrics().in_flight_frames, 64);
+        assert_eq!(reassembler.metrics().buffered_payload_bytes, 64 * 269);
+        assert_eq!(
+            reassembler.push_at(&golden_datagram(64), now),
+            Err(UdpLvdsError::TooManyInFlightFrames { maximum: 64 })
+        );
+        assert_eq!(reassembler.metrics().in_flight_frames, 64);
+        assert_eq!(reassembler.metrics().capacity_rejections, 1);
+        assert_eq!(reassembler.metrics().fragment_errors, 0);
+        let existing = golden_fragments(0);
+        reassembler.push_at(&existing[1], now).unwrap();
+        assert_eq!(
+            reassembler
+                .push_at(&existing[2], now)
+                .unwrap()
+                .unwrap()
+                .bytes,
+            golden_frame()
+        );
+        assert_eq!(reassembler.metrics().in_flight_frames, 63);
+        assert_eq!(reassembler.metrics().expired_frames, 0);
+    }
+
+    #[test]
+    fn ttl_t7_full_capacity_automatically_recovers_on_next_datagram() {
+        let now = Instant::now();
+        let mut reassembler = bounded_reassembler();
+        for sequence in 0..64 {
+            reassembler
+                .push_at(&golden_fragments(sequence)[0], now)
+                .unwrap();
+        }
+        let complete = reassembler
+            .push_at(&golden_datagram(65), now + DEFAULT_UDP_LVDS_REASSEMBLY_TTL)
+            .unwrap()
+            .unwrap();
+        assert_eq!(complete.frame_sequence, 65);
+        assert_eq!(complete.bytes, golden_frame());
+        let metrics = reassembler.metrics();
+        assert_eq!(metrics.expired_frames, 64);
+        assert_eq!(metrics.completed_frames, 1);
+        assert_eq!(metrics.capacity_rejections, 0);
+        assert_eq!(metrics.in_flight_frames, 0);
+        assert_eq!(metrics.buffered_payload_bytes, 0);
+    }
+
+    #[test]
+    fn ttl_t8_late_fragment_cannot_reuse_expired_bytes_or_pollute_other_sequences() {
+        let now = Instant::now();
+        let mut reassembler = bounded_reassembler();
+        let old = golden_fragments(7);
+        reassembler.push_at(&old[0], now).unwrap();
+        reassembler.push_at(&old[1], now).unwrap();
+        let later = now + DEFAULT_UDP_LVDS_REASSEMBLY_TTL;
+        assert_eq!(reassembler.push_at(&old[2], later).unwrap(), None);
+        let complete = reassembler
+            .push_at(&golden_datagram(8), later)
+            .unwrap()
+            .unwrap();
+        assert_eq!(complete.frame_sequence, 8);
+        assert_eq!(complete.bytes, golden_frame());
+        assert_eq!(reassembler.metrics().expired_frames, 1);
+        assert_eq!(reassembler.metrics().completed_frames, 1);
+        assert_eq!(reassembler.metrics().in_flight_frames, 1);
+    }
+
+    #[test]
+    fn ttl_t9_twenty_hertz_reception_is_lossless_and_has_no_residual_growth() {
+        let now = Instant::now();
+        let mut reassembler = bounded_reassembler();
+        for sequence in 0..400 {
+            let arrival = now + Duration::from_millis(u64::from(sequence) * 50);
+            let complete = reassembler
+                .push_at(&golden_datagram(sequence), arrival)
+                .unwrap()
+                .unwrap();
+            assert_eq!(complete.frame_sequence, sequence);
+            assert_eq!(complete.bytes, golden_frame());
+            let science = decode_scientific_frame(&complete.bytes).unwrap();
+            assert_eq!(science.channel_1.len(), 125);
+            assert_eq!(science.channel_2.len(), 125);
+            assert_eq!(reassembler.metrics().in_flight_frames, 0);
+            assert_eq!(reassembler.metrics().buffered_payload_bytes, 0);
+        }
+        assert_eq!(reassembler.metrics().completed_frames, 400);
+        assert_eq!(reassembler.metrics().expired_frames, 0);
+        assert_eq!(reassembler.metrics().capacity_rejections, 0);
+    }
+
+    #[test]
+    fn ttl_t10_duplicates_are_idempotent_and_conflicts_release_the_frame() {
+        let now = Instant::now();
+        let mut reassembler = bounded_reassembler();
+        let first = golden_fragments(9);
+        reassembler.push_at(&first[0], now).unwrap();
+        reassembler.push_at(&first[0], now).unwrap();
+        assert_eq!(reassembler.metrics().in_flight_frames, 1);
+        let mut conflict = first[0].clone();
+        conflict[UDP_LVDS_HEADER_LEN] ^= 1;
+        assert!(matches!(
+            reassembler.push_at(&conflict, now),
+            Err(UdpLvdsError::ConflictingSegmentData { .. })
+        ));
+        assert_eq!(reassembler.metrics().in_flight_frames, 0);
+        assert_eq!(reassembler.metrics().fragment_errors, 1);
+        assert_eq!(reassembler.metrics().expired_frames, 0);
+    }
+
+    #[test]
+    fn ttl_t11_bad_science_crc_is_separate_from_successful_reassembly() {
+        let now = Instant::now();
+        let mut reassembler = bounded_reassembler();
+        let mut bad = golden_frame();
+        bad[268] ^= 1;
+        let complete = reassembler
+            .push_at(&datagram(10, 269, 0, 1, 0, &bad), now)
+            .unwrap()
+            .unwrap();
+        assert_eq!(complete.bytes, bad);
+        assert!(matches!(
+            decode_scientific_frame(&complete.bytes),
+            Err(FrameError::ChecksumMismatch { .. })
+        ));
+        let metrics = reassembler.metrics();
+        assert_eq!(metrics.completed_frames, 1);
+        assert_eq!(metrics.expired_frames, 0);
+        assert_eq!(metrics.fragment_errors, 0);
+    }
+
+    #[test]
+    fn ttl_t12_repeated_capacity_pressure_keeps_resources_bounded_and_recovers() {
+        let start = Instant::now();
+        let mut reassembler = bounded_reassembler();
+        for cycle in 0..128 {
+            let now = start + DEFAULT_UDP_LVDS_REASSEMBLY_TTL * cycle;
+            for sequence in 0..64 {
+                reassembler
+                    .push_at(&golden_fragments(sequence)[0], now)
+                    .unwrap();
+                let metrics = reassembler.metrics();
+                assert!(metrics.in_flight_frames <= 64);
+                assert!(metrics.buffered_payload_bytes <= 64 * 269);
+            }
+            assert!(matches!(
+                reassembler.push_at(&golden_datagram(64), now),
+                Err(UdpLvdsError::TooManyInFlightFrames { .. })
+            ));
+            let complete = reassembler
+                .push_at(&golden_datagram(65), now + DEFAULT_UDP_LVDS_REASSEMBLY_TTL)
+                .unwrap()
+                .unwrap();
+            assert_eq!(complete.bytes, golden_frame());
+            assert_eq!(reassembler.metrics().in_flight_frames, 0);
+            assert_eq!(reassembler.metrics().buffered_payload_bytes, 0);
+        }
+        let metrics = reassembler.metrics();
+        assert_eq!(metrics.expired_frames, 128 * 64);
+        assert_eq!(metrics.completed_frames, 128);
+        assert_eq!(metrics.capacity_rejections, 128);
+        assert_eq!(metrics.fragment_errors, 0);
+    }
+
+    #[test]
+    fn ttl_cleanup_precedes_bad_datagram_parsing_and_counters_saturate() {
+        let now = Instant::now();
+        let mut reassembler = bounded_reassembler();
+        reassembler.push_at(&golden_fragments(1)[0], now).unwrap();
+        reassembler.counters.expired_frames = u64::MAX;
+        reassembler.counters.fragment_errors = u64::MAX;
+        let later = now + DEFAULT_UDP_LVDS_REASSEMBLY_TTL;
+        assert!(reassembler.push_at(&[], later).is_err());
+        assert_eq!(reassembler.metrics().expired_frames, u64::MAX);
+        assert_eq!(reassembler.metrics().fragment_errors, u64::MAX);
+        assert_eq!(reassembler.metrics().in_flight_frames, 0);
+        reassembler.counters.completed_frames = u64::MAX;
+        reassembler.push_at(&golden_datagram(2), later).unwrap();
+        assert_eq!(reassembler.metrics().completed_frames, u64::MAX);
+        for sequence in 0..64 {
+            reassembler
+                .push_at(&golden_fragments(sequence)[0], later)
+                .unwrap();
+        }
+        reassembler.counters.capacity_rejections = u64::MAX;
+        assert!(reassembler.push_at(&golden_datagram(65), later).is_err());
+        assert_eq!(reassembler.metrics().capacity_rejections, u64::MAX);
     }
 
     #[test]

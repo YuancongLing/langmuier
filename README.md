@@ -29,7 +29,6 @@ light aerospace palette. It explicitly installs a validated system CJK fallback 
 ## Build and test
 
 ```bash
-cd rust
 cargo fmt --all -- --check
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
@@ -44,6 +43,9 @@ cargo run --release -p langmuir-desktop --features mock -- --mock
 ```
 
 Failure to open a real port never enables simulation automatically.
+
+For Windows x64 prerequisites, clone/update commands, a non-Mock Release build,
+and ZIP packaging, see [docs/WINDOWS_BUILD.md](docs/WINDOWS_BUILD.md).
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
 [docs/PROTOCOL.md](docs/PROTOCOL.md), and [docs/TESTING.md](docs/TESTING.md).

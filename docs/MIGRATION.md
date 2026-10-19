@@ -8,9 +8,37 @@ channel, one timestamp, signed one-byte deltas, and a two-byte big-endian CRC16.
 LVDS body has no packet-sequence field; the UDP wrapper sequence is used as the capture
 sequence tag. The UDP reassembler validates the wrapper, lengths, offsets, segment
 coverage, duplicates, and conflicting data before outputting a frame. CRC16 uses
-polynomial `0x1021`, initial `0xFFFF`, no reflection, and no final xor. Captured frames
-do not match the documented coverage range, so strict CRC rejection awaits confirmation
-of the lower computer call site's `data` pointer and `length`.
+polynomial `0x1021`, initial `0xFFFF`, no reflection, and no final xor. Every formal
+decoder now rejects CRC mismatches over `frame[7..267]` (260B) before time/ADC parsing.
+This updated-table interpretation remains `SPEC_ASSUMPTION` until the manufacturer's
+actual `data` pointer and `length` are confirmed; there is no alternate-range fallback.
+Earlier anomalous captures are excluded from normal-frame acceptance evidence.
+
+Partial UDP assemblies now have a two-second lifetime from first receipt; neither
+new nor duplicate fragments renew it. Expiry releases capacity automatically in
+desktop and CLI receive loops. Active assemblies remain bounded to 64 slots, with
+explicit rejection of new sequences when no slot is free; this adds no cross-frame
+ordering, completed-frame deduplication, or storage sequence-format change.
+
+Completed scientific frames now pass a separate deduplication gate after all wire
+validation. Within one filtered source/receiver session it retains full `u32`
+sequences and raw bytes for five seconds, up to 256 accepted frames, evicting the
+oldest accepted record when full. Identical repeats are suppressed; valid different
+bytes at a retained sequence are reported as conflicts and withheld. Invalid
+science never populates history. Rebinding starts a fresh history; acquisition
+start/stop does not. Manufacturer reset semantics remain unspecified, so rollback
+alone does not trigger a reset. History expiry/eviction permits later sequence
+reuse; this is recent-frame protection rather than permanent exactly-once storage.
+
+Accepted UDP science also feeds an independent full-`u32` sequence quality monitor.
+It observes local modular continuity, forward gaps, late fills, disorder and wraps
+without changing delivery. Candidates wait two seconds, then retain five seconds
+of unresolved expired history, with at most 256 combined records. Huge ambiguous
+changes and capacity exhaustion are reported and re-anchor only observation;
+they do not prove a reset or network loss. Rebinding creates a fresh monitor, while
+acquisition start/stop retains it. The existing metrics/log bridge exposes these
+counters; no scientific sequence storage migration or missing-sample generation
+is included.
 
 ## Operator behavior retained
 
@@ -34,9 +62,9 @@ of the lower computer call site's `data` pointer and `length`.
 - The simulator requires both the compile-time `mock` feature and the `--mock`
   runtime flag. A hardware error never falls back to simulation.
 - The desktop simulator exercises UI workflows at the protocol's 20 Hz rate.
-  Exact wire decoding, transport fragmentation, and file persistence are exercised
-  by the separate headless replay test/benchmark so test code does not enter the
-  production backend.
+  Separate protocol Mock tests pass artificial CRC golden frames through the real
+  UDP reassembler and decoder; desktop tests also invoke the normal controller and
+  storage/display path. These are independent of direct GUI sample injection.
 - The Python LVDS decoder silently replaced a channel-1 UTC value outside 2000–2100
   with the host's current time. Rust preserves the received `u32` UTC value and rejects
   only invalid microseconds; it never substitutes host time into captured science data.
