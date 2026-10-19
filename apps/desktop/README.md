@@ -2,8 +2,14 @@
 
 `langmuir-desktop` is the native `eframe`/`egui` frontend and the production
 orchestration layer. Protocol decoding stays in `langmuir-core`, serial I/O in
-`langmuir-transport`, and integrity-checked scientific-data persistence in
+`langmuir-transport`, and scientific-data persistence in
 `langmuir-storage`.
+
+> **科学数据未经 CRC 完整性验证。** Production LVDS decoding checks frame structure,
+> device time and both ADC channels without calculating or comparing CRC16. Accepted
+> UDP frames pass the existing recent-frame deduplication gate, update the single plot
+> stream and, while saving is enabled, enter the formal scientific writer. CRC modes,
+> filtering, details and diagnostic waveform selection have been removed.
 
 ## Run
 
@@ -75,7 +81,7 @@ hiding the problem.
 Proportional UI text uses the selected CJK face first for both Latin and Chinese,
 so labels such as `RS422 串口连接` and `LVDS 科学数据` share one baseline and cap
 height. Monospace remains limited to pure byte values and timestamps. Form rows
-use a common 30-pixel control height with explicit vertical centering; labels,
+use a common 32-logical-point central control height with explicit vertical centering; labels,
 combo boxes, numeric inputs, and checkbox indicators therefore share the same
 visual center line.
 
@@ -86,9 +92,20 @@ boundaries, and reassembles by frame sequence and byte offset. The frame and rej
 counters confirm live network reception. The reassembled payload is decoded as
 `EB 90 | 55 | AA | 01 07 | AA | UTC | microseconds | data[252] | CRC16`, then routed
 to scientific capture and plots. The UDP wrapper sequence is used as the stored sequence
-tag because the LVDS body does not contain a packet-sequence field. The CRC-16 parameters
-are CCITT-FALSE (`0x1021`, `0xFFFF`, no reflection, no xorout); live rejection remains
-disabled until the lower computer confirms the exact CRC coverage call site.
+tag because the LVDS body does not contain a packet-sequence field. The trailer bytes
+are retained unchanged but not checked for integrity. The core keeps the historical
+offline CCITT-FALSE reference (`0x1021`, `0xFFFF`, no reflection, no xorout) over
+`frame[7..267]`; this API is not used by production reception, plotting or capture.
+UDP, PCAP replay, legacy byte streams and CLI share the same structure/time/ADC
+decoder. Invalid microseconds or out-of-range reconstructed ADC values are rejected,
+without inventing device timestamps or repairing wire data.
+
+To inspect a capture, click **离线回放 PCAP**, select its path and start replay. No CRC
+setup is needed. Click **开始保存** during reception/replay to send subsequent Accepted
+frames to the existing batch writer. Main counters distinguish matching UDP receipt,
+parsing success/failure, plotted frames and actual sink writes. `.lpd` v2 retains its
+32-byte header and 1010-byte records, and HDF5 retains its schema. Neither format gains
+CRC verification from successful plotting or saving.
 
 The UI never parses wire bytes and never writes HDF5 or CSV synchronously.
 Scientific capture waits up to 250 ms for bounded storage capacity, so a
@@ -107,17 +124,17 @@ separate per-link counters.
 
 Manual **Stop acquisition** persists the LVDS events already accepted by the
 reader event queue when the request reaches the controller. The LVDS link stays
-connected, and later frames are intentionally ignored until acquisition is
-started again. Disconnect and application shutdown stop the reader first and
+connected, and later Accepted frames continue plotting but are not submitted to the
+writer until saving starts again. Disconnect and application shutdown stop the reader first and
 drain accepted frames within a bounded stop deadline before closing the capture
 writer. If the reader cannot join or its accepted queue cannot drain by that
 deadline, the UI raises a fault and writes `<capture>.incomplete` beside the
 data file with the timestamp and reason; such a file must not be treated as a
 complete capture.
 
-The ten-second plot history keeps an incremental min/max envelope capped at the
-display budget. Repainting without new samples reuses that cache instead of
-rescanning the million-point raw history, while bucket extrema preserve narrow
+The bounded sixty-second plot history keeps an incremental min/max envelope capped
+at the display budget, with a default ten-second visible window. Repainting without
+new samples reuses the visible cache, while bucket extrema preserve narrow
 spikes. Because `egui_plot` has one Y transform per plot, overlay mode defaults
 to independent per-channel normalization and puts each actual range in the
 legend; split mode always shows the two original-value scales.

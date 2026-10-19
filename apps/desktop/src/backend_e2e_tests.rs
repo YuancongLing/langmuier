@@ -15,7 +15,7 @@ use langmuir_storage::{
 use tempfile::tempdir;
 
 use super::{Controller, UdpLvdsIngress};
-use crate::bridge::{BackendEvent, BackendStateSnapshot, LinkKind, LvdsDiagnosticStats};
+use crate::bridge::{BackendEvent, BackendStateSnapshot, LvdsReceiveStats};
 
 const SOURCE: &str = "192.0.2.1:1534";
 
@@ -88,11 +88,6 @@ fn feed(
             controller.handle_scientific_frame(frame);
         },
     );
-    if let Some(preview) = ingress.preview.take() {
-        // Same isolated display route as the production receiver. Diagnostic
-        // events never call the normal handler or enter the scientific writer.
-        controller.emit_display(LinkKind::Lvds, preview);
-    }
 }
 
 fn start_file(controller: &mut Controller, path: &Path) {
@@ -116,13 +111,12 @@ fn read_u32(bytes: &[u8], offset: usize) -> u32 {
 }
 
 #[test]
-fn e1_e5_e6_real_file_round_trip_keeps_only_strict_accepted_science() {
+fn e1_e5_e6_real_file_round_trip_keeps_only_decodable_deduplicated_science() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("strict-science.lpd");
     let (mut controller, _critical, display) = controller();
     start_file(&mut controller, &path);
     let mut ingress = UdpLvdsIngress::new(SOURCE.parse().unwrap());
-    assert!(ingress.diagnostic_preview);
     let first = golden();
     let second = next_golden();
     let mut bad_crc = first.clone();
@@ -147,9 +141,9 @@ fn e1_e5_e6_real_file_round_trip_keeps_only_strict_accepted_science() {
     ] {
         feed(&mut ingress, &mut controller, sequence, wire, now);
     }
-    let stats = ingress.diagnostic_stats;
+    let stats = ingress.receive_stats;
     assert_eq!(stats.complete_frames, 8);
-    assert_eq!((stats.crc_passed, stats.crc_failed), (5, 3));
+    assert_eq!((stats.parsed_frames, stats.parse_failures), (5, 3));
     assert_eq!(
         (
             stats.header_errors,
@@ -160,25 +154,18 @@ fn e1_e5_e6_real_file_round_trip_keeps_only_strict_accepted_science() {
     );
     assert_eq!(
         (stats.accepted_frames, stats.duplicates, stats.conflicts),
-        (2, 1, 1)
+        (3, 1, 1)
     );
-    assert_eq!(stats.diagnostic_candidates, 1);
-    assert_eq!(ingress.metrics.checksum_failures, 3);
-    assert_eq!(ingress.metrics.udp_sequence.observed_frames, 2);
-    assert_eq!(ingress.metrics.scientific_frames_delivered, 2);
+    assert_eq!(ingress.metrics.checksum_failures, 0);
+    assert_eq!(ingress.metrics.udp_sequence.observed_frames, 3);
+    assert_eq!(ingress.metrics.scientific_frames_delivered, 3);
 
     let events: Vec<_> = display.try_iter().collect();
     assert_eq!(events.len(), 3);
     assert!(matches!(&events[0], BackendEvent::ScientificSamples { .. }));
-    let BackendEvent::DiagnosticSamples {
-        sequence,
-        channel_1,
-        ..
-    } = &events[1]
-    else {
-        panic!("CRC failure must use the separate unverified event");
+    let BackendEvent::ScientificSamples { channel_1, .. } = &events[1] else {
+        panic!("decodable data must use the ordinary scientific event");
     };
-    assert_eq!(*sequence, Some(101));
     assert_eq!(
         (channel_1[0], channel_1[1], channel_1[124]),
         (4660.0, 4660.0, 4783.0)
@@ -188,12 +175,14 @@ fn e1_e5_e6_real_file_round_trip_keeps_only_strict_accepted_science() {
     controller.stop_acquisition();
     assert!(!controller.acquisition_running);
     assert!(controller.scientific_writer.is_none());
-    assert_golden_file(&path);
+    let expected = [(100, &first), (101, &bad_crc), (105, &second)].map(|(sequence, wire)| {
+        langmuir_core::decode_scientific_frame_with_sequence(wire, sequence).unwrap()
+    });
+    assert_scientific_file(&fs::read(&path).unwrap(), &expected);
     assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
 }
 
-fn assert_golden_file(path: &Path) {
-    let bytes = fs::read(path).unwrap();
+fn assert_scientific_file(bytes: &[u8], expected: &[ScientificFrame]) {
     // Independent fixed v2 header, rather than a header rebuilt by the sink.
     assert_eq!(
         &bytes[..32],
@@ -204,88 +193,96 @@ fn assert_golden_file(path: &Path) {
     );
     assert_eq!(
         bytes.len(),
-        usize::from(BINARY_HEADER_LEN) + 2 * BINARY_FRAME_LEN as usize
+        usize::from(BINARY_HEADER_LEN) + expected.len() * BINARY_FRAME_LEN as usize
     );
-    for (record, (sequence, utc, micros)) in bytes[32..].as_chunks::<1010>().0.iter().zip([
-        (100_u16, 1_694_498_816_u32, 999_800_u32),
-        (105, 1_694_498_817, 49_800),
-    ]) {
-        assert_eq!(read_u32(record, 0), utc);
-        assert_eq!(read_u32(record, 4), micros);
+    for (record, frame) in bytes[32..].as_chunks::<1010>().0.iter().zip(expected) {
+        assert_eq!(read_u32(record, 0), frame.timestamp.utc_seconds);
+        assert_eq!(read_u32(record, 4), frame.timestamp.microseconds);
         assert_eq!(
             u16::from_le_bytes(record[8..10].try_into().unwrap()),
-            sequence
+            frame.sequence
         );
         for index in 0..125 {
-            let step = u32::try_from(index).unwrap();
-            assert_eq!(read_u32(record, 10 + index * 4), 4660 + step);
-            assert_eq!(read_u32(record, 510 + index * 4), 43_981 - step);
+            assert_eq!(read_u32(record, 10 + index * 4), frame.channel_1[index]);
+            assert_eq!(read_u32(record, 510 + index * 4), frame.channel_2[index]);
         }
     }
 }
 
 #[test]
-fn e2_strict_crc_failure_never_creates_normal_or_diagnostic_waveform_or_file_record() {
+fn e2_tail_and_decodable_science_changes_plot_and_save_without_crc_recalculation() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("no-bad-science.lpd");
     let (mut controller, _critical, display) = controller();
     start_file(&mut controller, &path);
     let mut ingress = UdpLvdsIngress::new(SOURCE.parse().unwrap());
-    ingress.diagnostic_preview = false;
-    let mut wire = golden();
-    wire[19] ^= 1;
-    feed(&mut ingress, &mut controller, 1, &wire, Instant::now());
-    assert!(!ingress.diagnostic_preview);
-    assert!(display.is_empty());
-    assert_eq!(ingress.diagnostic_stats.crc_failed, 1);
-    assert_eq!(ingress.diagnostic_stats.accepted_frames, 0);
-    // Candidate quality is measured independently of the display filter.
-    assert_eq!(ingress.diagnostic_stats.diagnostic_candidates, 1);
-    assert_eq!(ingress.metrics.udp_sequence.observed_frames, 0);
-    assert_eq!(ingress.latest.unwrap().raw, wire);
-    controller.stop_acquisition();
-    assert_eq!(fs::read(path).unwrap().len(), 32);
-}
-
-#[test]
-fn t3_legal_frames_plot_and_save_with_both_crc_filter_settings() {
-    let directory = tempdir().unwrap();
-    for allow_unverified in [true, false] {
-        let path = directory
-            .path()
-            .join(format!("legal-{allow_unverified}.lpd"));
-        let (mut controller, _critical, display) = controller();
-        start_file(&mut controller, &path);
-        let mut ingress = UdpLvdsIngress::new(SOURCE.parse().unwrap());
-        ingress.diagnostic_preview = allow_unverified;
-        feed(&mut ingress, &mut controller, 1, &golden(), Instant::now());
-        let BackendEvent::ScientificSamples {
-            channel_1,
-            channel_2,
-            ..
-        } = display.try_recv().unwrap()
-        else {
-            panic!("valid CRC must plot regardless of the filter");
-        };
-        assert_eq!((channel_1.len(), channel_2.len()), (125, 125));
-        assert_eq!(
-            (
-                ingress.diagnostic_stats.crc_passed,
-                ingress.diagnostic_stats.crc_failed
-            ),
-            (1, 0)
+    let original = golden();
+    let mut tail_changed = original.clone();
+    tail_changed[267..269].copy_from_slice(&[0, 0]);
+    let mut science_changed = original.clone();
+    science_changed[19] ^= 1;
+    let wires = [original, tail_changed, science_changed];
+    let mut expected = Vec::new();
+    for (index, wire) in wires.iter().enumerate() {
+        let sequence = u16::try_from(index + 1).unwrap();
+        expected
+            .push(langmuir_core::decode_scientific_frame_with_sequence(wire, sequence).unwrap());
+        feed(
+            &mut ingress,
+            &mut controller,
+            u32::from(sequence),
+            wire,
+            Instant::now(),
         );
-        controller.stop_acquisition();
-        assert_eq!(controller.storage_status.enqueued, 1);
-        assert_eq!(controller.storage_status.sink_written, 1);
-        assert_eq!(fs::read(path).unwrap().len(), 32 + 1010);
     }
+    assert_eq!(display.len(), 3);
+    assert!(
+        display
+            .try_iter()
+            .all(|event| matches!(event, BackendEvent::ScientificSamples { .. }))
+    );
+    assert_eq!(ingress.receive_stats.accepted_frames, 3);
+    assert_eq!(ingress.receive_stats.parse_failures, 0);
+    assert_eq!(ingress.metrics.checksum_failures, 0);
+    assert_eq!(ingress.metrics.udp_sequence.observed_frames, 3);
+    controller.stop_acquisition();
+    assert_eq!(controller.storage_status.sink_written, 3);
+    assert_scientific_file(&fs::read(path).unwrap(), &expected);
 }
 
 #[test]
-fn e3_diagnostic_preview_requires_structure_time_and_all_adc_to_be_valid() {
+fn t3_legal_frame_plots_and_saves_through_the_single_science_route() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("legal.lpd");
+    let (mut controller, _critical, display) = controller();
+    start_file(&mut controller, &path);
     let mut ingress = UdpLvdsIngress::new(SOURCE.parse().unwrap());
-    ingress.diagnostic_preview = true;
+    feed(&mut ingress, &mut controller, 1, &golden(), Instant::now());
+    let BackendEvent::ScientificSamples {
+        channel_1,
+        channel_2,
+        ..
+    } = display.try_recv().unwrap()
+    else {
+        panic!("a legal scientific frame must plot");
+    };
+    assert_eq!((channel_1.len(), channel_2.len()), (125, 125));
+    assert_eq!(
+        (
+            ingress.receive_stats.parsed_frames,
+            ingress.receive_stats.parse_failures
+        ),
+        (1, 0)
+    );
+    controller.stop_acquisition();
+    assert_eq!(controller.storage_status.enqueued, 1);
+    assert_eq!(controller.storage_status.sink_written, 1);
+    assert_eq!(fs::read(path).unwrap().len(), 32 + 1010);
+}
+
+#[test]
+fn e3_science_acceptance_requires_structure_time_and_all_adc_to_be_valid() {
+    let mut ingress = UdpLvdsIngress::new(SOURCE.parse().unwrap());
     let (mut controller, _critical, display) = controller();
     let now = Instant::now();
     for (index, offset) in [0_usize, 2, 3, 4, 6].into_iter().enumerate() {
@@ -300,7 +297,7 @@ fn e3_diagnostic_preview_requires_structure_time_and_all_adc_to_be_valid() {
             now,
         );
         assert!(display.is_empty(), "malformed fixed field at {offset}");
-        assert_eq!(ingress.latest.as_ref().unwrap().raw, wire);
+        assert!(ingress.last_parse_error.is_some());
     }
     let mut bad_time = golden();
     bad_time[11..15].copy_from_slice(&u32::MAX.to_be_bytes());
@@ -323,35 +320,15 @@ fn e3_diagnostic_preview_requires_structure_time_and_all_adc_to_be_valid() {
             "last sample overflow on channel {channel}"
         );
     }
-    assert_eq!(ingress.diagnostic_stats.header_errors, 1);
-    assert_eq!(ingress.diagnostic_stats.length_errors, 1);
-    assert_eq!(ingress.diagnostic_stats.field_errors, 3);
-    assert_eq!(ingress.diagnostic_stats.timestamp_errors, 1);
-    assert_eq!(ingress.diagnostic_stats.adc_errors, 2);
-    assert_eq!(ingress.diagnostic_stats.diagnostic_candidates, 0);
+    assert_eq!(ingress.receive_stats.header_errors, 1);
+    assert_eq!(ingress.receive_stats.length_errors, 1);
+    assert_eq!(ingress.receive_stats.field_errors, 3);
+    assert_eq!(ingress.receive_stats.timestamp_errors, 1);
+    assert_eq!(ingress.receive_stats.adc_errors, 2);
+    assert_eq!(ingress.receive_stats.parsed_frames, 0);
+    assert_eq!(ingress.receive_stats.parse_failures, 8);
     assert_eq!(ingress.metrics.scientific_frames_delivered, 0);
     assert_eq!(ingress.metrics.udp_sequence.observed_frames, 0);
-}
-
-fn refresh_crc_reference(wire: &mut [u8]) {
-    let value = crc_reference(&wire[7..267]);
-    wire[267..269].copy_from_slice(&value.to_be_bytes());
-}
-
-fn crc_reference(bytes: &[u8]) -> u16 {
-    // Deliberately independent bitwise reference; no production CRC call.
-    let mut value = 0xFFFF_u16;
-    for byte in bytes {
-        value ^= u16::from(*byte) << 8;
-        for _ in 0..8 {
-            value = if value & 0x8000 == 0 {
-                value << 1
-            } else {
-                (value << 1) ^ 0x1021
-            };
-        }
-    }
-    value
 }
 
 #[test]
@@ -370,7 +347,6 @@ fn e4_four_hundred_live_frames_keep_all_points_and_device_time_without_saving() 
         let first_2 = 20_000 + u16::try_from(sequence).unwrap();
         wire[15..17].copy_from_slice(&first_1.to_be_bytes());
         wire[17..19].copy_from_slice(&first_2.to_be_bytes());
-        refresh_crc_reference(&mut wire);
         feed(
             &mut ingress,
             &mut controller,
@@ -408,10 +384,9 @@ fn e4_four_hundred_live_frames_keep_all_points_and_device_time_without_saving() 
         assert!(display.is_empty());
         assert!(controller.scientific_writer.is_none());
     }
-    assert_eq!(ingress.diagnostic_stats.accepted_frames, 400);
-    assert_eq!(ingress.diagnostic_stats.crc_passed, 400);
-    assert_eq!(ingress.diagnostic_stats.crc_failed, 0);
-    assert_eq!(ingress.diagnostic_stats.diagnostic_candidates, 0);
+    assert_eq!(ingress.receive_stats.accepted_frames, 400);
+    assert_eq!(ingress.receive_stats.parsed_frames, 400);
+    assert_eq!(ingress.receive_stats.parse_failures, 0);
     assert_eq!(ingress.metrics.udp_sequence.observed_frames, 400);
     assert_eq!(ingress.metrics.udp_sequence.contiguous_frames, 399);
     assert_eq!(ingress.metrics.udp_sequence.sequence_anomalies, 0);
@@ -435,7 +410,7 @@ impl BatchSink<ScientificFrame> for RecordingSink {
 }
 
 #[test]
-fn e8_diagnostics_leave_ttl_recovery_dedup_and_full_sequence_monitoring_unchanged() {
+fn e8_no_crc_gate_keeps_ttl_recovery_dedup_and_full_sequence_monitoring_unchanged() {
     let (mut controller, _critical, display) = controller();
     let stored = Arc::new(Mutex::new(Vec::new()));
     controller.scientific_writer = Some(
@@ -448,7 +423,6 @@ fn e8_diagnostics_leave_ttl_recovery_dedup_and_full_sequence_monitoring_unchange
     controller.acquisition_running = true;
     let source: SocketAddr = SOURCE.parse().unwrap();
     let mut ingress = UdpLvdsIngress::new(source);
-    ingress.diagnostic_preview = true;
     let now = Instant::now();
     let first = golden();
     for sequence in 1000..1064 {
@@ -480,8 +454,8 @@ fn e8_diagnostics_leave_ttl_recovery_dedup_and_full_sequence_monitoring_unchange
     assert_eq!(ingress.metrics.reassembly_timeouts, 64);
     assert_eq!(ingress.metrics.reassembly_pending_frames, 0);
     assert_eq!(ingress.metrics.duplicate_frames_suppressed, 1);
-    assert_eq!(ingress.metrics.sequence_conflicts, 1);
-    assert_eq!(ingress.metrics.checksum_failures, 1);
+    assert_eq!(ingress.metrics.sequence_conflicts, 2);
+    assert_eq!(ingress.metrics.checksum_failures, 0);
     assert_eq!(ingress.metrics.udp_sequence.observed_frames, 4);
     assert_eq!(ingress.metrics.udp_sequence.contiguous_frames, 1);
     assert_eq!(ingress.metrics.udp_sequence.wrap_events, 1);
@@ -489,7 +463,7 @@ fn e8_diagnostics_leave_ttl_recovery_dedup_and_full_sequence_monitoring_unchange
     assert_eq!(ingress.metrics.udp_sequence.late_fills, 1);
     assert_eq!(ingress.metrics.udp_sequence.pending_gaps, 0);
     assert_eq!(ingress.metrics.udp_sequence.sequence_anomalies, 0);
-    assert_eq!(ingress.diagnostic_stats.diagnostic_candidates, 1);
+    assert_eq!(ingress.receive_stats.accepted_frames, 4);
     controller.stop_acquisition();
     let frames = stored.lock().unwrap();
     assert_eq!(
@@ -506,7 +480,7 @@ fn e8_diagnostics_leave_ttl_recovery_dedup_and_full_sequence_monitoring_unchange
             .count(),
         4
     );
-    // This memory sink establishes queue/sink isolation only. Disk read-back
+    // This memory sink establishes queue/sink delivery only. Disk read-back
     // and graceful close are independently covered by the real-file test.
 }
 
@@ -525,7 +499,7 @@ fn e10_udp_receive_state_uses_data_and_exact_timeout_instead_of_bind_success() {
         },
     );
     assert_eq!(ingress.receive_state(now), "已绑定，等待数据");
-    assert_eq!(ingress.diagnostic_stats.udp_packets, 0);
+    assert_eq!(ingress.receive_stats.udp_packets, 0);
     ingress.push_at(source, &[0x55, 0xAA], now, |_| {
         panic!("short UDP cannot deliver")
     });
@@ -534,11 +508,11 @@ fn e10_udp_receive_state_uses_data_and_exact_timeout_instead_of_bind_success() {
         "正在收到 UDP 数据 / 等待完整 LVDS"
     );
     let mut bad = golden();
-    bad[268] ^= 1;
+    bad[0] ^= 1;
     ingress.push_at(source, &datagram(1, &bad), now, |_| {
-        panic!("CRC failure cannot deliver")
+        panic!("invalid structure cannot deliver")
     });
-    assert_eq!(ingress.receive_state(now), "收到 LVDS，校验失败");
+    assert_eq!(ingress.receive_state(now), "收到 LVDS，解析失败");
     let mut delivered = 0;
     ingress.push_at(source, &datagram(1, &golden()), now, |_| delivered += 1);
     assert_eq!(delivered, 1);
@@ -564,18 +538,13 @@ fn e10_udp_receive_state_uses_data_and_exact_timeout_instead_of_bind_success() {
 }
 
 #[test]
-fn e10_saving_allows_plot_filter_changes_but_blocks_source_changes_and_restarts_permissive() {
+fn e10_saving_blocks_source_changes_and_preserves_the_current_science_writer() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("mode-boundary.lpd");
     let (mut controller, critical, _display) = controller();
-    assert!(controller.lvds_status().diagnostic_preview);
-    controller.set_diagnostic_preview(false);
-    assert!(!controller.lvds_status().diagnostic_preview);
     start_file(&mut controller, &path);
     let source_before = controller.lvds_source.clone();
-    controller.set_diagnostic_preview(true);
     controller.start_pcap_replay("does-not-exist.pcapng");
-    assert!(controller.lvds_status().diagnostic_preview);
     assert!(controller.replay.is_none());
     assert_eq!(controller.lvds_source, source_before);
     assert_eq!(controller.capture_path.as_deref(), Some(path.as_path()));
@@ -598,19 +567,17 @@ fn e10_saving_allows_plot_filter_changes_but_blocks_source_changes_and_restarts_
     assert!(controller.storage_status.closed);
     assert_eq!(controller.storage_status.sink_written, 0);
     assert_eq!(fs::read(path).unwrap().len(), 32);
-    controller.set_diagnostic_preview(true);
-    assert!(controller.lvds_status().diagnostic_preview);
     let (fresh, _critical, _display) = self::controller();
-    assert!(fresh.lvds_status().diagnostic_preview);
+    assert!(!fresh.acquisition_running);
+    assert!(fresh.scientific_writer.is_none());
 }
 
 struct CaptureResult {
     total: u64,
     target: u64,
-    stats: LvdsDiagnosticStats,
+    stats: LvdsReceiveStats,
     bytes: Vec<u8>,
-    verified_events: u64,
-    unverified_events: u64,
+    events: u64,
     points: [u64; 2],
 }
 
@@ -682,18 +649,17 @@ fn storage_failure_is_reported_without_rolling_back_science_acceptance() {
     );
 }
 
-fn capture_to_scientific_file(capture: &Path, path: &Path, diagnostic: bool) -> CaptureResult {
+fn capture_to_scientific_file(
+    capture: &Path,
+    path: &Path,
+    expected: &[ScientificFrame],
+) -> CaptureResult {
     // One production replay tick consumes at most 64 packets. A bounded 128
     // event display channel lets this test inspect every event without
     // confusing rendering backpressure with protocol rejection.
     let (mut controller, _critical, display) = controller_with_display_capacity(128);
-    assert!(controller.lvds_status().diagnostic_preview);
-    if !diagnostic {
-        controller.set_diagnostic_preview(false);
-    }
     controller.start_pcap_replay(capture.to_str().unwrap());
     let replay = controller.replay.as_mut().expect("production PCAP replay");
-    assert_eq!(replay.ingress.diagnostic_preview, diagnostic);
     // Advance only the replay clock, not device timestamps or packet order.
     // Pacing itself has separate 50 ms boundary tests.
     replay.started = Instant::now()
@@ -701,35 +667,27 @@ fn capture_to_scientific_file(capture: &Path, path: &Path, diagnostic: bool) -> 
         .unwrap();
     start_file(&mut controller, path);
     let mut normal_events = 0_u64;
-    let mut diagnostic_events = 0_u64;
     let mut points = [0_u64; 2];
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         controller.drain_replay();
         assert!(display.len() <= 64, "bounded per-tick delivery batch");
         for event in display.try_iter() {
-            let (channel_1, channel_2, interval) = match event {
-                BackendEvent::ScientificSamples {
-                    channel_1,
-                    channel_2,
-                    sample_interval_seconds,
-                    ..
-                } => {
-                    normal_events += 1;
-                    (channel_1, channel_2, sample_interval_seconds)
-                }
-                BackendEvent::DiagnosticSamples {
-                    channel_1,
-                    channel_2,
-                    sample_interval_seconds,
-                    ..
-                } => {
-                    diagnostic_events += 1;
-                    (channel_1, channel_2, sample_interval_seconds)
-                }
-                _ => panic!("unexpected display event during capture processing"),
+            let BackendEvent::ScientificSamples {
+                channel_1_start_seconds,
+                channel_2_start_seconds,
+                channel_1,
+                channel_2,
+                sample_interval_seconds,
+            } = event
+            else {
+                panic!("unexpected display event during capture processing");
             };
-            assert_eq!(interval, 0.0004);
+            let frame = &expected[usize::try_from(normal_events).unwrap()];
+            normal_events += 1;
+            assert_eq!(channel_1_start_seconds, frame.channel_1_base_seconds());
+            assert_eq!(channel_2_start_seconds, frame.channel_2_base_seconds());
+            assert_eq!(sample_interval_seconds, 0.0004);
             assert_eq!((channel_1.len(), channel_2.len()), (125, 125));
             assert!(
                 channel_1
@@ -737,6 +695,10 @@ fn capture_to_scientific_file(capture: &Path, path: &Path, diagnostic: bool) -> 
                     .chain(channel_2.iter())
                     .all(|v| v.is_finite())
             );
+            for index in 0..125 {
+                assert_eq!(channel_1[index], f64::from(frame.channel_1[index]));
+                assert_eq!(channel_2[index], f64::from(frame.channel_2[index]));
+            }
             points[0] += u64::try_from(channel_1.len()).unwrap();
             points[1] += u64::try_from(channel_2.len()).unwrap();
         }
@@ -753,7 +715,7 @@ fn capture_to_scientific_file(capture: &Path, path: &Path, diagnostic: bool) -> 
     assert_eq!(replay.progress.error, None);
     let total = replay.progress.total_packets;
     let target = replay.progress.target_udp_packets;
-    let stats = replay.ingress.diagnostic_stats;
+    let stats = replay.ingress.receive_stats;
     assert!(!controller.acquisition_running, "EOF closes actual writer");
     assert!(controller.storage_status.closed);
     assert_eq!(controller.storage_status.error, None);
@@ -761,28 +723,14 @@ fn capture_to_scientific_file(capture: &Path, path: &Path, diagnostic: bool) -> 
     assert_eq!((bytes.len() - 32) % 1010, 0);
     let file_frames = u64::try_from((bytes.len() - 32) / 1010).unwrap();
     assert_eq!(normal_events, stats.accepted_frames);
-    assert_eq!(
-        diagnostic_events,
-        if diagnostic {
-            stats.diagnostic_candidates
-        } else {
-            0
-        }
-    );
     assert_eq!(file_frames, stats.accepted_frames);
     assert_eq!(controller.storage_status.enqueued, stats.accepted_frames);
     assert_eq!(controller.storage_status.sink_written, file_frames);
     println!(
-        "USER_CAPTURE filter={} total={} target={} stats={stats:?} verified_plot_events={} unverified_plot_events={} points={points:?} enqueued={} sink_written={} closed={} file_frames={} file_bytes={}",
-        if diagnostic {
-            "default_allow_unverified"
-        } else {
-            "strict_crc_only"
-        },
+        "USER_CAPTURE crc_check=disabled total={} target={} stats={stats:?} plot_events={} points={points:?} enqueued={} sink_written={} closed={} file_frames={} file_bytes={}",
         total,
         target,
         normal_events,
-        diagnostic_events,
         controller.storage_status.enqueued,
         controller.storage_status.sink_written,
         controller.storage_status.closed,
@@ -794,21 +742,21 @@ fn capture_to_scientific_file(capture: &Path, path: &Path, diagnostic: bool) -> 
         target,
         stats,
         bytes,
-        verified_events: normal_events,
-        unverified_events: diagnostic_events,
+        events: normal_events,
         points,
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 struct CaptureCensus {
     total: u64,
     target: u64,
     complete: u64,
     structure_valid: u64,
-    crc_passed: u64,
-    crc_failed: u64,
-    decodable_bad_crc: u64,
+    parsed: u64,
+    frames: Vec<ScientificFrame>,
+    duplicates: u64,
+    conflicts: u64,
 }
 
 fn independently_count_capture(capture: &Path) -> CaptureCensus {
@@ -817,6 +765,7 @@ fn independently_count_capture(capture: &Path) -> CaptureCensus {
         fs::File::open(capture).unwrap(),
     ));
     let mut census = CaptureCensus::default();
+    let mut recent = std::collections::VecDeque::<(u32, Duration, Vec<u8>)>::new();
     while let Some(packet) = reader.next_packet().unwrap() {
         census.total += 1;
         let Some(udp) = packet.udp.filter(|udp| udp.source == source) else {
@@ -833,18 +782,45 @@ fn independently_count_capture(capture: &Path) -> CaptureCensus {
         let wire = parsed.payload;
         assert_eq!(wire.len(), 269);
         census.complete += 1;
-        let received = u16::from_be_bytes(wire[267..269].try_into().unwrap());
-        let crc_ok = crc_reference(&wire[7..267]) == received;
-        census.crc_passed += u64::from(crc_ok);
-        census.crc_failed += u64::from(!crc_ok);
         // Independent fixed-byte, integer-time and differential-ADC oracle.
-        // It neither calls diagnose_scientific_frame nor repairs wire bytes.
+        // The trailing two bytes never participate in validity.
         let structure_ok = wire[..7] == [0xEB, 0x90, 0x55, 0xAA, 1, 7, 0xAA];
         census.structure_valid += u64::from(structure_ok);
         let time_ok = u32::from_be_bytes(wire[11..15].try_into().unwrap()) < 1_000_000;
-        if !crc_ok && structure_ok && time_ok && reference_adc_valid(wire) {
-            census.decodable_bad_crc += 1;
+        let valid = structure_ok && time_ok && reference_adc_valid(wire);
+        let sequence = parsed.header.frame_sequence;
+        let [_, _, high, low] = sequence.to_be_bytes();
+        let decoded = langmuir_core::decode_scientific_frame_with_sequence(
+            wire,
+            u16::from_be_bytes([high, low]),
+        );
+        assert_eq!(
+            decoded.is_ok(),
+            valid,
+            "independent structure/time/ADC oracle"
+        );
+        let Ok(frame) = decoded else { continue };
+        census.parsed += 1;
+        // Independently apply the documented five-second / 256-entry FIFO
+        // acceptance policy to the capture's original monotonic timestamps.
+        while recent.front().is_some_and(|(_, inserted, _)| {
+            packet.timestamp.saturating_sub(*inserted) >= Duration::from_secs(5)
+        }) {
+            recent.pop_front();
         }
+        if let Some((_, _, prior)) = recent.iter().find(|(stored, _, _)| *stored == sequence) {
+            if prior == wire {
+                census.duplicates += 1;
+            } else {
+                census.conflicts += 1;
+            }
+            continue;
+        }
+        if recent.len() == 256 {
+            recent.pop_front();
+        }
+        recent.push_back((sequence, packet.timestamp, wire.to_vec()));
+        census.frames.push(frame);
     }
     census
 }
@@ -865,46 +841,83 @@ fn reference_adc_valid(wire: &[u8]) -> bool {
 
 #[test]
 #[ignore = "requires user capture"]
-fn e7_user_capture_strict_and_diagnostic_use_same_ingress_and_never_save_bad_crc() {
+fn e7_user_capture_no_crc_science_roundtrip() {
     let capture = Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../2026101902--朗缪尔.pcapng"
     ));
     let original = fs::read(capture).expect("place the user capture in the project root");
     let expected = independently_count_capture(capture);
-    println!("USER_CAPTURE independent census={expected:?}");
-    let directory = tempdir().unwrap();
-    let strict = capture_to_scientific_file(capture, &directory.path().join("strict.lpd"), false);
-    let diagnostic =
-        capture_to_scientific_file(capture, &directory.path().join("diagnostic.lpd"), true);
-    assert!(strict.target > 0);
-    assert!(strict.total >= strict.target);
-    assert_eq!(
-        (strict.total, strict.target),
-        (diagnostic.total, diagnostic.target)
+    println!(
+        "USER_CAPTURE independent total={} target={} complete={} structure={} parsed={} accepted={} duplicates={} conflicts={}",
+        expected.total,
+        expected.target,
+        expected.complete,
+        expected.structure_valid,
+        expected.parsed,
+        expected.frames.len(),
+        expected.duplicates,
+        expected.conflicts
     );
-    assert_eq!(strict.stats, diagnostic.stats);
+    let directory = tempdir().unwrap();
+    let actual = capture_to_scientific_file(
+        capture,
+        &directory.path().join("science.lpd"),
+        &expected.frames,
+    );
+    assert!(actual.target > 0);
+    assert!(actual.total >= actual.target);
     assert_eq!(
-        (diagnostic.total, diagnostic.target),
+        (actual.total, actual.target),
         (expected.total, expected.target)
     );
-    assert_eq!(diagnostic.stats.complete_frames, expected.complete);
+    assert_eq!(actual.stats.complete_frames, expected.complete);
     assert_eq!(
-        diagnostic.stats.structure_valid_frames,
+        actual.stats.structure_valid_frames,
         expected.structure_valid
     );
-    assert_eq!(diagnostic.stats.crc_passed, expected.crc_passed);
-    assert_eq!(diagnostic.stats.crc_failed, expected.crc_failed);
+    assert_eq!(actual.stats.parsed_frames, expected.parsed);
     assert_eq!(
-        diagnostic.stats.diagnostic_candidates,
-        expected.decodable_bad_crc
+        actual.stats.parse_failures,
+        expected.complete - expected.parsed
     );
-    assert_eq!(diagnostic.unverified_events, expected.decodable_bad_crc);
-    assert_eq!(strict.unverified_events, 0);
-    assert_eq!(strict.verified_events, diagnostic.verified_events);
-    let default_points = (diagnostic.verified_events + expected.decodable_bad_crc) * 125;
-    assert_eq!(diagnostic.points, [default_points; 2]);
-    assert_eq!(strict.points, [strict.verified_events * 125; 2]);
-    assert_eq!(strict.bytes, diagnostic.bytes);
+    assert_eq!(actual.stats.duplicates, expected.duplicates);
+    assert_eq!(actual.stats.conflicts, expected.conflicts);
+    assert_eq!(actual.events, u64::try_from(expected.frames.len()).unwrap());
+    assert_eq!(actual.points, [actual.events * 125; 2]);
+    assert_scientific_file(&actual.bytes, &expected.frames);
+    if let Some(path) = std::env::var_os("LANGMUIR_GUI_SCIENCE_FILE") {
+        // Optional read-only audit of a file closed by the actual GUI. Saving
+        // may start after replay, so require an exact complete capture suffix.
+        let gui_bytes = fs::read(Path::new(&path)).expect("read closed GUI scientific file");
+        let header_len = usize::from(BINARY_HEADER_LEN);
+        let record_len = usize::try_from(BINARY_FRAME_LEN).unwrap();
+        assert!(
+            gui_bytes.len() >= header_len + record_len,
+            "GUI file must contain science records"
+        );
+        assert_eq!((gui_bytes.len() - header_len) % record_len, 0);
+        let first_record = &gui_bytes[header_len..header_len + record_len];
+        let utc = read_u32(first_record, 0);
+        let micros = read_u32(first_record, 4);
+        let sequence = u16::from_le_bytes(first_record[8..10].try_into().unwrap());
+        let first_index = expected
+            .frames
+            .iter()
+            .position(|frame| {
+                frame.timestamp.utc_seconds == utc
+                    && frame.timestamp.microseconds == micros
+                    && frame.sequence == sequence
+            })
+            .expect("GUI first record must match the original capture");
+        assert_scientific_file(&gui_bytes, &expected.frames[first_index..]);
+        println!(
+            "GUI_SCIENCE_FILE path={} file_bytes={} frames={} first_index={} readback=PASS",
+            Path::new(&path).display(),
+            gui_bytes.len(),
+            (gui_bytes.len() - header_len) / record_len,
+            first_index
+        );
+    }
     assert_eq!(fs::read(capture).unwrap(), original);
 }

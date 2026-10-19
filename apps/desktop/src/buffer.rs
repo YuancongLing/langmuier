@@ -2,18 +2,10 @@ use std::collections::VecDeque;
 
 use egui_plot::PlotPoint;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SampleQuality {
-    /// A sample from the existing Accepted pipeline (including explicit Mock sources).
-    Accepted,
-    CrcUnverified,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SamplePoint {
     pub time_seconds: f64,
     pub value: f64,
-    pub quality: SampleQuality,
 }
 
 /// UI-owned plot history. It is bounded by both age and point count, so a
@@ -25,7 +17,6 @@ pub struct TimeSeriesBuffer {
     capacity: usize,
     window_seconds: f64,
     display_cache: Option<DisplayEnvelopeCache>,
-    unverified_points: usize,
     viewport: ViewportCache,
 }
 
@@ -54,7 +45,6 @@ struct ViewportCache {
     key: Option<ViewportKey>,
     candidates: Vec<[f64; 2]>,
     points: Vec<PlotPoint>,
-    contains_unverified: bool,
     value_range: Option<(f64, f64)>,
     #[cfg(test)]
     rebuilds: usize,
@@ -95,7 +85,6 @@ impl TimeSeriesBuffer {
             capacity,
             window_seconds,
             display_cache,
-            unverified_points: 0,
             viewport: ViewportCache::default(),
         }
     }
@@ -128,7 +117,6 @@ impl TimeSeriesBuffer {
                 {
                     self.sample_offset += self.points.len() as u64;
                     self.points.clear();
-                    self.unverified_points = 0;
                     self.viewport.key = None;
                     if let Some(cache) = &mut self.display_cache {
                         cache.clear();
@@ -138,8 +126,6 @@ impl TimeSeriesBuffer {
                     self.pop_front();
                 }
                 self.points.push_back(point);
-                self.unverified_points +=
-                    usize::from(point.quality == SampleQuality::CrcUnverified);
                 if let Some(cache) = &mut self.display_cache {
                     cache.push(point);
                 }
@@ -175,16 +161,9 @@ impl TimeSeriesBuffer {
     }
 
     fn pop_front(&mut self) {
-        if let Some(point) = self.points.pop_front() {
+        if self.points.pop_front().is_some() {
             self.sample_offset += 1;
-            self.unverified_points -= usize::from(point.quality == SampleQuality::CrcUnverified);
         }
-    }
-
-    #[must_use]
-    #[cfg(test)]
-    pub fn contains_unverified(&self) -> bool {
-        self.unverified_points > 0
     }
 
     #[must_use]
@@ -195,7 +174,6 @@ impl TimeSeriesBuffer {
     pub fn clear(&mut self) {
         self.sample_offset += self.points.len() as u64;
         self.points.clear();
-        self.unverified_points = 0;
         self.viewport.key = None;
         self.viewport.points.clear();
         if let Some(cache) = &mut self.display_cache {
@@ -212,16 +190,6 @@ impl TimeSeriesBuffer {
         self.points.partition_point(|point| {
             point.time_seconds < time || (inclusive && point.time_seconds <= time)
         })
-    }
-
-    #[must_use]
-    #[cfg(test)]
-    pub fn range_contains_unverified(&self, range: [f64; 2]) -> bool {
-        let start = self.lower_bound(range[0], false);
-        let end = self.lower_bound(range[1], true);
-        self.points
-            .range(start..end)
-            .any(|point| point.quality == SampleQuality::CrcUnverified)
     }
 
     /// Reuses the viewport on unchanged repaints and when incoming data is
@@ -257,10 +225,6 @@ impl TimeSeriesBuffer {
         cache.key = Some(key);
         cache.candidates.clear();
         cache.points.clear();
-        cache.contains_unverified = self
-            .points
-            .range(start..end)
-            .any(|point| point.quality == SampleQuality::CrcUnverified);
         cache.value_range = None;
         #[cfg(test)]
         {
@@ -382,11 +346,6 @@ impl TimeSeriesBuffer {
     #[must_use]
     pub fn visible_points(&self) -> &[PlotPoint] {
         &self.viewport.points
-    }
-
-    #[must_use]
-    pub fn visible_contains_unverified(&self) -> bool {
-        self.viewport.contains_unverified
     }
 
     #[must_use]
@@ -639,37 +598,31 @@ fn decimate_points(points: &VecDeque<SamplePoint>, max_points: usize) -> Vec<[f6
 
 #[cfg(test)]
 mod tests {
-    use super::{SamplePoint, SampleQuality, TimeSeriesBuffer};
+    use super::{SamplePoint, TimeSeriesBuffer};
 
     fn point(time_seconds: f64, value: f64) -> SamplePoint {
         SamplePoint {
             time_seconds,
             value,
-            quality: SampleQuality::Accepted,
         }
     }
 
     #[test]
-    fn sample_quality_follows_capacity_age_clear_and_clock_restart() {
+    fn history_follows_capacity_age_clear_and_clock_restart() {
         let mut buffer = TimeSeriesBuffer::new(3, 2.0);
-        let unverified = |time_seconds| SamplePoint {
-            quality: SampleQuality::CrcUnverified,
-            ..point(time_seconds, 1.0)
-        };
-        buffer.extend([unverified(1.0), point(1.1, 2.0), point(1.2, 3.0)]);
-        assert!(buffer.contains_unverified());
+        buffer.extend([point(1.0, 1.0), point(1.1, 2.0), point(1.2, 3.0)]);
+        assert_eq!(buffer.len(), 3);
         buffer.extend([point(1.3, 4.0)]);
-        assert!(!buffer.contains_unverified());
-        buffer.extend([unverified(1.4), point(3.5, 5.0)]);
-        assert!(!buffer.contains_unverified());
-        buffer.extend([unverified(3.6)]);
-        assert!(buffer.contains_unverified());
-        buffer.extend([point(0.0, 0.0)]);
-        assert!(!buffer.contains_unverified());
+        assert_eq!(buffer.decimated(10)[0], [1.1, 2.0]);
+        buffer.extend([point(1.4, 1.0), point(3.5, 5.0)]);
         assert_eq!(buffer.len(), 1);
-        buffer.extend([unverified(0.1)]);
+        buffer.extend([point(3.6, 1.0)]);
+        assert_eq!(buffer.len(), 2);
+        buffer.extend([point(0.0, 0.0)]);
+        assert_eq!(buffer.len(), 1);
+        buffer.extend([point(0.1, 1.0)]);
         buffer.clear();
-        assert!(!buffer.contains_unverified());
+        assert!(buffer.is_empty());
     }
 
     #[test]
@@ -800,7 +753,7 @@ mod tests {
     }
 
     #[test]
-    fn viewport_keeps_extrema_raw_hover_values_and_visible_quality() {
+    fn viewport_keeps_extrema_raw_hover_values_and_visible_window() {
         let mut buffer = TimeSeriesBuffer::with_history(200_000, 60.0, 10.0, 2_000);
         buffer.extend((0..100_000).map(|i| SamplePoint {
             time_seconds: f64::from(i) / 2_500.0,
@@ -810,11 +763,6 @@ mod tests {
                 -80_000.0
             } else {
                 1.0
-            },
-            quality: if i < 10_000 {
-                SampleQuality::CrcUnverified
-            } else {
-                SampleQuality::Accepted
             },
         }));
         buffer.prepare_visible([30.0, 40.0], 600, false);
@@ -831,10 +779,8 @@ mod tests {
                 .iter()
                 .any(|p| p.y.to_bits() == (-80_000.0_f64).to_bits())
         );
-        assert!(!buffer.visible_contains_unverified());
         assert_eq!(buffer.nearest_value(77_777.0 / 2_500.0), Some(90_000.0));
         buffer.prepare_visible([0.0, 2.0], 128, false);
-        assert!(buffer.visible_contains_unverified());
         buffer.prepare_visible([31.1, 31.12], 600, true);
         assert!(
             buffer.visible_points().len() < 100,
@@ -855,7 +801,7 @@ mod tests {
         buffer.extend((0..300_000).map(|i| point(f64::from(i) / 2_500.0, f64::from(i))));
         assert!((149_999..=150_001).contains(&buffer.len()));
         assert_eq!(buffer.points.capacity(), 150_125);
-        assert_eq!(std::mem::size_of::<SamplePoint>(), 24);
+        assert_eq!(std::mem::size_of::<SamplePoint>(), 16);
         let snapshot = buffer.clone();
         let last = snapshot.latest_time();
         buffer.extend([point(200.0, 10.0)]);
@@ -887,16 +833,9 @@ mod tests {
         buffer.extend([point(0.0, 1.0), point(1.0, 2.0)]);
         buffer.prepare_visible([0.0, 2.0], 128, false);
         let rebuilds = buffer.viewport.rebuilds;
-        buffer.extend([
-            SamplePoint {
-                quality: SampleQuality::CrcUnverified,
-                ..point(0.0, 10.0)
-            },
-            point(1.0, 20.0),
-        ]);
+        buffer.extend([point(0.0, 10.0), point(1.0, 20.0)]);
         buffer.prepare_visible([0.0, 2.0], 128, false);
         assert_eq!(buffer.viewport.rebuilds, rebuilds + 1);
         assert_eq!(buffer.visible_points()[0].y.to_bits(), 10.0_f64.to_bits());
-        assert!(buffer.visible_contains_unverified());
     }
 }

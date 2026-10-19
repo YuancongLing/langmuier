@@ -1,5 +1,10 @@
 # Architecture
 
+> **科学数据未经 CRC 完整性验证。** Production LVDS acceptance checks structure,
+> device time and ADC ranges, then the existing UDP deduplication gate. It does not
+> calculate or compare CRC16 before plotting or formal capture. The desktop has one
+> plot path and no CRC mode, filter or detail controls.
+
 ## Boundaries
 
 The application is split along ownership boundaries rather than UI screens:
@@ -57,8 +62,8 @@ deadline, or storage fails, the capture is finalized when possible and a neighbo
 that path as a complete drain. Desktop storage shutdown is bounded to three seconds.
 
 The manual **Stop acquisition** boundary includes the LVDS events already present when
-the request is handled; the physical link stays connected and later frames are ignored
-until a new capture is started.
+the request is handled. The physical link stays connected and later Accepted frames
+continue to update plots; they are not submitted to storage until capture starts again.
 
 There is no automatic real-device-to-mock fallback.
 
@@ -77,26 +82,34 @@ datagram boundaries and reassemble the deployed wrapper. The desktop backend bin
 reassembly and rejection counters, decodes the reassembled 269-byte frame, and sends its
 125-point channels to storage and plots. The UDP wrapper sequence tags each stored frame;
 the LVDS body has no sequence field. The desktop still truncates the UDP `u32` tag to
-`u16`, pending a separate reliability/storage revision. CRC16 uses the manufacturer's
-CCITT-FALSE parameters and is mandatory over `frame[7..267]` (260B) before time/ADC
-decoding and storage/display. This range is the updated-table working interpretation
-(`SPEC_ASSUMPTION`), awaiting the manufacturer's actual `data` and `length` arguments;
-there is no fallback to a different CRC range.
+`u16`, pending a separate reliability/storage revision. All production entry points
+check structure, time and ADC bounds without calculating or comparing CRC16; a
+decodable frame can be plotted and formally captured regardless of its trailer value.
+The two trailer bytes remain unchanged in the wire format. The core retains an
+independent offline CCITT-FALSE reference API over `frame[7..267]` (260B), using
+`poly=0x1021`, `init=0xFFFF`, no reflection and `xorout=0`. That historical range remains
+`SPEC_ASSUMPTION` and is not a production acceptance condition.
 
 Incomplete UDP assemblies expire two seconds after their first fragment, using
 `Instant`; duplicates do not renew their lifetime. Cleanup runs before fragment
 admission and on the desktop receiver's idle polls. With all 64 live slots occupied,
 new sequences are explicitly rejected until a slot completes or expires. Reassembly
-timeouts, capacity rejections, fragment errors, and scientific CRC failures have
-separate counters; existing 500ms diagnostics aggregate anomalies.
+timeouts, capacity rejections, fragment errors, and scientific parsing failures have
+separate counters; existing 500ms diagnostics aggregate anomalies. Historical CRC
+mismatches do not create production rejection counts or connection failures.
 
-After full scientific validation, a source/session-scoped `UdpLvdsScienceGate`
+After structure/time/ADC validation, a source/session-scoped `UdpLvdsScienceGate`
 compares the complete UDP `u32` sequence and all 269 raw bytes. It suppresses
 identical repeats and separately rejects valid same-sequence content conflicts
 before the normal controller or CLI capture writes. Its independent five-second,
 256-entry FIFO history is bounded and never renewed by duplicates or conflicts.
 Rebinding creates a fresh session; sequence rollback alone does not clear history.
 This adds no cross-frame ordering or storage-format change.
+
+Accepted science always feeds the bounded display path and feeds `BatchWriter` only
+while capture is enabled. Native `.lpd` v2 retains its 32-byte header and 1010-byte
+records; HDF5 retains its schema. Those formats do not add CRC quality flags, and
+successful enqueue, sink writes and plots remain distinct from file close/flush.
 
 Only Accepted frames then update a separate source/session-scoped
 `UdpLvdsSequenceMonitor`, using the untruncated outer `u32` before the original

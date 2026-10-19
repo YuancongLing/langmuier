@@ -220,8 +220,7 @@ stream_decoder!(
 mod tests {
     use super::{LvdsStreamDecoder, Rs422StreamDecoder};
     use crate::{
-        FrameError, LVDS_FRAME_LEN, Protocol, RS422_FRAME_LEN,
-        lvds::test_support::valid_frame as valid_lvds,
+        LVDS_FRAME_LEN, RS422_FRAME_LEN, lvds::test_support::valid_frame as valid_lvds,
         rs422::test_support::valid_frame as valid_rs422,
     };
 
@@ -327,7 +326,7 @@ mod tests {
     }
 
     #[test]
-    fn lvds_rejects_crc_failure_and_resynchronizes_to_next_valid_frame() {
+    fn lvds_accepts_decodable_crc_mismatch_and_preserves_next_frame_across_noise() {
         let valid = valid_lvds();
         let mut corrupt = valid.clone();
         corrupt[100] ^= 1;
@@ -345,17 +344,13 @@ mod tests {
                     |error| errors.push(error),
                 );
             }
-            assert_eq!(frames.len(), 1, "chunk size {chunk_size}");
+            assert_eq!(frames.len(), 2, "chunk size {chunk_size}");
             assert_eq!(frames[0].channel_1[0], 2048);
-            assert!(matches!(
-                errors.as_slice(),
-                [FrameError::ChecksumMismatch {
-                    protocol: Protocol::Lvds,
-                    ..
-                }]
-            ));
-            assert_eq!(decoder.metrics().frames_rejected, 1);
-            assert_eq!(decoder.metrics().frames_decoded, 1);
+            assert_eq!(frames[1].channel_1[0], 2048);
+            assert_ne!(frames[0].channel_2, frames[1].channel_2);
+            assert_eq!(errors.len(), 0);
+            assert_eq!(decoder.metrics().frames_rejected, 0);
+            assert_eq!(decoder.metrics().frames_decoded, 2);
             assert_eq!(decoder.buffered_len(), 0);
         }
     }

@@ -42,6 +42,6 @@ Compress-Archive -Path .\target\delivery\windows-x64\LangmuirGroundControl.exe, 
 
 压缩包：`target\delivery\LangmuirGroundControl-windows-x64.zip`。
 
-解压后运行 EXE。原始用户 PCAP 不随源码上传；回放时选择本机保存的 `.pcapng` 文件。默认不勾选“仅显示 CRC 正确的数据”即可显示可解码的 CRC 未验证候选，正式科学保存仍要求严格 Accepted。监听地址须是 Windows 本机实际配置的 IP，程序不会自动改为其他地址。
+解压后运行 EXE。原始用户 PCAP 不随源码上传；回放时选择本机保存的 `.pcapng` 文件。当前版本不使用 CRC16 作为接收、绘图或保存门禁，也没有 CRC 模式开关。结构、设备时间、双通道 ADC 解码合法并通过原去重门禁的帧会直接绘图；用户开启保存后进入原正式写入链。**科学数据未经 CRC 完整性验证**，文件格式未变。监听地址须是 Windows 本机实际配置的 IP，程序不会自动改为其他地址。
 
 构建成功只表示生成了 Windows 程序；Windows 原生启动、界面、回放和硬件验收仍需在目标电脑实际执行。Mac Release 的验证结果不等于 Windows 发布验收。

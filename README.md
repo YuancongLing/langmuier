@@ -44,6 +44,11 @@ cargo run --release -p langmuir-desktop --features mock -- --mock
 
 Failure to open a real port never enables simulation automatically.
 
+LVDS admission checks structure, device time, ADC bounds, and recent duplicates.
+CRC16 is not checked for receiving, plotting, or scientific storage: **科学数据未经
+CRC 完整性验证**. See [the current acceptance report](docs/LVDS_NO_CRC_END_TO_END_REPORT.md)
+for the revised behavior; earlier CRC QA reports describe historical versions.
+
 For Windows x64 prerequisites, clone/update commands, a non-Mock Release build,
 and ZIP packaging, see [docs/WINDOWS_BUILD.md](docs/WINDOWS_BUILD.md).
 

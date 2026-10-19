@@ -18,7 +18,7 @@ fn main() -> eframe::Result<()> {
             eprintln!("--audit-pcap requires a PCAPNG path");
             std::process::exit(2);
         };
-        match backend::audit_pcap(path, arguments.iter().any(|arg| arg == "--diagnostic")) {
+        match backend::audit_pcap(path) {
             Ok(report) => println!("{report}"),
             Err(error) => {
                 eprintln!("PCAP audit failed: {error}");

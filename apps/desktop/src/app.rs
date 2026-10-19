@@ -21,7 +21,7 @@ use crate::{
         TELEMETRY_POLL_INTERVAL_MAX_MILLIS, TELEMETRY_POLL_INTERVAL_MIN_MILLIS,
         TelemetryPollingState, TelemetrySnapshot, UiRequest,
     },
-    buffer::{SamplePoint, SampleQuality, TimeSeriesBuffer},
+    buffer::{SamplePoint, TimeSeriesBuffer},
     ui::{fonts, theme},
 };
 
@@ -159,29 +159,19 @@ enum PlotLayout {
     Split,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LvdsDialog {
-    CrcDetails,
-    Replay,
-}
-
 #[derive(Debug)]
-struct LvdsDiagnosticView {
+struct LvdsView {
     status: Option<LvdsStatusSnapshot>,
-    dialog: Option<LvdsDialog>,
-    strict_crc_only: bool,
-    pending_filter: Option<bool>,
+    replay_dialog_open: bool,
     plotted_frames: u64,
     replay_path: String,
 }
 
-impl Default for LvdsDiagnosticView {
+impl Default for LvdsView {
     fn default() -> Self {
         Self {
             status: None,
-            dialog: None,
-            strict_crc_only: false,
-            pending_filter: None,
+            replay_dialog_open: false,
             plotted_frames: 0,
             replay_path: "2026101902--朗缪尔.pcapng".to_owned(),
         }
@@ -379,7 +369,7 @@ pub struct LangmuirDesktopApp {
     bridge: Box<dyn BackendBridge>,
     rs422: ConnectionPanelState,
     lvds: LvdsUdpPanelState,
-    diagnostic: LvdsDiagnosticView,
+    lvds_view: LvdsView,
     acquisition_running: bool,
     telemetry_polling: TelemetryPollingState,
     telemetry_polling_edit_millis: u32,
@@ -437,7 +427,7 @@ impl LangmuirDesktopApp {
             bridge,
             rs422: ConnectionPanelState::default(),
             lvds: LvdsUdpPanelState::default(),
-            diagnostic: LvdsDiagnosticView::default(),
+            lvds_view: LvdsView::default(),
             acquisition_running: false,
             telemetry_polling: TelemetryPollingState::default(),
             telemetry_polling_edit_millis: TELEMETRY_POLL_INTERVAL_DEFAULT_MILLIS,
@@ -611,27 +601,6 @@ impl LangmuirDesktopApp {
         }
     }
 
-    #[cfg(test)]
-    fn current_plot_contains_unverified(&self) -> bool {
-        let latest = self
-            .channel_1
-            .latest_time()
-            .into_iter()
-            .chain(self.channel_2.latest_time())
-            .reduce(f64::max)
-            .unwrap_or(PLOT_WINDOW_SECONDS);
-        let range = [latest - PLOT_WINDOW_SECONDS, latest];
-        self.channel_1.range_contains_unverified(range)
-            || self.channel_2.range_contains_unverified(range)
-    }
-
-    #[cfg(test)]
-    fn displayed_plot_contains_unverified(&self) -> bool {
-        let range = self.plot_range();
-        let (channel_1, channel_2) = self.display_histories();
-        channel_1.range_contains_unverified(range) || channel_2.range_contains_unverified(range)
-    }
-
     fn reset_plot_interaction(&mut self) {
         self.operator.frozen_plot = None;
         self.operator.plot_cursor_seconds = None;
@@ -642,53 +611,21 @@ impl LangmuirDesktopApp {
     fn clear_current_plot(&mut self) {
         self.channel_1.clear();
         self.channel_2.clear();
-        self.diagnostic.plotted_frames = 0;
+        self.lvds_view.plotted_frames = 0;
         self.reset_plot_interaction();
-    }
-
-    fn set_crc_filter(&mut self, strict: bool) {
-        if let Err(error) = self
-            .bridge
-            .request(UiRequest::SetDiagnosticPreview { enabled: !strict })
-        {
-            // A rejected send must not replace the active setting or an older
-            // request that is still waiting for its backend acknowledgement.
-            self.push_fault(
-                "CRC 绘图过滤",
-                format!("切换请求未发送，保留原过滤设置：{error}"),
-            );
-            return;
-        }
-        self.diagnostic.strict_crc_only = strict;
-        self.diagnostic.pending_filter = Some(strict);
-        self.clear_current_plot();
-        self.push_log(
-            LogLevel::Info,
-            "CRC 绘图过滤已切换；已清空波形、冻结和绘图计数，等待新数据。正式保存仍严格校验",
-        );
     }
 
     fn apply_lvds_status(&mut self, status: LvdsStatusSnapshot) {
         let source_changed = self
-            .diagnostic
+            .lvds_view
             .status
             .as_ref()
             .is_some_and(|previous| previous.source != status.source);
-        let strict = !status.diagnostic_preview;
-        let can_apply_filter = self
-            .diagnostic
-            .pending_filter
-            .is_none_or(|pending| pending == strict);
-        let filter_changed = can_apply_filter && self.diagnostic.strict_crc_only != strict;
-        if can_apply_filter {
-            self.diagnostic.strict_crc_only = strict;
-            self.diagnostic.pending_filter = None;
-        }
-        if source_changed || filter_changed {
+        if source_changed {
             self.clear_current_plot();
             self.operator.last_scientific_update = None;
         }
-        self.diagnostic.status = Some(status);
+        self.lvds_view.status = Some(status);
     }
 
     fn emergency_stop_dialog(&mut self, context: &egui::Context) {
@@ -846,7 +783,6 @@ impl LangmuirDesktopApp {
                 channel_2,
             ),
             BackendEvent::LvdsStatus(status) => self.apply_lvds_status(*status),
-            event @ BackendEvent::DiagnosticSamples { .. } => self.handle_diagnostic_event(event),
             BackendEvent::CommandSent(frame) => {
                 self.push_log(
                     LogLevel::Info,
@@ -870,54 +806,19 @@ impl LangmuirDesktopApp {
         channel_2: Vec<f64>,
     ) {
         self.operator.last_scientific_update = Some(Instant::now());
-        self.diagnostic.plotted_frames = self.diagnostic.plotted_frames.saturating_add(1);
+        self.lvds_view.plotted_frames = self.lvds_view.plotted_frames.saturating_add(1);
         extend_scientific_channel(
             &mut self.channel_1,
             channel_1_start_seconds,
             sample_interval_seconds,
             channel_1,
-            SampleQuality::Accepted,
         );
         extend_scientific_channel(
             &mut self.channel_2,
             channel_2_start_seconds,
             sample_interval_seconds,
             channel_2,
-            SampleQuality::Accepted,
         );
-    }
-
-    fn handle_diagnostic_event(&mut self, event: BackendEvent) {
-        let BackendEvent::DiagnosticSamples {
-            channel_1_start_seconds,
-            channel_2_start_seconds,
-            sample_interval_seconds,
-            channel_1,
-            channel_2,
-            ..
-        } = event
-        else {
-            return;
-        };
-        // A delayed diagnostic event must never repopulate strict mode.
-        if !self.diagnostic.strict_crc_only {
-            self.operator.last_scientific_update = Some(Instant::now());
-            self.diagnostic.plotted_frames = self.diagnostic.plotted_frames.saturating_add(1);
-            extend_scientific_channel(
-                &mut self.channel_1,
-                channel_1_start_seconds,
-                sample_interval_seconds,
-                channel_1,
-                SampleQuality::CrcUnverified,
-            );
-            extend_scientific_channel(
-                &mut self.channel_2,
-                channel_2_start_seconds,
-                sample_interval_seconds,
-                channel_2,
-                SampleQuality::CrcUnverified,
-            );
-        }
     }
 
     fn apply_state_snapshot(&mut self, snapshot: BackendStateSnapshot) {
@@ -1986,8 +1887,6 @@ impl LangmuirDesktopApp {
                 0
             },
         ];
-        let quality = (show_channels[0] && channel_1.visible_contains_unverified())
-            || (show_channels[1] && channel_2.visible_contains_unverified());
         self.measurements.prepare_ms = prepare_start.elapsed().as_secs_f64() * 1000.0;
         self.measurements.rendered = rendered;
 
@@ -2007,19 +1906,9 @@ impl LangmuirDesktopApp {
                 ui.add_sized(
                     [ui.available_width(), readout_row_height],
                     egui::Label::new(
-                        RichText::new(if quality {
-                            "CRC16 未通过：当前包含未经验证的数据"
-                        } else if rendered == [0, 0] {
-                            "尚无可校验数据"
-                        } else {
-                            "当前视图不含 CRC 未通过的样本"
-                        })
-                        .small()
-                        .color(if quality {
-                            theme::WARNING
-                        } else {
-                            theme::TEXT_MUTED
-                        }),
+                        RichText::new("科学数据未经 CRC 完整性验证")
+                            .small()
+                            .color(theme::WARNING),
                     )
                     .truncate(),
                 );
@@ -2219,12 +2108,12 @@ impl LangmuirDesktopApp {
                         self.lvds_listen_buttons(ui, &mut request, true);
                     }
                     if ui.button(if width < 320.0 { "回放" } else { "离线回放 PCAP" }).clicked() {
-                        self.diagnostic.dialog = Some(LvdsDialog::Replay);
+                        self.lvds_view.replay_dialog_open = true;
                     }
                     if width >= 320.0 {
                         self.lvds_save_button(ui, &mut request, true);
                     }
-                    self.lvds_more_menu(ui, &mut request, true);
+                    self.lvds_more_menu(ui, &mut request);
                 });
                 self.lvds_receive_status(ui, true);
             } else {
@@ -2244,17 +2133,18 @@ impl LangmuirDesktopApp {
                 });
                 central_control_row(ui, |ui| {
                     if ui.button("离线回放 PCAP").clicked() {
-                        self.diagnostic.dialog = Some(LvdsDialog::Replay);
+                        self.lvds_view.replay_dialog_open = true;
                     }
-                    self.crc_controls(ui, false);
+                    ui.add_sized([ui.available_width().max(0.0), CENTRAL_CONTROL_HEIGHT],
+                        egui::Label::new(RichText::new("科学数据未经 CRC 完整性验证").small().color(theme::WARNING)).truncate());
                 });
                 central_control_row(ui, |ui| {
                     self.lvds_save_button(ui, &mut request, false);
-                    self.lvds_more_menu(ui, &mut request, false);
+                    self.lvds_more_menu(ui, &mut request);
                     let text = self.lvds_save_summary();
                     ui.add_sized([ui.available_width().max(0.0), CENTRAL_CONTROL_HEIGHT],
                         egui::Label::new(RichText::new(&text).small().monospace()).truncate())
-                        .on_hover_text(format!("{text}\n仅 CRC 合格的 Accepted 数据进入正式保存；入队、sink 写入与成功关闭分别统计。"));
+                        .on_hover_text(format!("{text}\n科学数据未经 CRC 完整性验证；入队、sink 写入与成功关闭分别统计。"));
                 });
             }
             self.lvds_quality_grid(ui);
@@ -2345,7 +2235,7 @@ impl LangmuirDesktopApp {
     }
 
     fn lvds_save_summary(&self) -> String {
-        let storage = self.diagnostic.status.as_ref().map(|s| &s.storage);
+        let storage = self.lvds_view.status.as_ref().map(|s| &s.storage);
         let state = if storage.is_some_and(|s| s.error.is_some()) {
             "保存错误"
         } else if self.acquisition_running {
@@ -2362,13 +2252,14 @@ impl LangmuirDesktopApp {
         )
     }
 
-    fn lvds_more_menu(&mut self, ui: &mut Ui, request: &mut Option<UiRequest>, compact: bool) {
+    fn lvds_more_menu(&mut self, ui: &mut Ui, request: &mut Option<UiRequest>) {
         ui.menu_button("更多", |ui| {
-            if compact {
-                self.crc_controls(ui, false);
+            if let Some(status) = &self.lvds_view.status {
+                scientific_storage_status(ui, status);
+            } else {
                 ui.label(self.lvds_save_summary());
-                ui.separator();
             }
+            ui.separator();
             if ui.button("刷新串口").clicked() {
                 *request = Some(UiRequest::RefreshPorts);
                 ui.close();
@@ -2392,7 +2283,7 @@ impl LangmuirDesktopApp {
 
     fn lvds_receive_status(&self, ui: &mut Ui, compact: bool) {
         let raw = self
-            .diagnostic
+            .lvds_view
             .status
             .as_ref()
             .map_or(self.lvds.detail.as_str(), |s| s.receive_state.as_str());
@@ -2418,15 +2309,18 @@ impl LangmuirDesktopApp {
     }
 
     fn lvds_quality_grid(&self, ui: &mut Ui) {
-        let stats = self.diagnostic.status.as_ref().map(|s| &s.stats);
+        let stats = self.lvds_view.status.as_ref().map(|s| &s.stats);
         let values = [
             stats.map_or(0, |s| s.udp_packets),
-            stats.map_or(0, |s| s.structure_valid_frames),
-            stats.map_or(0, |s| s.crc_passed),
-            stats.map_or(0, |s| s.crc_failed),
-            self.diagnostic.plotted_frames,
+            stats.map_or(0, |s| s.parsed_frames),
+            stats.map_or(0, |s| s.parse_failures),
+            self.lvds_view.plotted_frames,
+            self.lvds_view
+                .status
+                .as_ref()
+                .map_or(0, |s| s.storage.sink_written),
         ];
-        let labels = ["接收", "结构合法", "CRC正确", "CRC错误", "绘图"];
+        let labels = ["接收", "解析成功", "解析失败", "绘图", "保存"];
         let width = ui.available_width();
         ui.spacing_mut().item_spacing.y = 0.0;
         for is_value in [false, true] {
@@ -2436,105 +2330,19 @@ impl LangmuirDesktopApp {
                     let text = if is_value { RichText::new(value.to_string()).monospace().color(theme::TEXT_SECONDARY) }
                         else { RichText::new(label).small().color(theme::TEXT_MUTED) };
                     let response = ui.add_sized([cell, if is_value { 22.0 } else { 16.0 }], egui::Label::new(text).truncate());
-                    response.on_hover_text(format!("{label}：{value}\n接收为匹配来源的 UDP；结构不等于 CRC 合格；绘图不等于正式保存。"));
+                    response.on_hover_text(format!("{label}：{value}\n接收为匹配来源的 UDP；解析成功在去重前统计；保存为 sink API 写入数，不代表断电持久化。科学数据未经 CRC 完整性验证。"));
                 }
             });
-        }
-    }
-
-    fn crc_controls(&mut self, ui: &mut Ui, compact: bool) {
-        let mut strict = self.diagnostic.strict_crc_only;
-        if ui.checkbox(&mut strict, "仅显示 CRC 正确的数据")
-            .on_hover_text("默认允许 CRC 失败且结构、时间、ADC 合法的候选绘图。切换会清空当前波形、冻结和绘图计数；正式保存始终要求 CRC 合格。")
-            .changed() {
-            self.set_crc_filter(strict);
-        }
-        if !compact && ui.button("CRC16 详情").clicked() {
-            self.diagnostic.dialog = Some(LvdsDialog::CrcDetails);
         }
     }
 
     fn lvds_dialog(&mut self, context: &egui::Context) {
-        let Some(dialog) = self.diagnostic.dialog else {
+        if !self.lvds_view.replay_dialog_open {
             return;
-        };
+        }
         let mut open = true;
-        match dialog {
-            LvdsDialog::CrcDetails => self.crc_details_dialog(context, &mut open),
-            LvdsDialog::Replay => self.replay_dialog(context, &mut open),
-        }
-        if !open {
-            self.diagnostic.dialog = None;
-        }
-    }
-
-    fn crc_details_dialog(&self, context: &egui::Context, open: &mut bool) {
-        egui::Window::new("CRC16 校验与接收详情")
-            .collapsible(false)
-            .resizable(false)
-            .default_width(600.0)
-            .vscroll(true)
-            .open(open)
-            .show(context, |ui| {
-                Grid::new("crc_algorithm_details")
-                    .num_columns(2)
-                    .show(ui, |ui| {
-                        detail_row(ui, "算法", "CRC16-CCITT-FALSE");
-                        detail_row(ui, "参数", "Poly 0x1021 · Init 0xFFFF · XorOut 0x0000");
-                        detail_row(ui, "反射", "RefIn false · RefOut false · 收到 CRC 为大端");
-                        detail_row(
-                            ui,
-                            "当前覆盖范围",
-                            "frame[7..267]，260B（厂家尚未最终确认）",
-                        );
-                    });
-                ui.separator();
-                if let Some(status) = &self.diagnostic.status {
-                    crc_runtime_details(ui, status);
-                    if let Some(detail) = &status.latest {
-                        ui.separator();
-                        Grid::new("crc_latest_details")
-                            .num_columns(2)
-                            .show(ui, |ui| {
-                                detail_row(
-                                    ui,
-                                    "完整 UDP u32 序号",
-                                    &detail.sequence.map_or_else(
-                                        || "未知（没有外层标签）".to_owned(),
-                                        |value| value.to_string(),
-                                    ),
-                                );
-                                detail_row(ui, "收到 CRC16", &format_crc(detail.received_crc));
-                                detail_row(ui, "计算 CRC16", &format_crc(detail.calculated_crc));
-                                detail_row(
-                                    ui,
-                                    "最近完整性结果",
-                                    detail.error.as_deref().unwrap_or("完整科学验证通过"),
-                                );
-                            });
-                        if ui.button("复制最近原始帧 HEX").clicked() {
-                            ui.ctx().copy_text(hex_bytes(&detail.raw));
-                        }
-                        ScrollArea::vertical()
-                            .id_salt("crc_raw_hex")
-                            .max_height(120.0)
-                            .show(ui, |ui| {
-                                ui.add(
-                                    egui::Label::new(
-                                        RichText::new(hex_bytes(&detail.raw)).monospace(),
-                                    )
-                                    .wrap(),
-                                );
-                            });
-                    } else {
-                        ui.label("尚无可校验数据");
-                    }
-                    ui.separator();
-                    scientific_storage_status(ui, status);
-                } else {
-                    ui.label("严格模式 · 尚无可校验数据");
-                }
-            });
+        self.replay_dialog(context, &mut open);
+        self.lvds_view.replay_dialog_open = open;
     }
 
     fn replay_dialog(&mut self, context: &egui::Context, open: &mut bool) {
@@ -2550,11 +2358,11 @@ impl LangmuirDesktopApp {
                 );
                 ui.label("捕获文件路径");
                 ui.add(
-                    egui::TextEdit::singleline(&mut self.diagnostic.replay_path)
+                    egui::TextEdit::singleline(&mut self.lvds_view.replay_path)
                         .desired_width(f32::INFINITY),
                 );
                 let replay_running = self
-                    .diagnostic
+                    .lvds_view
                     .status
                     .as_ref()
                     .and_then(|status| status.replay.as_ref())
@@ -2564,13 +2372,13 @@ impl LangmuirDesktopApp {
                         .add_enabled(
                             !self.acquisition_running
                                 && !replay_running
-                                && !self.diagnostic.replay_path.trim().is_empty(),
+                                && !self.lvds_view.replay_path.trim().is_empty(),
                             egui::Button::new("开始回放"),
                         )
                         .clicked()
                     {
                         request = Some(UiRequest::StartPcapReplay {
-                            path: self.diagnostic.replay_path.trim().to_owned(),
+                            path: self.lvds_view.replay_path.trim().to_owned(),
                         });
                     }
                     if ui
@@ -2583,12 +2391,10 @@ impl LangmuirDesktopApp {
                         ui.colored_label(theme::WARNING, "请先停止正式保存，再切换来源");
                     }
                 });
-                if let Some(status) = &self.diagnostic.status {
-                    ui.label(if status.diagnostic_preview {
-                        "默认绘图：CRC 失败但其余检查合格的数据直接显示；正式保存仍严格校验。"
-                    } else {
-                        "严格绘图过滤：仅显示 CRC 正确的数据。"
-                    });
+                if let Some(status) = &self.lvds_view.status {
+                    ui.label(
+                        "结构、时间及 ADC 合法的数据直接绘图和保存；科学数据未经 CRC 完整性验证。",
+                    );
                     if let Some(replay) = &status.replay {
                         ui.label(format!(
                             "{} · 总包 {} · 目标 UDP {}",
@@ -2971,7 +2777,7 @@ impl eframe::App for LangmuirDesktopApp {
         self.measurements.record(
             update_start,
             [self.channel_1.len(), self.channel_2.len()],
-            self.diagnostic.plotted_frames,
+            self.lvds_view.plotted_frames,
         );
     }
 }
@@ -3124,7 +2930,6 @@ fn extend_scientific_channel(
     start_seconds: f64,
     sample_interval_seconds: f64,
     values: Vec<f64>,
-    quality: SampleQuality,
 ) {
     buffer.extend(
         values
@@ -3133,84 +2938,11 @@ fn extend_scientific_channel(
                 let point = SamplePoint {
                     time_seconds: *time_seconds,
                     value: adc_counts_to_millivolts(value),
-                    quality,
                 };
                 *time_seconds += sample_interval_seconds;
                 Some(point)
             }),
     );
-}
-
-fn detail_row(ui: &mut Ui, label: &str, value: &str) {
-    ui.label(RichText::new(label).color(theme::TEXT_SECONDARY));
-    ui.add(egui::Label::new(value).wrap());
-    ui.end_row();
-}
-
-fn format_crc(value: Option<u16>) -> String {
-    value.map_or_else(
-        || "未知 / 数据不足".to_owned(),
-        |crc| format!("0x{crc:04X}"),
-    )
-}
-
-fn crc_runtime_details(ui: &mut Ui, status: &LvdsStatusSnapshot) {
-    Grid::new("crc_runtime_details")
-        .num_columns(2)
-        .show(ui, |ui| {
-            detail_row(
-                ui,
-                "绘图过滤",
-                if status.diagnostic_preview {
-                    "允许 CRC 失败的合法候选；正式保存仍严格校验"
-                } else {
-                    "仅显示 CRC 正确的数据"
-                },
-            );
-            detail_row(ui, "数据来源", &status.source);
-            detail_row(ui, "接收状态", &status.receive_state);
-            detail_row(
-                ui,
-                "完整帧 / 正式有效",
-                &format!(
-                    "{} / {}",
-                    status.stats.complete_frames, status.stats.accepted_frames
-                ),
-            );
-            detail_row(
-                ui,
-                "CRC 通过 / 失败",
-                &format!("{} / {}", status.stats.crc_passed, status.stats.crc_failed),
-            );
-            detail_row(
-                ui,
-                "帧头 / 长度 / 固定字段错误",
-                &format!(
-                    "{} / {} / {}",
-                    status.stats.header_errors,
-                    status.stats.length_errors,
-                    status.stats.field_errors
-                ),
-            );
-            detail_row(
-                ui,
-                "时间 / ADC 错误",
-                &format!(
-                    "{} / {}",
-                    status.stats.timestamp_errors, status.stats.adc_errors
-                ),
-            );
-            detail_row(
-                ui,
-                "诊断候选 / 重复 / 冲突",
-                &format!(
-                    "{} / {} / {}",
-                    status.stats.diagnostic_candidates,
-                    status.stats.duplicates,
-                    status.stats.conflicts
-                ),
-            );
-        });
 }
 
 fn scientific_storage_status(ui: &mut Ui, status: &LvdsStatusSnapshot) {
@@ -4021,9 +3753,9 @@ mod tests {
         COMMAND_SIDEBAR_MAX_WIDTH, COMMAND_SIDEBAR_MIN_WIDTH, COMMAND_SIDEBAR_WIDTH,
         COMPACT_COMMAND_SIDEBAR_WIDTH, COMPACT_LAYOUT_BREAKPOINT, COMPACT_TELEMETRY_SIDEBAR_WIDTH,
         HEADER_COMPACT_BREAKPOINT, HEADER_COMPACT_HEIGHT, HEADER_HEIGHT, LangmuirDesktopApp,
-        LvdsDialog, TELEMETRY_SIDEBAR_MAX_WIDTH, TELEMETRY_SIDEBAR_MIN_WIDTH,
-        TELEMETRY_SIDEBAR_WIDTH, adc_counts_to_millivolts, central_layout_rects, command_bytes,
-        command_checksum, fixed_panel_size, frequency_slider_width, hex_bytes, nearest_ui_scale,
+        TELEMETRY_SIDEBAR_MAX_WIDTH, TELEMETRY_SIDEBAR_MIN_WIDTH, TELEMETRY_SIDEBAR_WIDTH,
+        adc_counts_to_millivolts, central_layout_rects, command_bytes, command_checksum,
+        fixed_panel_size, frequency_slider_width, hex_bytes, nearest_ui_scale,
         normalize_plot_points, polling_slider_width, raw_frame_validation, recalculate_checksum,
         telemetry_preset_active, work_mode_name,
     };
@@ -4043,17 +3775,15 @@ mod tests {
         (app, endpoint)
     }
 
-    fn status(source: &str, diagnostic_preview: bool) -> LvdsStatusSnapshot {
+    fn status(source: &str) -> LvdsStatusSnapshot {
         LvdsStatusSnapshot {
             source: source.to_owned(),
-            diagnostic_preview,
             ..LvdsStatusSnapshot::default()
         }
     }
 
-    fn diagnostic_event(value: f64) -> BackendEvent {
-        BackendEvent::DiagnosticSamples {
-            sequence: Some(0),
+    fn scientific_event(value: f64) -> BackendEvent {
+        BackendEvent::ScientificSamples {
             channel_1_start_seconds: 100.0,
             channel_2_start_seconds: 100.0,
             sample_interval_seconds: 0.0004,
@@ -4111,15 +3841,12 @@ mod tests {
     }
 
     #[test]
-    fn crc_candidates_plot_by_default_and_strict_filter_discards_late_diagnostics() {
-        let (mut app, _endpoint) = lvds_test_app();
-        assert!(!app.diagnostic.strict_crc_only);
-        app.handle_backend_event(diagnostic_event(32_768.0));
+    fn scientific_frames_share_one_plot_without_crc_mode() {
+        let (mut app, endpoint) = lvds_test_app();
+        app.handle_backend_event(scientific_event(32_768.0));
         assert_eq!(app.channel_1.len(), 125);
         assert_eq!(app.channel_2.len(), 125);
-        assert!(app.displayed_plot_contains_unverified());
-        assert_eq!(app.diagnostic.plotted_frames, 1);
-
+        assert_eq!(app.lvds_view.plotted_frames, 1);
         app.handle_scientific_samples(
             101.0,
             101.0,
@@ -4131,32 +3858,15 @@ mod tests {
         let (combined, _) = app.display_plot_points();
         assert_eq!(combined[0], [100.0, 0.0]);
         assert_eq!(combined.last().unwrap()[1], 10.0);
-        app.toggle_display_freeze();
-        app.set_crc_filter(true);
-        // An old status cannot override an in-flight strict filter request.
-        app.apply_lvds_status(status("UDP session 1", true));
-        app.handle_backend_event(diagnostic_event(32_000.0));
-        assert!(app.channel_1.is_empty());
-        assert!(app.channel_2.is_empty());
-        assert!(app.operator.frozen_plot.is_none());
-        assert!(!app.displayed_plot_contains_unverified());
-        assert_eq!(app.diagnostic.plotted_frames, 0);
-        app.apply_lvds_status(status("UDP session 1", false));
-        app.handle_scientific_samples(
-            101.0,
-            101.0,
-            0.0004,
-            vec![32_832.0; 125],
-            vec![32_896.0; 125],
-        );
-        assert_eq!(app.diagnostic.plotted_frames, 1);
-        assert_eq!(app.display_plot_points().0[0], [101.0, 10.0]);
+        app.apply_lvds_status(status("UDP session 1"));
+        assert_eq!(app.lvds_view.plotted_frames, 2);
+        assert!(endpoint.request_rx.try_recv().is_err());
     }
 
     #[test]
     fn source_switch_clears_both_histories_but_status_refresh_keeps_display_freeze() {
         let (mut app, _endpoint) = lvds_test_app();
-        app.apply_lvds_status(status("UDP session 1", false));
+        app.apply_lvds_status(status("UDP session 1"));
         app.handle_scientific_samples(
             100.0,
             100.0,
@@ -4165,23 +3875,23 @@ mod tests {
             vec![32_768.0; 125],
         );
         app.toggle_display_freeze();
-        app.apply_lvds_status(status("UDP session 1", false));
+        app.apply_lvds_status(status("UDP session 1"));
         assert!(app.operator.frozen_plot.is_some());
-        app.apply_lvds_status(status("offline PCAP session 2", true));
-        app.handle_backend_event(diagnostic_event(32_768.0));
+        app.apply_lvds_status(status("offline PCAP session 2"));
+        app.handle_backend_event(scientific_event(32_768.0));
         assert_eq!(app.channel_1.len(), 125);
-        app.apply_lvds_status(status("UDP session 3", true));
+        app.apply_lvds_status(status("UDP session 3"));
         assert!(app.channel_1.is_empty());
         assert!(app.channel_2.is_empty());
-        assert_eq!(app.diagnostic.plotted_frames, 0);
+        assert_eq!(app.lvds_view.plotted_frames, 0);
         assert!(app.operator.frozen_plot.is_none());
         assert!(app.operator.last_scientific_update.is_none());
     }
 
     #[test]
-    fn mixed_waveform_quality_follows_window_freeze_clear_and_clock_restart() {
+    fn waveform_history_freeze_clear_and_clock_restart_remain_independent() {
         let (mut app, _endpoint) = lvds_test_app();
-        app.handle_backend_event(diagnostic_event(32_768.0));
+        app.handle_backend_event(scientific_event(32_768.0));
         app.handle_scientific_samples(
             101.0,
             101.0,
@@ -4189,35 +3899,30 @@ mod tests {
             vec![32_832.0; 125],
             vec![32_896.0; 125],
         );
-        assert_eq!(app.diagnostic.plotted_frames, 2);
-        assert!(app.current_plot_contains_unverified());
+        assert_eq!(app.lvds_view.plotted_frames, 2);
         assert_eq!(app.display_plot_points().0[0], [100.0, 0.0]);
         app.toggle_display_freeze();
-        // Accepted traffic ages the unverified frame out of live history.
         app.handle_scientific_samples(
-            112.0,
-            112.0,
+            172.0,
+            172.0,
             0.0004,
             vec![32_832.0; 125],
             vec![32_896.0; 125],
         );
-        assert!(!app.current_plot_contains_unverified());
-        assert!(app.displayed_plot_contains_unverified());
+        assert_eq!(app.channel_1.len(), 125);
+        assert_eq!(app.display_plot_points().0[0], [100.0, 0.0]);
         app.toggle_display_freeze();
-        assert!(!app.displayed_plot_contains_unverified());
-        // Restarting device time clears the previous epoch and its quality.
-        app.handle_backend_event(diagnostic_event(32_768.0));
-        assert!(app.current_plot_contains_unverified());
+        assert_eq!(app.display_plot_points().0[0], [172.0, 10.0]);
         app.handle_scientific_samples(1.0, 1.0, 0.0004, vec![32_768.0; 125], vec![32_768.0; 125]);
-        assert!(!app.current_plot_contains_unverified());
+        assert_eq!(app.channel_1.len(), 125);
         app.clear_current_plot();
-        assert_eq!(app.diagnostic.plotted_frames, 0);
+        assert_eq!(app.lvds_view.plotted_frames, 0);
         assert!(app.channel_1.is_empty());
-        assert!(!app.displayed_plot_contains_unverified());
+        assert!(app.display_plot_points().0.is_empty());
     }
 
     #[test]
-    fn mixed_400_frame_stream_uses_one_bounded_dual_channel_plot() {
+    fn scientific_400_frame_stream_uses_one_bounded_dual_channel_plot() {
         let (mut app, _endpoint) = lvds_test_app();
         for index in 0..400 {
             let start = 100.0 + f64::from(index) * 0.05;
@@ -4230,8 +3935,7 @@ mod tests {
                     vec![32_832.0; 125],
                 );
             } else {
-                app.handle_backend_event(BackendEvent::DiagnosticSamples {
-                    sequence: Some(index),
+                app.handle_backend_event(BackendEvent::ScientificSamples {
                     channel_1_start_seconds: start,
                     channel_2_start_seconds: start,
                     sample_interval_seconds: 0.0004,
@@ -4240,14 +3944,13 @@ mod tests {
                 });
             }
         }
-        assert_eq!(app.diagnostic.plotted_frames, 400);
+        assert_eq!(app.lvds_view.plotted_frames, 400);
         assert_eq!(
             app.channel_1.len(),
             50_000,
             "20 seconds remain in the 60 second history"
         );
         assert_eq!(app.channel_1.len(), app.channel_2.len());
-        assert!(app.current_plot_contains_unverified());
         let (channel_1, channel_2) = app.display_plot_points();
         assert!(channel_1.len() <= super::MAX_DISPLAY_POINTS);
         assert!(channel_2.len() <= super::MAX_DISPLAY_POINTS);
@@ -4282,85 +3985,84 @@ mod tests {
     }
 
     #[test]
-    fn diagnostic_dialogs_render_headlessly_without_enabling_preview_or_saving() {
+    fn replay_dialog_renders_without_starting_science_or_saving() {
         let (mut app, endpoint) = lvds_test_app();
         let context = Context::default();
-        for dialog in [LvdsDialog::CrcDetails, LvdsDialog::Replay] {
-            app.diagnostic.dialog = Some(dialog);
-            let output = context.run_ui(RawInput::default(), |ui| {
-                app.operations_panel(ui);
-                app.lvds_dialog(ui.ctx());
-            });
-            assert!(!output.shapes.is_empty());
-        }
+        app.lvds_view.replay_dialog_open = true;
+        let output = context.run_ui(RawInput::default(), |ui| {
+            app.operations_panel(ui);
+            app.lvds_dialog(ui.ctx());
+        });
+        assert!(!output.shapes.is_empty());
         assert!(endpoint.request_rx.try_recv().is_err());
         assert!(!app.acquisition_running);
-        assert!(app.diagnostic.status.is_none());
-        assert!(!app.diagnostic.strict_crc_only);
-        // Measure actual themed widgets inside the existing fixed dock.
+        assert!(app.lvds_view.status.is_none());
         super::theme::configure(&context);
         for (width, height, sidebar_width, header_height) in [
             (800.0, 600.0, 580.0, super::HEADER_COMPACT_HEIGHT),
             (1_120.0, 720.0, 680.0, super::HEADER_COMPACT_HEIGHT),
             (1_360.0, 860.0, 680.0, super::HEADER_HEIGHT),
         ] {
-            for preview_enabled in [false, true] {
-                app.apply_lvds_status(status("headless UI session", preview_enabled));
-                let root = Rect::from_min_size(
-                    pos2(8.0, header_height + 8.0),
-                    vec2(width - sidebar_width - 16.0, height - header_height - 16.0),
-                );
-                let dock = central_layout_rects(root).operations;
-                let mut actual = Rect::NOTHING;
-                let _ = context.run_ui(
-                    RawInput {
-                        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(width, height))),
-                        ..RawInput::default()
-                    },
-                    |ui| {
-                        ui.scope_builder(eframe::egui::UiBuilder::new().max_rect(dock), |ui| {
-                            app.operations_panel(ui);
-                            actual = ui.min_rect();
-                        });
-                    },
-                );
-                assert!(
-                    actual.max.x <= dock.max.x + 1.0,
-                    "{width}px dock {dock:?}, widgets {actual:?}"
-                );
-                assert!(
-                    actual.max.y <= dock.max.y + 1.0,
-                    "{height}px dock {dock:?}, widgets {actual:?}"
-                );
-            }
+            app.apply_lvds_status(status("headless UI session"));
+            let root = Rect::from_min_size(
+                pos2(8.0, header_height + 8.0),
+                vec2(width - sidebar_width - 16.0, height - header_height - 16.0),
+            );
+            let dock = central_layout_rects(root).operations;
+            let mut actual = Rect::NOTHING;
+            let _ = context.run_ui(
+                RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(width, height))),
+                    ..RawInput::default()
+                },
+                |ui| {
+                    ui.scope_builder(eframe::egui::UiBuilder::new().max_rect(dock), |ui| {
+                        app.operations_panel(ui);
+                        actual = ui.min_rect();
+                    });
+                },
+            );
+            assert!(
+                actual.max.x <= dock.max.x + 1.0,
+                "{width}px dock {dock:?}, widgets {actual:?}"
+            );
+            assert!(
+                actual.max.y <= dock.max.y + 1.0,
+                "{height}px dock {dock:?}, widgets {actual:?}"
+            );
         }
     }
 
     #[test]
-    fn crc_checkbox_is_directly_usable_while_saving_without_confirmation() {
+    fn crc_operations_are_absent_before_during_and_after_saving() {
         let (mut app, endpoint) = lvds_test_app();
         let context = Context::default();
-        app.acquisition_running = true;
-        click_lvds_button(&mut app, &context, "仅显示 CRC 正确的数据");
-        assert_eq!(
-            endpoint.request_rx.try_recv().unwrap(),
-            UiRequest::SetDiagnosticPreview { enabled: false },
-        );
-        assert!(app.diagnostic.strict_crc_only);
-        click_lvds_button(&mut app, &context, "仅显示 CRC 正确的数据");
-        assert_eq!(
-            endpoint.request_rx.try_recv().unwrap(),
-            UiRequest::SetDiagnosticPreview { enabled: true }
-        );
+        for running in [false, true, false] {
+            app.acquisition_running = running;
+            let output = render_lvds_ui(&mut app, &context, Vec::new());
+            let text: Vec<_> = output
+                .shapes
+                .iter()
+                .filter_map(|shape| match &shape.shape {
+                    Shape::Text(shape) => Some(shape.galley.text()),
+                    _ => None,
+                })
+                .collect();
+            for obsolete in [
+                "仅显示 CRC 正确的数据",
+                "CRC16 详情",
+                "严格模式",
+                "诊断模式",
+            ] {
+                assert!(!text.iter().any(|label| label.contains(obsolete)));
+            }
+            assert!(text.contains(&"科学数据未经 CRC 完整性验证"));
+        }
         assert!(endpoint.request_rx.try_recv().is_err());
-        assert!(app.diagnostic.dialog.is_none());
-        assert!(!app.diagnostic.strict_crc_only);
-        let (fresh, _) = lvds_test_app();
-        assert!(!fresh.diagnostic.strict_crc_only);
     }
 
     #[test]
-    fn crc_filter_rejected_send_preserves_effective_setting_and_prior_pending_request() {
+    fn saturated_or_disconnected_request_queue_reports_error_without_false_saving() {
         let (bridge, endpoint) = channel_bridge(1);
         let mut app = LangmuirDesktopApp::with_bridge(
             Box::new(bridge),
@@ -4368,48 +4070,23 @@ mod tests {
             #[cfg(feature = "mock")]
             false,
         );
-        app.apply_lvds_status(status("UDP session", false));
-        // Initial RefreshPorts fills the real bounded request channel.
-        app.set_crc_filter(false);
-        assert!(app.diagnostic.strict_crc_only);
-        assert_eq!(app.diagnostic.pending_filter, None);
-        assert!(
-            app.faults
-                .front()
-                .unwrap()
-                .message
-                .contains("切换请求未发送")
-        );
+        app.submit(UiRequest::StartAcquisition);
+        assert!(!app.acquisition_running);
+        assert!(app.faults.front().is_some());
         assert_eq!(
             endpoint.request_rx.try_recv().unwrap(),
             UiRequest::RefreshPorts
         );
-
-        app.set_crc_filter(false);
-        assert!(!app.diagnostic.strict_crc_only);
-        assert_eq!(app.diagnostic.pending_filter, Some(false));
-        // A second rejected request must not overwrite the earlier pending target.
-        app.set_crc_filter(true);
-        assert!(!app.diagnostic.strict_crc_only);
-        assert_eq!(app.diagnostic.pending_filter, Some(false));
+        app.submit(UiRequest::StartAcquisition);
         assert_eq!(
             endpoint.request_rx.try_recv().unwrap(),
-            UiRequest::SetDiagnosticPreview { enabled: true }
+            UiRequest::StartAcquisition
         );
-        app.apply_lvds_status(status("UDP session", true));
-        assert_eq!(app.diagnostic.pending_filter, None);
-
+        assert!(!app.acquisition_running, "wait for backend confirmation");
         drop(endpoint);
-        app.set_crc_filter(true);
-        assert!(!app.diagnostic.strict_crc_only);
-        assert_eq!(app.diagnostic.pending_filter, None);
-        assert!(
-            app.faults
-                .front()
-                .unwrap()
-                .message
-                .contains("切换请求未发送")
-        );
+        app.submit(UiRequest::StartAcquisition);
+        assert!(!app.acquisition_running);
+        assert!(app.faults.front().is_some());
     }
 
     #[test]
@@ -4417,7 +4094,7 @@ mod tests {
         let (mut app, endpoint) = lvds_test_app();
         let context = Context::default();
         click_lvds_button(&mut app, &context, "离线回放 PCAP");
-        assert_eq!(app.diagnostic.dialog, Some(LvdsDialog::Replay));
+        assert!(app.lvds_view.replay_dialog_open);
         assert!(endpoint.request_rx.try_recv().is_err());
         click_lvds_button(&mut app, &context, "开始回放");
         assert_eq!(
@@ -4426,7 +4103,6 @@ mod tests {
                 path: "2026101902--朗缪尔.pcapng".to_owned(),
             }
         );
-        assert!(!app.diagnostic.strict_crc_only);
         assert!(endpoint.request_rx.try_recv().is_err());
     }
 

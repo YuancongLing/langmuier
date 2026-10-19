@@ -1,5 +1,9 @@
 # Python-to-Rust migration notes
 
+> **科学数据未经 CRC 完整性验证。** Production LVDS reception, plotting and formal
+> saving use structure/time/ADC validation and the existing UDP deduplication gate.
+> CRC mode, filtering, details and the separate diagnostic waveform path are removed.
+
 The command and RS422 telemetry protocols follow the supplied 2026-07-24
 single-machine specification. They are not wire-compatible with the earlier
 Python implementation's 16-byte/8N1 RS422 framing.
@@ -7,12 +11,13 @@ The deployed LVDS/UDP protocol uses 269-byte reassembled raw frames, 125 samples
 channel, one timestamp, signed one-byte deltas, and a two-byte big-endian CRC16. The
 LVDS body has no packet-sequence field; the UDP wrapper sequence is used as the capture
 sequence tag. The UDP reassembler validates the wrapper, lengths, offsets, segment
-coverage, duplicates, and conflicting data before outputting a frame. CRC16 uses
-polynomial `0x1021`, initial `0xFFFF`, no reflection, and no final xor. Every formal
-decoder now rejects CRC mismatches over `frame[7..267]` (260B) before time/ADC parsing.
-This updated-table interpretation remains `SPEC_ASSUMPTION` until the manufacturer's
-actual `data` pointer and `length` are confirmed; there is no alternate-range fallback.
-Earlier anomalous captures are excluded from normal-frame acceptance evidence.
+coverage, duplicates, and conflicting data before outputting a frame. The trailer
+bytes remain present and unchanged, but every production decoder now parses time and
+ADC without calculating or comparing CRC16. The independent offline reference keeps
+polynomial `0x1021`, initial `0xFFFF`, no reflection, no final xor and the historical
+`frame[7..267]` (260B) range. That range remains `SPEC_ASSUMPTION`, pending manufacturer
+function arguments; it does not govern production acceptance. Captured data with an
+unequal trailer can now reach normal plotting and capture if its other checks pass.
 
 Partial UDP assemblies now have a two-second lifetime from first receipt; neither
 new nor duplicate fragments renew it. Expiry releases capacity automatically in
@@ -20,8 +25,8 @@ desktop and CLI receive loops. Active assemblies remain bounded to 64 slots, wit
 explicit rejection of new sequences when no slot is free; this adds no cross-frame
 ordering, completed-frame deduplication, or storage sequence-format change.
 
-Completed scientific frames now pass a separate deduplication gate after all wire
-validation. Within one filtered source/receiver session it retains full `u32`
+Completed scientific frames pass a separate deduplication gate after structure,
+device-time and ADC validation. Within one filtered source/receiver session it retains full `u32`
 sequences and raw bytes for five seconds, up to 256 accepted frames, evicting the
 oldest accepted record when full. Identical repeats are suppressed; valid different
 bytes at a retained sequence are reported as conflicts and withheld. Invalid
@@ -48,6 +53,12 @@ is included.
 - telemetry/status display, command and fault logs, CSV export;
 - bounded live two-channel plots with overlay/split views;
 - start/stop scientific capture and explicit simulation.
+
+There is one production waveform stream and no CRC selection step. A frame accepted
+by the structural/time/ADC and UDP deduplication checks is displayed even when capture
+is stopped, and goes to the existing batch writer when the user starts saving. The
+main counters distinguish matching UDP receipt, parsing success/failure, plotting and
+actual sink writes; plotting does not establish persistence.
 
 ## Deliberate differences
 
@@ -80,3 +91,6 @@ HDF5 mode writes `t1_base` (`float64`), `sequence` (`uint16`), `y1_channel`
 (`int32`, N x 125), and `y2_channel` (`int32`, N x 125). The native
 `.lpd` layout is documented in `crates/langmuir-storage/README.md`; downstream
 Python/HDF5 consumers must either enable HDF5 mode or add an `.lpd` reader.
+Native `.lpd` v2 remains a 32-byte header plus 1010 bytes per scientific record. No
+schema version, sidecar or CRC quality field is added. Files produced by the current
+acceptance policy must be described as lacking CRC integrity verification.

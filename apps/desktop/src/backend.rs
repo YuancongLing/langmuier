@@ -19,7 +19,7 @@ use langmuir_core::{
     Command, DEPLOYED_LVDS_RAW_FRAME_LEN, FrameError, LvdsStreamDecoder, Rs422StreamDecoder,
     Rs422Telemetry, SAMPLE_INTERVAL_MICROS, ScientificFrame, UdpLvdsDisposition, UdpLvdsError,
     UdpLvdsReassembler, UdpLvdsScienceGate, UdpLvdsSequenceMetrics, UdpLvdsSequenceMonitor,
-    diagnose_scientific_frame, parse_udp_lvds_datagram,
+    parse_udp_lvds_datagram,
 };
 use langmuir_storage::{BatchWriter, StorageEvent, StorageServiceConfig};
 #[cfg(not(any(feature = "hdf5", feature = "hdf5-static")))]
@@ -35,9 +35,9 @@ use langmuir_transport::{CapturePacket, PcapNgReader};
 
 use crate::bridge::{
     BackendBridge, BackendEvent, BackendStateSnapshot, BridgeError, LinkKind, LinkMetricsSnapshot,
-    LogLevel, LvdsDiagnosticStats, LvdsFrameDetail, LvdsStatusSnapshot, ReplayProgress,
-    ScientificStorageStatus, TELEMETRY_POLL_INTERVAL_MAX_MILLIS,
-    TELEMETRY_POLL_INTERVAL_MIN_MILLIS, TelemetrySnapshot, UiRequest,
+    LogLevel, LvdsReceiveStats, LvdsStatusSnapshot, ReplayProgress, ScientificStorageStatus,
+    TELEMETRY_POLL_INTERVAL_MAX_MILLIS, TELEMETRY_POLL_INTERVAL_MIN_MILLIS, TelemetrySnapshot,
+    UiRequest,
 };
 
 const BRIDGE_REQUEST_CAPACITY: usize = 128;
@@ -69,20 +69,6 @@ fn source_identity(label: &str) -> String {
     }
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
-enum CrcMode {
-    Strict,
-    #[default]
-    DiagnosticPreview,
-}
-
-/// One ordered display/storage delivery per completed candidate. Unverified
-/// events can only reach the display branch, never the scientific writer.
-enum LvdsDelivery {
-    Accepted(ScientificFrame),
-    Unverified(BackendEvent),
-}
-
 /// File I/O stays on this bounded worker; pacing and protocol state stay in
 /// the controller. Cancellation never sends a network packet.
 struct PcapReplay {
@@ -98,7 +84,7 @@ struct PcapReplay {
 }
 
 impl PcapReplay {
-    fn start(path: String, diagnostic: bool) -> std::io::Result<Self> {
+    fn start(path: String) -> std::io::Result<Self> {
         let (tx, packets) = bounded(64);
         let (cancel, cancelled) = bounded(1);
         let worker_path = path.clone();
@@ -144,12 +130,11 @@ impl PcapReplay {
                     }
                 }
             })?;
-        let mut ingress = UdpLvdsIngress::new(
+        let ingress = UdpLvdsIngress::new(
             DEPLOYED_LVDS_UDP_SOURCE
                 .parse()
                 .expect("fixed source endpoint"),
         );
-        ingress.diagnostic_preview = diagnostic;
         Ok(Self {
             packets,
             cancel,
@@ -169,7 +154,7 @@ impl PcapReplay {
         })
     }
 
-    fn drain_deliveries(&mut self, now: Instant, deliveries: &mut Vec<LvdsDelivery>) {
+    fn drain_deliveries(&mut self, now: Instant, deliveries: &mut Vec<ScientificFrame>) {
         if self.progress.finished {
             return;
         }
@@ -224,7 +209,7 @@ impl PcapReplay {
                     break;
                 };
                 self.ingress
-                    .push_delivery_at(udp.source, &udp.payload, protocol_now, |delivery| {
+                    .push_at(udp.source, &udp.payload, protocol_now, |delivery| {
                         deliveries.push(delivery)
                     });
             }
@@ -237,23 +222,6 @@ impl PcapReplay {
             });
             if let Some(time) = self.started.checked_add(offset) {
                 self.ingress.expire_at(time);
-            }
-        }
-    }
-
-    #[cfg(test)]
-    fn drain(
-        &mut self,
-        now: Instant,
-        frames: &mut Vec<ScientificFrame>,
-        previews: &mut Vec<BackendEvent>,
-    ) {
-        let mut deliveries = Vec::new();
-        self.drain_deliveries(now, &mut deliveries);
-        for delivery in deliveries {
-            match delivery {
-                LvdsDelivery::Accepted(frame) => frames.push(frame),
-                LvdsDelivery::Unverified(event) => previews.push(event),
             }
         }
     }
@@ -272,21 +240,19 @@ impl Drop for PcapReplay {
 
 /// Headless, read-only audit using the exact live protocol ingress. Capture
 /// timestamps drive protocol deadlines; no wall-clock sleeping or network I/O.
-pub fn audit_pcap(path: &str, diagnostic: bool) -> Result<String, String> {
+pub fn audit_pcap(path: &str) -> Result<String, String> {
     let file = fs::File::open(path).map_err(|e| e.to_string())?;
     let mut reader = PcapNgReader::new(std::io::BufReader::new(file));
     let source = DEPLOYED_LVDS_UDP_SOURCE
         .parse()
         .map_err(|e: std::net::AddrParseError| e.to_string())?;
     let mut ingress = UdpLvdsIngress::new(source);
-    ingress.diagnostic_preview = diagnostic;
     let start = Instant::now();
     let mut first = None;
     let mut last = None;
     let mut total = 0_u64;
     let mut target = 0_u64;
     let mut formal = 0_u64;
-    let mut previews = 0_u64;
     while let Some(packet) = reader.next_packet().map_err(|e| e.to_string())? {
         let epoch = *first.get_or_insert(packet.timestamp);
         if packet.timestamp < epoch || last.is_some_and(|last| packet.timestamp < last) {
@@ -304,21 +270,12 @@ pub fn audit_pcap(path: &str, diagnostic: bool) -> Result<String, String> {
             ingress.push_at(udp.source, &udp.payload, at, |_| {
                 formal = formal.saturating_add(1)
             });
-            if ingress.preview.take().is_some() {
-                previews = previews.saturating_add(1);
-            }
         }
         ingress.expire_at(at);
     }
     Ok(format!(
-        "mode={} total_packets={total} target_udp_packets={target} formal_science={formal} diagnostic_previews={previews} file_frames=NOT_RUN\nstats={:?}\nprotocol={:?}\nlatest={:?}",
-        if diagnostic { "diagnostic" } else { "strict" },
-        ingress.diagnostic_stats,
-        ingress.metrics,
-        ingress
-            .latest
-            .as_ref()
-            .map(|f| (f.sequence, f.received_crc, f.calculated_crc, &f.error))
+        "crc_validation=disabled total_packets={total} target_udp_packets={target} formal_science={formal} file_frames=NOT_RUN\nstats={:?}\nprotocol={:?}",
+        ingress.receive_stats, ingress.metrics,
     ))
 }
 
@@ -376,10 +333,8 @@ struct UdpLvdsIngress {
     science_gate: UdpLvdsScienceGate,
     sequence_monitor: UdpLvdsSequenceMonitor,
     metrics: ReaderMetricsSnapshot,
-    diagnostic_preview: bool,
-    diagnostic_stats: LvdsDiagnosticStats,
-    latest: Option<LvdsFrameDetail>,
-    preview: Option<BackendEvent>,
+    receive_stats: LvdsReceiveStats,
+    last_parse_error: Option<FrameError>,
     last_datagram: Option<Instant>,
     last_science: Option<Instant>,
 }
@@ -398,7 +353,7 @@ impl UdpLvdsReceiver {
     fn drain(
         &mut self,
         limit: usize,
-        mut on_delivery: impl FnMut(LvdsDelivery),
+        mut on_delivery: impl FnMut(ScientificFrame),
     ) -> std::io::Result<()> {
         // The controller drains on every tick, including quiet sockets. Keep
         // incomplete-frame lifetime and visible gauges independent of traffic.
@@ -413,7 +368,7 @@ impl UdpLvdsReceiver {
                     return Err(error);
                 }
             };
-            self.ingress.push_delivery_at(
+            self.ingress.push_at(
                 source,
                 &self.buffer[..bytes],
                 Instant::now(),
@@ -437,10 +392,8 @@ impl UdpLvdsIngress {
             science_gate: UdpLvdsScienceGate::default(),
             sequence_monitor: UdpLvdsSequenceMonitor::default(),
             metrics: ReaderMetricsSnapshot::default(),
-            diagnostic_preview: true,
-            diagnostic_stats: LvdsDiagnosticStats::default(),
-            latest: None,
-            preview: None,
+            receive_stats: LvdsReceiveStats::default(),
+            last_parse_error: None,
             last_datagram: None,
             last_science: None,
         }
@@ -449,23 +402,6 @@ impl UdpLvdsIngress {
     #[cfg(test)]
     fn push(&mut self, source: SocketAddr, bytes: &[u8], on_frame: impl FnMut(ScientificFrame)) {
         self.push_at(source, bytes, Instant::now(), on_frame);
-    }
-
-    fn push_delivery_at(
-        &mut self,
-        source: SocketAddr,
-        bytes: &[u8],
-        now: Instant,
-        mut on_delivery: impl FnMut(LvdsDelivery),
-    ) {
-        // Drain after every datagram, before processing another candidate. This
-        // preserves mixed CRC-quality order and cannot coalesce bad-CRC frames.
-        self.push_at(source, bytes, now, |frame| {
-            on_delivery(LvdsDelivery::Accepted(frame));
-        });
-        if let Some(preview) = self.preview.take() {
-            on_delivery(LvdsDelivery::Unverified(preview));
-        }
     }
 
     fn push_at(
@@ -480,7 +416,7 @@ impl UdpLvdsIngress {
             return;
         }
         self.last_datagram = Some(now);
-        self.diagnostic_stats.udp_packets = self.diagnostic_stats.udp_packets.saturating_add(1);
+        self.receive_stats.udp_packets = self.receive_stats.udp_packets.saturating_add(1);
         self.metrics.read_calls = self.metrics.read_calls.saturating_add(1);
         self.metrics.bytes_read = self
             .metrics
@@ -491,7 +427,7 @@ impl UdpLvdsIngress {
             self.record_udp_fragment_error();
             return;
         };
-        self.diagnostic_stats.outer_valid = self.diagnostic_stats.outer_valid.saturating_add(1);
+        self.receive_stats.outer_valid = self.receive_stats.outer_valid.saturating_add(1);
         let frame_length = usize::try_from(datagram.header.frame_length).unwrap_or(usize::MAX);
         if frame_length != DEPLOYED_LVDS_RAW_FRAME_LEN {
             // This length is declared by the UDP envelope, before an inner
@@ -503,8 +439,8 @@ impl UdpLvdsIngress {
         self.sync_reassembly_metrics();
         match result {
             Ok(Some(frame)) => {
-                self.inspect_complete(&frame.bytes, frame.frame_sequence);
                 let result = self.science_gate.accept_at(&frame, now);
+                self.record_complete_result(result.as_ref().err());
                 self.sync_dedup_metrics();
                 match result {
                     Ok(outcome) => {
@@ -572,18 +508,19 @@ impl UdpLvdsIngress {
         self.metrics.dedup_cached_frames = u64::try_from(metrics.cached_frames).unwrap_or(u64::MAX);
         self.metrics.dedup_cached_bytes =
             u64::try_from(metrics.cached_payload_bytes).unwrap_or(u64::MAX);
-        self.diagnostic_stats.accepted_frames = metrics.accepted_frames;
-        self.diagnostic_stats.duplicates = metrics.duplicate_frames;
-        self.diagnostic_stats.conflicts = metrics.sequence_conflicts;
+        self.receive_stats.accepted_frames = metrics.accepted_frames;
+        self.receive_stats.duplicates = metrics.duplicate_frames;
+        self.receive_stats.conflicts = metrics.sequence_conflicts;
     }
 
-    fn inspect_complete(&mut self, bytes: &[u8], sequence: u32) {
-        let [_, _, high, low] = sequence.to_be_bytes();
-        let diagnosis = diagnose_scientific_frame(bytes, u16::from_be_bytes([high, low]));
-        let stats = &mut self.diagnostic_stats;
+    /// Reuses the gate's parse result: no second decoder, CRC calculation, or
+    /// raw-byte modification is involved in receive/display/storage admission.
+    fn record_complete_result(&mut self, error: Option<&FrameError>) {
+        self.last_parse_error = error.cloned();
+        let stats = &mut self.receive_stats;
         stats.complete_frames = stats.complete_frames.saturating_add(1);
         if !matches!(
-            diagnosis.error,
+            error,
             Some(
                 FrameError::InvalidHeader { .. }
                     | FrameError::InvalidTail { .. }
@@ -594,20 +531,8 @@ impl UdpLvdsIngress {
         ) {
             stats.structure_valid_frames = stats.structure_valid_frames.saturating_add(1);
         }
-        if let (Some(received), Some(calculated)) =
-            (diagnosis.received_crc, diagnosis.calculated_crc)
-        {
-            if received == calculated {
-                stats.crc_passed = stats.crc_passed.saturating_add(1);
-            } else {
-                stats.crc_failed = stats.crc_failed.saturating_add(1);
-            }
-        }
-        for error in diagnosis
-            .error
-            .iter()
-            .chain(diagnosis.secondary_error.iter())
-        {
+        if let Some(error) = error {
+            stats.parse_failures = stats.parse_failures.saturating_add(1);
             let counter = match error {
                 FrameError::InvalidHeader { .. } | FrameError::InvalidTail { .. } => {
                     &mut stats.header_errors
@@ -618,41 +543,13 @@ impl UdpLvdsIngress {
                 FrameError::UnexpectedField { .. } => &mut stats.field_errors,
                 FrameError::FieldOutOfRange { .. } => &mut stats.timestamp_errors,
                 FrameError::SampleOutOfRange { .. } => &mut stats.adc_errors,
-                FrameError::ChecksumMismatch { .. } => continue,
+                // Shared error enum includes RS422 checksum errors; the LVDS
+                // production decoder no longer produces this variant.
+                FrameError::ChecksumMismatch { .. } => return,
             };
             *counter = counter.saturating_add(1);
-        }
-        let error = diagnosis
-            .error
-            .as_ref()
-            .map(ToString::to_string)
-            .map(|mut error| {
-                if let Some(secondary) = &diagnosis.secondary_error {
-                    let _ = write!(error, "; {secondary}");
-                }
-                error
-            });
-        self.latest = Some(LvdsFrameDetail {
-            sequence: Some(sequence),
-            received_crc: diagnosis.received_crc,
-            calculated_crc: diagnosis.calculated_crc,
-            error,
-            raw: bytes.to_vec(),
-        });
-        if let Some(preview) = diagnosis.preview {
-            stats.diagnostic_candidates = stats.diagnostic_candidates.saturating_add(1);
-            if !self.diagnostic_preview {
-                return;
-            }
-            let frame = preview.frame();
-            self.preview = Some(BackendEvent::DiagnosticSamples {
-                sequence: Some(sequence),
-                channel_1_start_seconds: frame.channel_1_base_seconds(),
-                channel_2_start_seconds: frame.channel_2_base_seconds(),
-                sample_interval_seconds: f64::from(SAMPLE_INTERVAL_MICROS) / 1_000_000.0,
-                channel_1: frame.channel_1.iter().map(|&v| f64::from(v)).collect(),
-                channel_2: frame.channel_2.iter().map(|&v| f64::from(v)).collect(),
-            });
+        } else {
+            stats.parsed_frames = stats.parsed_frames.saturating_add(1);
         }
     }
 
@@ -663,12 +560,12 @@ impl UdpLvdsIngress {
         if now.saturating_duration_since(last) >= Duration::from_secs(2) {
             return "数据流超时 / 中断";
         }
-        if self
-            .latest
-            .as_ref()
-            .is_some_and(|frame| frame.error.is_some())
-        {
-            return "收到 LVDS，校验失败";
+        if let Some(error) = &self.last_parse_error {
+            return if matches!(error, FrameError::FieldOutOfRange { .. }) {
+                "科学帧解析失败：无法建立可信设备时间"
+            } else {
+                "收到 LVDS，解析失败"
+            };
         }
         if self
             .last_science
@@ -836,7 +733,7 @@ struct Controller {
     critical_event_reclaim: Receiver<BackendEvent>,
     display_events: Sender<BackendEvent>,
     display_event_reclaim: Option<Receiver<BackendEvent>>,
-    last_lvds_view: Option<(String, bool)>,
+    last_lvds_view: Option<String>,
     dropped_critical: Arc<AtomicU64>,
     latest_state: Arc<Mutex<BackendStateSnapshot>>,
     rs422_display_dropped: AtomicU64,
@@ -865,7 +762,6 @@ struct Controller {
     capture_path: Option<PathBuf>,
     replay: Option<PcapReplay>,
     lvds_source: String,
-    crc_mode: CrcMode,
     storage_status: ScientificStorageStatus,
     last_lvds_status: Instant,
 }
@@ -914,7 +810,6 @@ impl Controller {
             capture_path: None,
             replay: None,
             lvds_source: String::new(),
-            crc_mode: CrcMode::default(),
             storage_status: ScientificStorageStatus::default(),
             last_lvds_status: Instant::now(),
         }
@@ -979,7 +874,6 @@ impl Controller {
             }
             UiRequest::StartAcquisition => self.start_acquisition(),
             UiRequest::StopAcquisition => self.stop_acquisition_at_ui_boundary(),
-            UiRequest::SetDiagnosticPreview { enabled } => self.set_diagnostic_preview(enabled),
             UiRequest::StartPcapReplay { path } => self.start_pcap_replay(&path),
             UiRequest::StopPcapReplay => {
                 if self.replay.is_some() {
@@ -1002,23 +896,6 @@ impl Controller {
         }
     }
 
-    fn set_diagnostic_preview(&mut self, enabled: bool) {
-        self.crc_mode = if enabled {
-            CrcMode::DiagnosticPreview
-        } else {
-            CrcMode::Strict
-        };
-        if let Some(receiver) = &mut self.lvds_udp {
-            receiver.ingress.diagnostic_preview = enabled;
-            receiver.ingress.preview = None;
-        }
-        if let Some(replay) = &mut self.replay {
-            replay.ingress.diagnostic_preview = enabled;
-            replay.ingress.preview = None;
-        }
-        self.publish_lvds_status();
-    }
-
     fn start_pcap_replay(&mut self, path: &str) {
         if self.acquisition_running {
             self.fault("PCAP", "请先停止正式保存，再切换数据来源");
@@ -1027,7 +904,7 @@ impl Controller {
         if !self.disconnect(LinkKind::Lvds) {
             return;
         }
-        match PcapReplay::start(path.to_owned(), self.crc_mode == CrcMode::DiagnosticPreview) {
+        match PcapReplay::start(path.to_owned()) {
             Ok(replay) => {
                 self.replay = Some(replay);
                 self.lvds_connected = true;
@@ -1055,7 +932,7 @@ impl Controller {
             replay.drain_deliveries(Instant::now(), &mut deliveries);
         }
         for delivery in deliveries {
-            self.handle_lvds_delivery(delivery);
+            self.handle_scientific_frame(delivery);
         }
         if !was_finished && self.replay.as_ref().is_some_and(|r| r.progress.finished) {
             let error = self.replay.as_ref().and_then(|r| r.progress.error.clone());
@@ -1115,11 +992,9 @@ impl Controller {
             "未监听".to_owned()
         };
         LvdsStatusSnapshot {
-            diagnostic_preview: self.crc_mode == CrcMode::DiagnosticPreview,
             source: self.lvds_source.clone(),
             receive_state,
-            stats: ingress.map_or_else(LvdsDiagnosticStats::default, |i| i.diagnostic_stats),
-            latest: ingress.and_then(|i| i.latest.clone()),
+            stats: ingress.map_or_else(LvdsReceiveStats::default, |i| i.receive_stats),
             replay: self.replay.as_ref().map(|r| r.progress.clone()),
             storage: self.storage_status.clone(),
         }
@@ -1128,7 +1003,7 @@ impl Controller {
     fn publish_lvds_status(&mut self) {
         self.last_lvds_status = Instant::now();
         let status = self.lvds_status();
-        let view = (status.source.clone(), status.diagnostic_preview);
+        let view = status.source.clone();
         if self.last_lvds_view.as_ref() != Some(&view) {
             // Clear stale visuals at the producer boundary. Clearing later in
             // the bridge could also discard new-source frames already queued
@@ -1228,7 +1103,7 @@ impl Controller {
                 return;
             }
         };
-        let mut receiver = match UdpLvdsReceiver::bind(socket_address, expected_source) {
+        let receiver = match UdpLvdsReceiver::bind(socket_address, expected_source) {
             Ok(receiver) => receiver,
             Err(error) => {
                 self.fault("LVDS / UDP", error.to_string());
@@ -1242,7 +1117,6 @@ impl Controller {
                 return;
             }
         };
-        receiver.ingress.diagnostic_preview = self.crc_mode == CrcMode::DiagnosticPreview;
         self.lvds_source = source_identity(&format!("实时 UDP {endpoint} <- {expected_source}"));
         self.lvds_udp = Some(receiver);
         self.lvds_connected = true;
@@ -1674,14 +1548,7 @@ impl Controller {
             }
         }
         for delivery in deliveries {
-            self.handle_lvds_delivery(delivery);
-        }
-    }
-
-    fn handle_lvds_delivery(&mut self, delivery: LvdsDelivery) {
-        match delivery {
-            LvdsDelivery::Accepted(frame) => self.handle_scientific_frame(frame),
-            LvdsDelivery::Unverified(event) => self.emit_display(LinkKind::Lvds, event),
+            self.handle_scientific_frame(delivery);
         }
     }
 
@@ -2535,7 +2402,7 @@ mod tests {
         let first = deployed_lvds_payload();
         let second = next_deployed_lvds_payload();
         let mut corrupt = first.clone();
-        corrupt[268] ^= 1;
+        corrupt[0] ^= 1;
         let now = Instant::now();
         occupy_reassembly_capacity(&mut ingress, source, &first, now);
         assert!(stored.lock().unwrap().is_empty());
@@ -2578,11 +2445,9 @@ mod tests {
         assert_eq!(ingress.metrics.reassembly_pending_frames, 0);
         assert_eq!(ingress.metrics.reassembly_buffered_bytes, 0);
         assert_eq!(ingress.metrics.udp_fragment_errors, 0);
-        assert_eq!(ingress.metrics.checksum_failures, 1);
-        assert_eq!(
-            ingress.metrics.last_checksum_mismatch,
-            Some((0x44C8, 0x44C9))
-        );
+        assert_eq!(ingress.metrics.checksum_failures, 0);
+        assert_eq!(ingress.metrics.header_failures, 1);
+        assert_eq!(ingress.metrics.last_checksum_mismatch, None);
         controller
             .scientific_writer
             .take()
@@ -2647,7 +2512,7 @@ mod tests {
         let first = deployed_lvds_payload();
         let different = next_deployed_lvds_payload();
         let mut corrupt = first.clone();
-        corrupt[268] ^= 1;
+        corrupt[0] ^= 1;
         let now = Instant::now();
         let mut delivered = Vec::new();
         ingress.push_at(
@@ -2680,7 +2545,8 @@ mod tests {
         assert_eq!(ingress.metrics.scientific_frames_delivered, 3);
         assert_eq!(ingress.metrics.duplicate_frames_suppressed, 1);
         assert_eq!(ingress.metrics.sequence_conflicts, 1);
-        assert_eq!(ingress.metrics.checksum_failures, 1);
+        assert_eq!(ingress.metrics.checksum_failures, 0);
+        assert_eq!(ingress.metrics.header_failures, 1);
         assert_eq!(ingress.metrics.rejected_frames, 2);
         assert_eq!(ingress.metrics.dedup_cached_frames, 3);
         assert_eq!(ingress.metrics.dedup_cached_bytes, 3 * 269);
@@ -2782,7 +2648,7 @@ mod tests {
         let valid = deployed_lvds_payload();
         let different = next_deployed_lvds_payload();
         let mut corrupt = valid.clone();
-        corrupt[268] ^= 1;
+        corrupt[0] ^= 1;
         let now = Instant::now();
         let mut delivered = Vec::new();
         for (sequence, payload) in [
@@ -2810,7 +2676,8 @@ mod tests {
         assert_eq!(ingress.metrics.udp_sequence.forward_jumps, 1);
         assert_eq!(ingress.metrics.udp_sequence.pending_gaps, 1);
         assert_eq!(ingress.metrics.udp_sequence.expired_gaps, 0);
-        assert_eq!(ingress.metrics.checksum_failures, 1);
+        assert_eq!(ingress.metrics.checksum_failures, 0);
+        assert_eq!(ingress.metrics.header_failures, 1);
         assert_eq!(ingress.metrics.duplicate_frames_suppressed, 1);
         assert_eq!(ingress.metrics.sequence_conflicts, 1);
         let deadline = now + Duration::from_secs(2);
@@ -2945,9 +2812,6 @@ mod tests {
         bad[5] = 0x06;
         variants.push(bad);
         let mut bad = valid.clone();
-        bad[268] ^= 1;
-        variants.push(bad);
-        let mut bad = valid.clone();
         bad[11..15].copy_from_slice(&1_000_000_u32.to_be_bytes());
         refresh_reference_crc(&mut bad);
         variants.push(bad);
@@ -2967,18 +2831,18 @@ mod tests {
             panic!("truncated frame crossed the normal data gate");
         });
         assert_eq!(ingress.metrics.frames_decoded, 0);
-        assert_eq!(ingress.metrics.rejected_frames, 8);
+        assert_eq!(ingress.metrics.rejected_frames, 7);
         assert_eq!(ingress.metrics.length_failures, 1);
         assert_eq!(ingress.metrics.udp_fragment_errors, 1);
         assert_eq!(ingress.metrics.header_failures, 1);
         assert_eq!(ingress.metrics.field_failures, 2);
-        assert_eq!(ingress.metrics.checksum_failures, 1);
+        assert_eq!(ingress.metrics.checksum_failures, 0);
         assert_eq!(ingress.metrics.timestamp_failures, 1);
         assert_eq!(ingress.metrics.sample_failures, 1);
-        assert_eq!(
-            ingress.metrics.last_checksum_mismatch,
-            Some((0x44C8, 0x44C9))
-        );
+        assert_eq!(ingress.metrics.last_checksum_mismatch, None);
+        assert_eq!(ingress.receive_stats.complete_frames, 6);
+        assert_eq!(ingress.receive_stats.parsed_frames, 0);
+        assert_eq!(ingress.receive_stats.parse_failures, 6);
     }
 
     #[test]
@@ -3166,7 +3030,7 @@ mod tests {
     }
 
     #[test]
-    fn repeated_crc_failures_are_aggregated_into_one_quality_log_per_snapshot() {
+    fn repeated_time_failures_are_aggregated_into_one_quality_log_per_snapshot() {
         let source: SocketAddr = "192.0.2.1:1534".parse().unwrap();
         let mut ingress = UdpLvdsIngress::new(source);
         let (critical_tx, critical_rx) = bounded(8);
@@ -3179,17 +3043,18 @@ mod tests {
             Arc::new(Mutex::new(BackendStateSnapshot::default())),
         );
         let mut corrupt = deployed_lvds_payload();
-        corrupt[268] ^= 1;
+        corrupt[11..15].copy_from_slice(&1_000_000_u32.to_be_bytes());
         for sequence in 0..512 {
             ingress.push(
                 source,
                 &udp_lvds_datagram(sequence, corrupt.len(), &corrupt),
-                |_| panic!("bad CRC must not invoke the data handler"),
+                |_| panic!("invalid device time must not invoke the data handler"),
             );
         }
         assert!(critical_rx.is_empty());
         assert_eq!(ingress.metrics.rejected_frames, 512);
-        assert_eq!(ingress.metrics.checksum_failures, 512);
+        assert_eq!(ingress.metrics.checksum_failures, 0);
+        assert_eq!(ingress.metrics.timestamp_failures, 512);
         assert_eq!(ingress.metrics.frames_decoded, 0);
         controller.report_metric_growth(
             LinkKind::Lvds,
@@ -3202,13 +3067,12 @@ mod tests {
         assert!(matches!(
             &messages[0],
             BackendEvent::Log { level: LogLevel::Warning, message }
-                if message.contains("校验失败=512")
-                    && message.contains("计算值=0x44C8")
-                    && message.contains("收到值=0x44C9")
+                if message.contains("时间失败=512") && !message.contains("校验失败")
         ));
         let visible = super::ui_metrics(&ingress.metrics, 0);
-        assert_eq!(visible.checksum_failures, 512);
-        assert_eq!(visible.last_checksum_mismatch, Some((0x44C8, 0x44C9)));
+        assert_eq!(visible.checksum_failures, 0);
+        assert_eq!(visible.timestamp_failures, 512);
+        assert_eq!(visible.last_checksum_mismatch, None);
     }
 
     #[test]
@@ -3389,7 +3253,7 @@ mod tests {
     }
 
     #[test]
-    fn mixed_plot_deliveries_preserve_candidate_order_without_coalescing() {
+    fn mixed_crc_trailers_preserve_science_order_without_coalescing() {
         let source = "192.0.2.1:1534".parse().unwrap();
         let mut ingress = UdpLvdsIngress::new(source);
         let valid = deployed_lvds_payload();
@@ -3398,7 +3262,7 @@ mod tests {
         let mut deliveries = Vec::new();
         let now = Instant::now();
         for (sequence, bytes) in [(1, &bad_crc), (2, &valid), (3, &bad_crc)] {
-            ingress.push_delivery_at(
+            ingress.push_at(
                 source,
                 &udp_lvds_datagram(sequence, bytes.len(), bytes),
                 now,
@@ -3406,29 +3270,17 @@ mod tests {
             );
         }
         assert_eq!(deliveries.len(), 3);
-        assert!(matches!(
-            &deliveries[0],
-            super::LvdsDelivery::Unverified(BackendEvent::DiagnosticSamples {
-                sequence: Some(1),
-                ..
-            })
-        ));
-        assert!(matches!(
-            &deliveries[1],
-            super::LvdsDelivery::Accepted(frame) if frame.sequence == 2
-        ));
-        assert!(matches!(
-            &deliveries[2],
-            super::LvdsDelivery::Unverified(BackendEvent::DiagnosticSamples {
-                sequence: Some(3),
-                ..
-            })
-        ));
-        assert!(ingress.preview.is_none());
-        assert_eq!(ingress.diagnostic_stats.structure_valid_frames, 3);
-        assert_eq!(ingress.diagnostic_stats.diagnostic_candidates, 2);
-        assert_eq!(ingress.diagnostic_stats.accepted_frames, 1);
-        assert_eq!(ingress.metrics.udp_sequence.observed_frames, 1);
+        assert_eq!(
+            deliveries.iter().map(|f| f.sequence).collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+        assert_eq!(deliveries[0].channel_1, deliveries[1].channel_1);
+        assert_eq!(deliveries[1].channel_2, deliveries[2].channel_2);
+        assert_eq!(ingress.receive_stats.structure_valid_frames, 3);
+        assert_eq!(ingress.receive_stats.parsed_frames, 3);
+        assert_eq!(ingress.receive_stats.accepted_frames, 3);
+        assert_eq!(ingress.metrics.udp_sequence.observed_frames, 3);
+        assert_eq!(ingress.metrics.checksum_failures, 0);
     }
 
     #[test]
@@ -3460,9 +3312,9 @@ mod tests {
         assert_eq!(display_rx.len(), 1);
         controller.publish_lvds_status();
         assert_eq!(display_rx.len(), 1);
-        controller.set_diagnostic_preview(false);
+        controller.lvds_source = "third receiver".to_owned();
+        controller.publish_lvds_status();
         assert!(display_rx.is_empty());
-        assert!(!controller.lvds_status().diagnostic_preview);
     }
 
     #[test]

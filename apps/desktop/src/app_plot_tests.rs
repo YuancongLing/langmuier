@@ -114,17 +114,15 @@ fn plot_left_drag_enters_manual_and_incoming_samples_do_not_steal_view() {
 }
 
 #[test]
-fn plot_plain_wheel_zooms_and_hover_updates_even_with_crc_warning() {
+fn plot_plain_wheel_zooms_and_hover_updates_with_integrity_notice() {
     let mut app = test_app();
-    app.handle_backend_event(BackendEvent::DiagnosticSamples {
-        sequence: Some(1),
+    app.handle_backend_event(BackendEvent::ScientificSamples {
         channel_1_start_seconds: 140.0,
         channel_2_start_seconds: 140.0,
         sample_interval_seconds: 0.0004,
         channel_1: vec![32_768.0; 125],
         channel_2: vec![32_832.0; 125],
     });
-    assert!(app.displayed_plot_contains_unverified());
     let context = Context::default();
     render(&mut app, &context, vec![]);
     render(&mut app, &context, vec![]);

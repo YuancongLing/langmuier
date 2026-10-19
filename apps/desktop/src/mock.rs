@@ -16,18 +16,11 @@ const MOCK_FRAME_INTERVAL: Duration = Duration::from_millis(50);
 const MOCK_SAMPLES_PER_FRAME: u32 = 125;
 const SAMPLE_INTERVAL_SECONDS: f64 = 0.0004;
 
-#[derive(Clone, Copy)]
-enum MockCrcMode {
-    Strict,
-    DiagnosticPreview,
-}
-
 pub struct MockBridge {
     events: VecDeque<BackendEvent>,
     rs422_connected: bool,
     lvds_connected: bool,
     acquisition_running: bool,
-    crc_mode: MockCrcMode,
     telemetry_poll_interval: Option<Duration>,
     next_telemetry_request: Instant,
     next_frame: Instant,
@@ -48,7 +41,6 @@ impl MockBridge {
             rs422_connected: false,
             lvds_connected: false,
             acquisition_running: false,
-            crc_mode: MockCrcMode::DiagnosticPreview,
             telemetry_poll_interval: None,
             next_telemetry_request: Instant::now(),
             next_frame: Instant::now(),
@@ -75,8 +67,7 @@ impl MockBridge {
     fn queue_lvds_status(&mut self) {
         self.events
             .push_back(BackendEvent::LvdsStatus(Box::new(LvdsStatusSnapshot {
-                diagnostic_preview: matches!(self.crc_mode, MockCrcMode::DiagnosticPreview),
-                source: "MOCK 合成数据（未经过真实 UDP / CRC16 门禁）".to_owned(),
+                source: "MOCK 合成数据（未经过真实 UDP 解析）".to_owned(),
                 receive_state: if self.acquisition_running {
                     "MOCK 合成波形运行中；不写科学文件"
                 } else if self.lvds_connected {
@@ -219,15 +210,6 @@ impl MockBridge {
         self.queue_due_telemetry_request(Instant::now());
     }
 
-    fn set_diagnostic_preview(&mut self, enabled: bool) {
-        self.crc_mode = if enabled {
-            MockCrcMode::DiagnosticPreview
-        } else {
-            MockCrcMode::Strict
-        };
-        self.queue_lvds_status();
-    }
-
     fn reject_pcap_replay(&mut self) {
         self.events.push_back(BackendEvent::Fault {
             source: "PCAPNG 回放".to_owned(),
@@ -314,7 +296,6 @@ impl BackendBridge for MockBridge {
                     .push_back(BackendEvent::AcquisitionChanged { running: false });
                 self.queue_lvds_status();
             }
-            UiRequest::SetDiagnosticPreview { enabled } => self.set_diagnostic_preview(enabled),
             UiRequest::StartPcapReplay { .. } => self.reject_pcap_replay(),
             UiRequest::StopPcapReplay => self.stop_pcap_replay(),
             UiRequest::SetTelemetryPolling {
@@ -433,16 +414,8 @@ mod tests {
     }
 
     #[test]
-    fn mock_preview_status_never_fabricates_crc_validation() {
-        let mut bridge = MockBridge::new();
-        assert!(matches!(
-            bridge.crc_mode,
-            super::MockCrcMode::DiagnosticPreview
-        ));
-        bridge.events.clear();
-        bridge
-            .request(UiRequest::SetDiagnosticPreview { enabled: true })
-            .unwrap();
+    fn mock_status_never_fabricates_real_packets_or_storage() {
+        let bridge = MockBridge::new();
         let status = bridge
             .events
             .iter()
@@ -451,10 +424,8 @@ mod tests {
                 _ => None,
             })
             .unwrap();
-        assert!(status.diagnostic_preview);
         assert!(status.source.contains("MOCK 合成"));
-        assert_eq!(status.stats, crate::bridge::LvdsDiagnosticStats::default());
-        assert!(status.latest.is_none());
+        assert_eq!(status.stats, crate::bridge::LvdsReceiveStats::default());
         assert!(status.replay.is_none());
         assert_eq!(
             status.storage,
@@ -475,10 +446,12 @@ mod tests {
             event, BackendEvent::Fault { source, message }
                 if source == "PCAPNG 回放" && message.contains("不带 --mock")
         )));
-        assert!(!bridge.events.iter().any(|event| matches!(
-            event,
-            BackendEvent::ScientificSamples { .. } | BackendEvent::DiagnosticSamples { .. }
-        )));
+        assert!(
+            !bridge
+                .events
+                .iter()
+                .any(|event| matches!(event, BackendEvent::ScientificSamples { .. }))
+        );
         assert!(!bridge.lvds_connected);
         assert!(!bridge.acquisition_running);
     }

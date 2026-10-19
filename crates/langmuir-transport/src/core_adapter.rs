@@ -44,10 +44,7 @@ impl_decoder_adapter!(LvdsStreamDecoder, ScientificFrame);
 mod tests {
     use std::time::Duration;
 
-    use langmuir_core::{
-        LVDS_CRC_CALC_END, LVDS_CRC_CALC_START, LVDS_CRC_FIELD_OFFSET, LvdsStreamDecoder,
-        Rs422StreamDecoder, crc16_ccitt_false,
-    };
+    use langmuir_core::{LVDS_CRC_FIELD_OFFSET, LvdsStreamDecoder, Rs422StreamDecoder};
 
     use crate::mock::{lvds_packet, memory_transport, rs422_packet};
     use crate::{ReaderConfig, ReaderEvent, ReaderWorker, StopReason};
@@ -109,15 +106,10 @@ mod tests {
     }
 
     #[test]
-    fn reader_rejects_bad_crc_without_emitting_a_scientific_frame() {
+    fn reader_accepts_decodable_scientific_change_without_updating_crc() {
         let (transport, mut input) = memory_transport(1, Duration::from_millis(5)).unwrap();
         let mut corrupt = lvds_packet(9, 1_700_000_000);
-        let actual = u16::from_be_bytes([
-            corrupt[LVDS_CRC_FIELD_OFFSET],
-            corrupt[LVDS_CRC_FIELD_OFFSET + 1],
-        ]);
         corrupt[19] ^= 0x02;
-        let expected = crc16_ccitt_false(&corrupt[LVDS_CRC_CALC_START..LVDS_CRC_CALC_END]);
         input.feed(corrupt).unwrap();
         input.close();
         let mut worker = ReaderWorker::spawn(
@@ -132,23 +124,25 @@ mod tests {
         .unwrap();
         let exit = worker.join().unwrap();
         assert_eq!(exit.reason, StopReason::EndOfStream);
-        assert!(
-            worker
-                .events()
-                .try_iter()
-                .all(|event| !matches!(event, ReaderEvent::Frame(_)))
-        );
-        assert_eq!(exit.metrics.frames_decoded, 0);
-        assert_eq!(exit.metrics.rejected_frames, 1);
-        assert_eq!(exit.metrics.checksum_failures, 1);
-        assert_eq!(
-            exit.metrics.last_checksum_mismatch,
-            Some((expected, actual))
-        );
+        let frames: Vec<_> = worker
+            .events()
+            .try_iter()
+            .filter_map(|event| match event {
+                ReaderEvent::Frame(frame) => Some(frame),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].channel_1[0], 2057);
+        assert_eq!(frames[0].channel_1[1], 2060);
+        assert_eq!(exit.metrics.frames_decoded, 1);
+        assert_eq!(exit.metrics.rejected_frames, 0);
+        assert_eq!(exit.metrics.checksum_failures, 0);
+        assert_eq!(exit.metrics.last_checksum_mismatch, None);
     }
 
     #[test]
-    fn reader_resynchronizes_after_crc_error_without_losing_valid_frames() {
+    fn reader_delivers_all_frames_when_only_the_crc_trailer_changes() {
         let (transport, mut input) = memory_transport(1, Duration::from_millis(5)).unwrap();
         let mut corrupt = lvds_packet(11, 1_700_000_000);
         corrupt[LVDS_CRC_FIELD_OFFSET + 1] ^= 0x01;
@@ -179,12 +173,13 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(frames.len(), 2);
+        assert_eq!(frames.len(), 3);
         assert_eq!(frames[0].channel_1[0], 2_057);
-        assert_eq!(frames[1].channel_1[0], 2_058);
-        assert_eq!(exit.metrics.frames_decoded, 2);
-        assert_eq!(exit.metrics.rejected_frames, 1);
-        assert_eq!(exit.metrics.checksum_failures, 1);
-        assert!(exit.metrics.resync_bytes >= 269);
+        assert_eq!(frames[1].channel_1[0], 2_059);
+        assert_eq!(frames[2].channel_1[0], 2_058);
+        assert_eq!(exit.metrics.frames_decoded, 3);
+        assert_eq!(exit.metrics.rejected_frames, 0);
+        assert_eq!(exit.metrics.checksum_failures, 0);
+        assert_eq!(exit.metrics.resync_bytes, 0);
     }
 }

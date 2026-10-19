@@ -28,16 +28,17 @@ fn packet_at_50ms_interval(frame_index: u32) -> Vec<u8> {
 }
 
 #[test]
-fn fragmented_valid_lvds_reaches_storage_while_bad_crc_is_excluded() {
+fn fragmented_decodable_lvds_reaches_storage_with_unchecked_crc_and_rejects_bad_structure() {
     const FRAME_COUNT: u32 = 4;
     let (transport, mut input) = memory_transport(256, Duration::from_millis(5)).unwrap();
     let chunk_pattern = [1_usize, 7, 31, 257, 1_024];
     for frame_index in 0..FRAME_COUNT {
-        let packet = packet_at_50ms_interval(frame_index);
+        let mut packet = packet_at_50ms_interval(frame_index);
         if frame_index == 1 {
-            let mut corrupt = packet.clone();
-            corrupt[LVDS_CRC_FIELD_OFFSET] ^= 0x01;
-            input.feed(corrupt).unwrap();
+            let mut invalid_structure = packet.clone();
+            invalid_structure[2] = 0;
+            input.feed(invalid_structure).unwrap();
+            packet[LVDS_CRC_FIELD_OFFSET] ^= 0x01;
         }
         let mut offset = 0;
         let mut pattern_index = 0;
@@ -103,7 +104,7 @@ fn fragmented_valid_lvds_reaches_storage_while_bad_crc_is_excluded() {
     assert_eq!(received, FRAME_COUNT);
     assert_eq!(reader_exit.metrics.frames_decoded, u64::from(FRAME_COUNT));
     assert_eq!(reader_exit.metrics.rejected_frames, 1);
-    assert_eq!(reader_exit.metrics.checksum_failures, 1);
+    assert_eq!(reader_exit.metrics.checksum_failures, 0);
     assert_eq!(reader_exit.metrics.events_dropped, 0);
     assert_eq!(reader_exit.metrics.queue_overflows, 0);
     assert_eq!(writer_exit.metrics.written_items, u64::from(FRAME_COUNT));

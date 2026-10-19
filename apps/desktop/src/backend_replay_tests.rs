@@ -94,11 +94,10 @@ fn controller() -> (Controller, Receiver<BackendEvent>) {
 }
 
 #[test]
-fn default_replay_four_hundred_crc_failures_refresh_both_channels_without_saving() {
+fn replay_four_hundred_frames_ignore_tail_and_refresh_both_channels_without_saving() {
     let started = Instant::now();
     let (replay, tx, _cancelled) = replay(started);
     let (mut controller, display) = controller();
-    assert!(controller.lvds_status().diagnostic_preview);
     controller.replay = Some(replay);
     let mut points = [0_u64; 2];
     for sequence in 0..400_u32 {
@@ -108,15 +107,14 @@ fn default_replay_four_hundred_crc_failures_refresh_both_channels_without_saving
         let mut raw = wire();
         raw[7..11].copy_from_slice(&utc.to_be_bytes());
         raw[11..15].copy_from_slice(&micros.to_be_bytes());
-        let wrong_crc = langmuir_core::crc16_ccitt_false(&raw[7..267]) ^ 1;
-        raw[267..269].copy_from_slice(&wrong_crc.to_be_bytes());
+        // Keep arbitrary tail bytes while scientific timestamps change.
+        raw[267..269].copy_from_slice(&[0, 0]);
         let delay = Duration::from_millis(u64::from(sequence) * 50);
         tx.send(Ok(Some(captured(delay, datagram(sequence, &raw, 1)))))
             .unwrap();
         controller.replay.as_mut().unwrap().started = Instant::now().checked_sub(delay).unwrap();
         controller.drain_replay();
-        let BackendEvent::DiagnosticSamples {
-            sequence: event_sequence,
+        let BackendEvent::ScientificSamples {
             channel_1_start_seconds,
             channel_2_start_seconds,
             sample_interval_seconds,
@@ -126,9 +124,8 @@ fn default_replay_four_hundred_crc_failures_refresh_both_channels_without_saving
             .try_recv()
             .expect("default replay must deliver a plotting event")
         else {
-            panic!("CRC failure must retain its unverified quality type");
+            panic!("decodable replay data uses the ordinary scientific route");
         };
-        assert_eq!(event_sequence, Some(sequence));
         let expected_time = f64::from(utc) + f64::from(micros) / 1_000_000.0;
         assert_eq!(channel_1_start_seconds, expected_time);
         assert_eq!(channel_2_start_seconds, expected_time);
@@ -140,15 +137,6 @@ fn default_replay_four_hundred_crc_failures_refresh_both_channels_without_saving
         points[1] += u64::try_from(channel_2.len()).unwrap();
         assert!(display.is_empty());
         assert!(tx.len() <= 1);
-        assert!(
-            controller
-                .replay
-                .as_ref()
-                .unwrap()
-                .ingress
-                .preview
-                .is_none()
-        );
         assert!(controller.scientific_writer.is_none());
     }
     tx.send(Ok(None)).unwrap();
@@ -156,23 +144,23 @@ fn default_replay_four_hundred_crc_failures_refresh_both_channels_without_saving
     let replay = controller.replay.as_ref().unwrap();
     assert!(replay.progress.finished);
     assert_eq!(replay.progress.error, None);
-    assert_eq!(replay.ingress.diagnostic_stats.complete_frames, 400);
-    assert_eq!(replay.ingress.diagnostic_stats.diagnostic_candidates, 400);
-    assert_eq!(replay.ingress.diagnostic_stats.crc_failed, 400);
-    assert_eq!(replay.ingress.diagnostic_stats.accepted_frames, 0);
-    assert_eq!(replay.ingress.metrics.udp_sequence.observed_frames, 0);
+    assert_eq!(replay.ingress.receive_stats.complete_frames, 400);
+    assert_eq!(replay.ingress.receive_stats.parsed_frames, 400);
+    assert_eq!(replay.ingress.receive_stats.parse_failures, 0);
+    assert_eq!(replay.ingress.receive_stats.accepted_frames, 400);
+    assert_eq!(replay.ingress.metrics.udp_sequence.observed_frames, 400);
     assert_eq!(points, [50_000; 2]);
     assert_eq!(controller.storage_status.enqueued, 0);
 }
 
 #[test]
-fn mixed_replay_keeps_quality_order_and_plot_filter_can_change_while_saving() {
+fn mixed_replay_preserves_science_order_and_saves_all_decodable_unique_frames() {
     let started = Instant::now();
     let (replay, tx, _cancelled) = replay(started);
     let (mut controller, display) = controller();
     controller.replay = Some(replay);
     let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("mixed-filter.lpd");
+    let path = directory.path().join("mixed-science.lpd");
     controller.scientific_writer = Some(
         BatchWriter::start(
             BinarySink::create(BinaryConfig::new(&path)).unwrap(),
@@ -197,71 +185,41 @@ fn mixed_replay_keeps_quality_order_and_plot_filter_can_change_while_saving() {
     controller.drain_replay();
     let events: Vec<_> = display.try_iter().collect();
     assert_eq!(events.len(), 3);
-    assert!(matches!(
-        events[0],
-        BackendEvent::DiagnosticSamples {
-            sequence: Some(1),
-            ..
-        }
-    ));
-    assert!(matches!(events[1], BackendEvent::ScientificSamples { .. }));
-    assert!(matches!(
-        events[2],
-        BackendEvent::DiagnosticSamples {
-            sequence: Some(3),
-            ..
-        }
-    ));
-
-    controller.set_diagnostic_preview(false);
     assert!(
-        !controller
-            .replay
-            .as_ref()
-            .unwrap()
-            .ingress
-            .diagnostic_preview
-    );
-    tx.send(Ok(Some(captured(Duration::ZERO, datagram(5, &bad, 1)))))
-        .unwrap();
-    controller.drain_replay();
-    assert!(
-        display.is_empty(),
-        "strict plotting filter suppresses CRC failures"
+        events
+            .iter()
+            .all(|event| matches!(event, BackendEvent::ScientificSamples { .. }))
     );
     assert!(controller.acquisition_running);
-    controller.set_diagnostic_preview(true);
-    assert!(
-        controller
-            .replay
-            .as_ref()
-            .unwrap()
-            .ingress
-            .diagnostic_preview
-    );
-    tx.send(Ok(Some(captured(Duration::ZERO, datagram(6, &bad, 1)))))
+    // A complete duplicate stays suppressed even though the CRC gate is gone.
+    tx.send(Ok(Some(captured(Duration::ZERO, datagram(3, &bad, 1)))))
+        .unwrap();
+    tx.send(Ok(Some(captured(Duration::ZERO, datagram(5, &bad, 1)))))
         .unwrap();
     tx.send(Ok(None)).unwrap();
     controller.drain_replay();
     assert!(matches!(
         display.try_recv().unwrap(),
-        BackendEvent::DiagnosticSamples {
-            sequence: Some(6),
-            ..
-        }
+        BackendEvent::ScientificSamples { .. }
     ));
     assert!(display.is_empty());
     assert!(controller.storage_status.closed);
-    assert_eq!(controller.storage_status.enqueued, 1);
-    assert_eq!(controller.storage_status.sink_written, 1);
+    assert_eq!(controller.storage_status.enqueued, 4);
+    assert_eq!(controller.storage_status.sink_written, 4);
     let bytes = std::fs::read(path).unwrap();
-    assert_eq!(bytes.len(), 32 + 1010);
-    assert_eq!(u16::from_le_bytes(bytes[40..42].try_into().unwrap()), 2);
-    let stats = controller.replay.as_ref().unwrap().ingress.diagnostic_stats;
+    assert_eq!(bytes.len(), 32 + 4 * 1010);
+    let sequences: Vec<_> = bytes[32..]
+        .as_chunks::<1010>()
+        .0
+        .iter()
+        .map(|record| u16::from_le_bytes(record[8..10].try_into().unwrap()))
+        .collect();
+    assert_eq!(sequences, [1, 2, 3, 5]);
+    let stats = controller.replay.as_ref().unwrap().ingress.receive_stats;
     assert_eq!(stats.complete_frames, 6);
-    assert_eq!((stats.crc_passed, stats.crc_failed), (1, 5));
-    assert_eq!(stats.diagnostic_candidates, 4);
-    assert_eq!(stats.accepted_frames, 1);
+    assert_eq!((stats.parsed_frames, stats.parse_failures), (5, 1));
+    assert_eq!(stats.accepted_frames, 4);
+    assert_eq!(stats.duplicates, 1);
     assert_eq!(stats.header_errors, 1);
 }
 
@@ -279,22 +237,13 @@ fn replay_preserves_packet_time_pacing_and_explicit_eof() {
     }
     tx.send(Ok(None)).unwrap();
     let mut frames = Vec::new();
-    let mut previews = Vec::new();
-    replay.drain(started, &mut frames, &mut previews);
+    replay.drain_deliveries(started, &mut frames);
     assert_eq!(frames.len(), 1);
     assert_eq!(replay.progress.total_packets, 1);
     assert!(!replay.progress.finished);
-    replay.drain(
-        started + Duration::from_millis(49),
-        &mut frames,
-        &mut previews,
-    );
+    replay.drain_deliveries(started + Duration::from_millis(49), &mut frames);
     assert_eq!(frames.len(), 1);
-    replay.drain(
-        started + Duration::from_millis(50),
-        &mut frames,
-        &mut previews,
-    );
+    replay.drain_deliveries(started + Duration::from_millis(50), &mut frames);
     assert_eq!(
         frames
             .iter()
@@ -306,7 +255,6 @@ fn replay_preserves_packet_time_pacing_and_explicit_eof() {
     assert_eq!(replay.progress.target_udp_packets, 2);
     assert!(replay.progress.finished);
     assert!(replay.progress.error.is_none());
-    assert!(previews.is_empty());
 }
 
 #[test]
@@ -325,33 +273,20 @@ fn replay_silence_expires_residuals_and_sequence_gaps_before_next_packet() {
     }
     tx.send(Ok(None)).unwrap();
     let mut frames = Vec::new();
-    let mut previews = Vec::new();
-    replay.drain(
-        started + Duration::from_millis(200),
-        &mut frames,
-        &mut previews,
-    );
+    replay.drain_deliveries(started + Duration::from_millis(200), &mut frames);
     assert_eq!(frames.len(), 2);
     assert_eq!(replay.ingress.metrics.udp_sequence.pending_gaps, 1);
     assert_eq!(replay.ingress.metrics.reassembly_pending_frames, 1);
-    replay.drain(
-        started + Duration::from_millis(2_100),
-        &mut frames,
-        &mut previews,
-    );
+    replay.drain_deliveries(started + Duration::from_millis(2_100), &mut frames);
     assert_eq!(frames.len(), 2);
     assert_eq!(replay.ingress.metrics.udp_sequence.pending_gaps, 0);
     assert_eq!(replay.ingress.metrics.udp_sequence.expired_gaps, 1);
     assert_eq!(replay.ingress.metrics.reassembly_pending_frames, 1);
-    replay.drain(
-        started + Duration::from_millis(2_200),
-        &mut frames,
-        &mut previews,
-    );
+    replay.drain_deliveries(started + Duration::from_millis(2_200), &mut frames);
     assert_eq!(replay.ingress.metrics.reassembly_pending_frames, 0);
     assert_eq!(replay.ingress.metrics.reassembly_timeouts, 1);
     assert!(!replay.progress.finished);
-    replay.drain(started + Duration::from_secs(3), &mut frames, &mut previews);
+    replay.drain_deliveries(started + Duration::from_secs(3), &mut frames);
     assert_eq!(
         frames
             .iter()
@@ -378,12 +313,12 @@ fn replay_counts_all_packets_and_filters_original_source_without_rewriting() {
         .unwrap();
     tx.send(Ok(None)).unwrap();
     let mut frames = Vec::new();
-    replay.drain(started, &mut frames, &mut Vec::new());
+    replay.drain_deliveries(started, &mut frames);
     assert_eq!(replay.progress.total_packets, 3);
     assert_eq!(replay.progress.target_udp_packets, 1);
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].sequence, 10);
-    assert_eq!(replay.ingress.diagnostic_stats.udp_packets, 1);
+    assert_eq!(replay.ingress.receive_stats.udp_packets, 1);
 }
 
 #[test]
@@ -392,7 +327,7 @@ fn replay_reports_reader_errors_and_unexpected_disconnect_separately_from_eof() 
     let (mut failed, tx, _cancelled) = replay(started);
     tx.send(Err("malformed capture fixture".to_owned()))
         .unwrap();
-    failed.drain(started, &mut Vec::new(), &mut Vec::new());
+    failed.drain_deliveries(started, &mut Vec::new());
     assert!(failed.progress.finished);
     assert_eq!(
         failed.progress.error.as_deref(),
@@ -401,7 +336,7 @@ fn replay_reports_reader_errors_and_unexpected_disconnect_separately_from_eof() 
 
     let (mut disconnected, tx, _cancelled) = replay(started);
     drop(tx);
-    disconnected.drain(started, &mut Vec::new(), &mut Vec::new());
+    disconnected.drain_deliveries(started, &mut Vec::new());
     assert!(disconnected.progress.finished);
     assert!(
         disconnected
@@ -425,7 +360,7 @@ fn replay_rejects_backward_timestamps_without_delivering_the_old_packet() {
         .unwrap();
     }
     let mut frames = Vec::new();
-    replay.drain(started, &mut frames, &mut Vec::new());
+    replay.drain_deliveries(started, &mut frames);
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].sequence, 100);
     assert!(replay.progress.finished);
@@ -455,7 +390,7 @@ fn background_reader_preserves_capture_bytes_and_reports_truncation() {
         255, 255, 255, 255, 255, 28, 0, 0, 0,
     ];
     std::fs::write(&path, section).unwrap();
-    let replay = PcapReplay::start(path.display().to_string(), false).unwrap();
+    let replay = PcapReplay::start(path.display().to_string()).unwrap();
     assert_eq!(
         replay.packets.recv_timeout(Duration::from_secs(2)).unwrap(),
         Ok(None)
@@ -465,7 +400,7 @@ fn background_reader_preserves_capture_bytes_and_reports_truncation() {
 
     let broken = directory.path().join("truncated.pcapng");
     std::fs::write(&broken, &section[..11]).unwrap();
-    let replay = PcapReplay::start(broken.display().to_string(), false).unwrap();
+    let replay = PcapReplay::start(broken.display().to_string()).unwrap();
     assert!(
         replay
             .packets

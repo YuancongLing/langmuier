@@ -585,8 +585,8 @@ impl PendingFrame {
 mod tests {
     use std::time::{Duration, Instant};
 
+    use crate::decode_scientific_frame;
     use crate::lvds::test_support::golden_frame;
-    use crate::{FrameError, decode_scientific_frame};
 
     use super::{
         DEFAULT_UDP_LVDS_REASSEMBLY_TTL, DEPLOYED_LVDS_RAW_FRAME_LEN, UDP_LVDS_HEADER_LEN,
@@ -850,7 +850,7 @@ mod tests {
     }
 
     #[test]
-    fn ttl_t11_bad_science_crc_is_separate_from_successful_reassembly() {
+    fn ttl_t11_unchecked_science_trailer_survives_reassembly_and_decoding() {
         let now = Instant::now();
         let mut reassembler = bounded_reassembler();
         let mut bad = golden_frame();
@@ -860,10 +860,10 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(complete.bytes, bad);
-        assert!(matches!(
+        assert_eq!(
             decode_scientific_frame(&complete.bytes),
-            Err(FrameError::ChecksumMismatch { .. })
-        ));
+            decode_scientific_frame(&golden_frame())
+        );
         let metrics = reassembler.metrics();
         assert_eq!(metrics.completed_frames, 1);
         assert_eq!(metrics.expired_frames, 0);

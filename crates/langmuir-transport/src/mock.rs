@@ -199,7 +199,7 @@ pub fn checksum8(bytes: &[u8]) -> u8 {
 #[cfg(test)]
 mod tests {
     use langmuir_core::{
-        FrameError, SAMPLE_COUNT, SAMPLE_INTERVAL_MICROS, UDP_LVDS_HEADER_LEN, UdpLvdsReassembler,
+        SAMPLE_COUNT, SAMPLE_INTERVAL_MICROS, UDP_LVDS_HEADER_LEN, UdpLvdsReassembler,
         decode_scientific_frame, decode_scientific_frame_with_sequence, parse_udp_lvds_datagram,
     };
 
@@ -246,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn protocol_mock_checks_crc_before_delivering_two_channels() {
+    fn protocol_mock_delivers_both_channels_without_crc_acceptance_gate() {
         // CRC values independently calculated with the manufacturer's C function.
         let first = golden_frame(1_694_498_816, 999_800, 0x44C8);
         let second = golden_frame(1_694_498_817, 49_800, 0x5EF9);
@@ -272,9 +272,8 @@ mod tests {
                 Err(error) => errors.push(error),
             }
         }
-        assert_eq!(normal_frames.len(), 2);
-        assert_eq!(errors.len(), 1);
-        assert!(matches!(errors[0], FrameError::ChecksumMismatch { .. }));
+        assert_eq!(normal_frames.len(), 3);
+        assert_eq!(errors.len(), 0);
         for frame in &normal_frames {
             assert_eq!(frame.channel_1.len(), SAMPLE_COUNT);
             assert_eq!(frame.channel_2.len(), SAMPLE_COUNT);
@@ -285,8 +284,9 @@ mod tests {
             }
         }
         assert_eq!(normal_frames[0].sequence, 41);
-        assert_eq!(normal_frames[1].sequence, 43);
-        let elapsed = normal_frames[1].timestamp.as_seconds_f64()
+        assert_eq!(normal_frames[1].sequence, 42);
+        assert_eq!(normal_frames[2].sequence, 43);
+        let elapsed = normal_frames[2].timestamp.as_seconds_f64()
             - normal_frames[0].timestamp.as_seconds_f64();
         assert!((elapsed - 0.05).abs() < 0.000_001);
         assert_eq!(SAMPLE_INTERVAL_MICROS, 400);

@@ -52,7 +52,7 @@ fn run(arguments: &[String]) -> Result<String, String> {
 fn decode_lvds_output(bytes: &[u8]) -> Result<String, String> {
     let frame = decode_scientific_frame(bytes).map_err(|error| error.to_string())?;
     Ok(format!(
-        "timestamp={:?}\nsequence={}\nch1_first={}\nch2_first={}\nsamples={}",
+        "timestamp={:?}\nsequence={}\nch1_first={}\nch2_first={}\nsamples={}\nintegrity=CRC_NOT_CHECKED",
         frame.timestamp,
         frame.sequence,
         frame.channel_1[0],
@@ -224,7 +224,7 @@ fn receive_udp_lvds(arguments: &[String]) -> Result<String, String> {
     );
     let dedup = science_gate.metrics();
     let scientific_diagnostics = format!(
-        "science validated={}; duplicates suppressed={}; sequence conflicts={}; unique frames written={completed_frames}; dedup cached={}; dedup payload bytes={}; rejected scientific frames={rejected_scientific_frames}; last scientific error={}",
+        "science parsed={}; integrity=CRC_NOT_CHECKED; duplicates suppressed={}; sequence conflicts={}; unique frames written={completed_frames}; dedup cached={}; dedup payload bytes={}; rejected scientific frames={rejected_scientific_frames}; last scientific error={}",
         dedup.validated_frames,
         dedup.duplicate_frames,
         dedup.sequence_conflicts,
@@ -242,7 +242,7 @@ fn receive_udp_lvds(arguments: &[String]) -> Result<String, String> {
         ));
     }
     Ok(format!(
-        "validated {completed_frames} LVDS frames ({output_offset} bytes, {DEPLOYED_LVDS_RAW_FRAME_LEN} bytes/frame) from {received_datagrams} UDP datagrams; rejected datagrams={rejected_datagrams}; {reassembly_diagnostics}; {scientific_diagnostics}; {sequence_diagnostics}; index={index_path}"
+        "parsed {completed_frames} LVDS frames ({output_offset} bytes, {DEPLOYED_LVDS_RAW_FRAME_LEN} bytes/frame) from {received_datagrams} UDP datagrams; rejected datagrams={rejected_datagrams}; {reassembly_diagnostics}; {scientific_diagnostics}; {sequence_diagnostics}; index={index_path}"
     ))
 }
 
@@ -348,7 +348,7 @@ mod tests {
     use super::{decode_lvds_output, parse_hex, run};
 
     #[test]
-    fn lvds_cli_decodes_the_independent_golden_frame_and_rejects_bad_crc() {
+    fn lvds_cli_decodes_golden_frame_and_ignores_crc_trailer_changes() {
         // Fixed CRC 44C8 was calculated using the manufacturer's C reference,
         // not the production Rust checksum function. DATA is 01 FF x 124.
         let mut frame = [0_u8; 269];
@@ -369,9 +369,14 @@ mod tests {
         assert!(output.contains("samples=125"));
 
         frame[268] ^= 1;
-        let error = decode_lvds_output(&frame).unwrap_err();
-        assert!(error.contains("0x44C9"));
-        assert!(error.contains("0x44C8"));
+        assert_eq!(decode_lvds_output(&frame).unwrap(), output);
+        assert!(output.contains("integrity=CRC_NOT_CHECKED"));
+        frame[11..15].copy_from_slice(&1_000_000_u32.to_be_bytes());
+        assert!(
+            decode_lvds_output(&frame)
+                .unwrap_err()
+                .contains("microseconds")
+        );
     }
 
     #[test]

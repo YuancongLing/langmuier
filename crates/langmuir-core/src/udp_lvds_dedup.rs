@@ -42,7 +42,7 @@ impl UdpLvdsScienceResult {
 /// Counters cover complete science validation and the subsequent delivery gate.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct UdpLvdsDedupMetrics {
-    /// Complete structure, CRC16, time, and ADC validation successes, including
+    /// Complete structure, time, and ADC validation successes, including
     /// valid duplicates and conflicts. Invalid candidates do not increment it.
     pub validated_frames: u64,
     pub duplicate_frames: u64,
@@ -122,7 +122,7 @@ impl UdpLvdsScienceGate {
     ///
     /// # Errors
     ///
-    /// Returns the strict scientific decoder's structural, CRC, time, or ADC
+    /// Returns the scientific decoder's structural, time, or ADC
     /// error. Such candidates never enter the cache or validation counters.
     pub fn accept_at(
         &mut self,
@@ -201,7 +201,7 @@ mod tests {
         UdpLvdsScienceGate,
     };
     use crate::{
-        FrameError, LVDS_FRAME_LEN, ReassembledLvdsFrame, UdpLvdsError,
+        LVDS_FRAME_LEN, ReassembledLvdsFrame, UdpLvdsError,
         lvds::test_support::{golden_frame, refresh_crc16},
     };
     use std::time::{Duration, Instant};
@@ -266,25 +266,22 @@ mod tests {
     }
 
     #[test]
-    fn bad_crc_does_not_register_or_replace_accepted_state() {
+    fn unchecked_crc_trailer_is_accepted_and_raw_bytes_still_define_deduplication() {
         let now = Instant::now();
         let good = complete(21);
         let mut bad = good.clone();
         bad.bytes[268] ^= 1;
         let mut gate = UdpLvdsScienceGate::default();
-        assert!(matches!(
-            gate.accept_at(&bad, now),
-            Err(FrameError::ChecksumMismatch { .. })
-        ));
-        assert_eq!(gate.metrics().cached_frames, 0);
-        assert_eq!(gate.metrics().validated_frames, 0);
-        assert_disposition(&mut gate, &good, now, UdpLvdsDisposition::Accepted);
-        assert!(matches!(
-            gate.accept_at(&bad, now),
-            Err(FrameError::ChecksumMismatch { .. })
-        ));
-        assert_disposition(&mut gate, &good, now, UdpLvdsDisposition::Duplicate);
-        assert_eq!(gate.metrics().sequence_conflicts, 0);
+        assert_disposition(&mut gate, &bad, now, UdpLvdsDisposition::Accepted);
+        assert_disposition(&mut gate, &bad, now, UdpLvdsDisposition::Duplicate);
+        // Trailer bytes remain part of the unchanged 269-byte identity. A
+        // different trailer at the same full sequence is still a conflict.
+        assert_disposition(&mut gate, &good, now, UdpLvdsDisposition::SequenceConflict);
+        assert_eq!(gate.metrics().cached_frames, 1);
+        assert_eq!(gate.metrics().validated_frames, 3);
+        assert_eq!(gate.metrics().accepted_frames, 1);
+        assert_eq!(gate.metrics().duplicate_frames, 1);
+        assert_eq!(gate.metrics().sequence_conflicts, 1);
     }
 
     #[test]

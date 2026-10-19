@@ -84,10 +84,10 @@ impl ScientificFrame {
     }
 }
 
-/// Diagnostic-only reconstruction of a frame whose received CRC is invalid.
+/// Offline CRC-reference reconstruction of a frame whose received CRC is invalid.
 ///
-/// This distinct type never represents an accepted scientific frame. Its
-/// timestamp and ADC ranges have been checked, but its bytes are unverified.
+/// This type is retained for reference tooling. Production scientific decoding
+/// does not calculate or compare CRC and does not require this wrapper.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnverifiedScientificFrame {
     frame: ScientificFrame,
@@ -101,25 +101,26 @@ impl UnverifiedScientificFrame {
     }
 }
 
-/// Inspection result that leaves strict decoding and the received bytes intact.
+/// Offline CRC inspection result that leaves the received bytes intact.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScientificFrameDiagnosis {
     /// Big-endian CRC field, available only for an exactly 269-byte candidate.
     pub received_crc: Option<u16>,
     /// CRC16 over the existing, exclusive `frame[7..267]` input range.
     pub calculated_crc: Option<u16>,
-    /// The error from strict decoding, with its original validation precedence.
+    /// The error from offline structure/CRC/body inspection, in that order.
     pub error: Option<FrameError>,
     /// Time or ADC error discovered behind an earlier strict CRC rejection.
     ///
-    /// This does not replace `error` or relax normal decoding.
+    /// This does not replace `error` or change production decoding.
     pub secondary_error: Option<FrameError>,
     /// Present only for a CRC mismatch with all other validation checks passing.
     pub preview: Option<UnverifiedScientificFrame>,
 }
 
-/// Inspects a candidate for a separate, explicitly unverified diagnostic view.
+/// Inspects a candidate against the historical CRC reference rule.
 ///
+/// This is an explicit offline API, not a production acceptance gate.
 /// Valid candidates have no error and no diagnostic preview. A CRC mismatch can
 /// yield a preview only after all framing, fixed-field, timestamp and ADC range
 /// checks pass. Invalid time or ADC data suppress the preview even when the
@@ -139,7 +140,10 @@ pub fn diagnose_scientific_frame(frame: &[u8], sequence: u16) -> ScientificFrame
     } else {
         (None, None)
     };
-    let error = decode_scientific_frame_with_sequence(frame, sequence).err();
+    let error = validate_scientific_frame_structure(frame)
+        .and_then(|()| validate_scientific_frame_crc16(frame))
+        .and_then(|()| decode_scientific_body(frame, sequence).map(|_| ()))
+        .err();
     let (preview, secondary_error) = if matches!(error, Some(FrameError::ChecksumMismatch { .. })) {
         // A strict CRC error is reached only after structure validation. The
         // same body decoder still enforces every timestamp and ADC invariant.
@@ -162,7 +166,8 @@ pub fn diagnose_scientific_frame(frame: &[u8], sequence: u16) -> ScientificFrame
 /// # Errors
 ///
 /// Returns [`FrameError`] for malformed framing, unexpected fixed fields,
-/// a CRC16 mismatch, invalid timestamp offsets, or an out-of-range sample.
+/// invalid timestamp offsets, or an out-of-range sample. The two trailer bytes
+/// are preserved in the wire format but are not checked for CRC integrity.
 ///
 /// # Panics
 ///
@@ -175,15 +180,9 @@ pub fn decode_scientific_frame(frame: &[u8]) -> Result<ScientificFrame, FrameErr
 /// Decodes one LVDS scientific frame and associates it with the UDP converter's
 /// frame sequence. The LVDS body itself does not carry a packet-sequence field.
 ///
-/// The last two bytes are a big-endian CRC16 over the declared valid-data range.
-/// The lower computer has confirmed the CRC16-CCITT algorithm: polynomial
-/// `0x1021`, initial value `0xFFFF`, no reflection, and no final xor.
-///
-/// CRC validation is mandatory before decoding time or ADC data. Its input is
-/// the 260 bytes `frame[7..267]` (UTC, microseconds, and scientific DATA), using
-/// the current interpretation of the updated table's "valid data". There is no
-/// fallback to another range. The manufacturer's actual `data` pointer and
-/// `length` arguments remain a protocol confirmation item.
+/// Production acceptance validates structure, device time and ADC ranges only.
+/// The last two trailer bytes are retained without calculating or comparing a
+/// CRC. Successful decoding therefore makes no CRC integrity guarantee.
 ///
 /// Signed differences retain the existing two's-complement `i8` interpretation;
 /// the manufacturer's negative-difference encoding still requires confirmation.
@@ -191,7 +190,7 @@ pub fn decode_scientific_frame(frame: &[u8]) -> Result<ScientificFrame, FrameErr
 /// # Errors
 ///
 /// Returns [`FrameError`] for malformed framing, unexpected fixed fields,
-/// a CRC16 mismatch, invalid timestamp offsets, or an out-of-range sample.
+/// invalid timestamp offsets, or an out-of-range sample.
 ///
 /// # Panics
 ///
@@ -202,7 +201,6 @@ pub fn decode_scientific_frame_with_sequence(
     sequence: u16,
 ) -> Result<ScientificFrame, FrameError> {
     validate_scientific_frame_structure(frame)?;
-    validate_scientific_frame_crc16(frame)?;
     decode_scientific_body(frame, sequence)
 }
 
@@ -298,7 +296,7 @@ fn decode_scientific_body(frame: &[u8], sequence: u16) -> Result<ScientificFrame
     })
 }
 
-/// Validates the CRC16 field with the lower computer's `Calculate_CRC16`
+/// Explicit offline reference check of the CRC16 field with `Calculate_CRC16`
 /// implementation: polynomial `0x1021`, initial value `0xFFFF`, no reflection,
 /// and no final xor.
 ///
@@ -307,6 +305,7 @@ fn decode_scientific_body(frame: &[u8], sequence: u16) -> Result<ScientificFrame
 /// This range is the working interpretation of the updated table, pending the
 /// manufacturer's confirmation of its actual function arguments. No alternate
 /// range is accepted on a mismatch.
+/// This reference API is not called by production scientific decoding.
 ///
 /// # Errors
 ///
@@ -471,31 +470,28 @@ mod tests {
     }
 
     #[test]
-    fn rejects_crc_changes_and_accepts_independently_recalculated_frames() {
+    fn accepts_trailer_and_decodable_body_changes_without_crc_recalculation() {
         let valid = golden_frame();
-        // UTC, valid microseconds, a bounded scientific delta, and both CRC
-        // bytes are changed individually to exercise the CRC gate itself.
+        let original = decode_scientific_frame(&valid).unwrap();
+        // Time, a bounded scientific delta, and both trailer bytes can change
+        // without recalculation. The wire bytes are never repaired in place.
         for offset in [7, 14, 100, 267, 268] {
             let mut corrupt = valid;
             corrupt[offset] ^= 1;
-            let expected = manufacturer_crc16(&corrupt[7..267]);
-            let actual = u16::from_be_bytes([corrupt[267], corrupt[268]]);
-            assert_eq!(
-                decode_scientific_frame(&corrupt),
-                Err(FrameError::ChecksumMismatch {
-                    protocol: Protocol::Lvds,
-                    expected,
-                    actual,
-                }),
-                "offset {offset} must fail at the CRC gate"
-            );
-            refresh_crc16(&mut corrupt);
-            assert!(decode_scientific_frame(&corrupt).is_ok(), "offset {offset}");
+            let unchanged = corrupt;
+            let decoded = decode_scientific_frame(&corrupt).unwrap();
+            assert_eq!(corrupt, unchanged);
+            assert!(validate_scientific_frame_crc16(&corrupt).is_err());
+            if offset >= LVDS_CRC_FIELD_OFFSET {
+                assert_eq!(decoded, original, "trailer offset {offset}");
+            } else if offset == 100 {
+                assert_ne!(decoded.channel_2, original.channel_2);
+            }
         }
     }
 
     #[test]
-    fn accepts_only_the_declared_crc_range_and_big_endian_field() {
+    fn offline_crc_reference_keeps_declared_range_and_big_endian_field() {
         let golden = golden_frame();
         // Also fixed outputs from the separately compiled manufacturer C.
         assert_eq!(manufacturer_crc16(&golden[6..267]), 0xDC4E);
@@ -504,7 +500,7 @@ mod tests {
             let mut frame = golden;
             frame[267..269].copy_from_slice(&incorrect_crc.to_be_bytes());
             assert_eq!(
-                decode_scientific_frame(&frame),
+                validate_scientific_frame_crc16(&frame),
                 Err(FrameError::ChecksumMismatch {
                     protocol: Protocol::Lvds,
                     expected: 0x44C8,
@@ -631,11 +627,6 @@ mod tests {
         frame[19] = 0x80;
         assert!(matches!(
             decode_scientific_frame(frame.as_slice()),
-            Err(FrameError::ChecksumMismatch { .. })
-        ));
-        refresh_crc16(&mut frame);
-        assert!(matches!(
-            decode_scientific_frame(frame.as_slice()),
             Err(FrameError::SampleOutOfRange {
                 channel: 1,
                 index: 1,
@@ -661,11 +652,6 @@ mod tests {
     fn rejects_invalid_microseconds() {
         let mut frame = valid_frame();
         frame[11..15].copy_from_slice(&1_000_000_u32.to_be_bytes());
-        assert!(matches!(
-            decode_scientific_frame(frame.as_slice()),
-            Err(FrameError::ChecksumMismatch { .. })
-        ));
-        refresh_crc16(&mut frame);
         assert!(matches!(
             decode_scientific_frame(frame.as_slice()),
             Err(FrameError::FieldOutOfRange {
@@ -725,7 +711,10 @@ mod tests {
             assert_eq!(result.preview.unwrap().frame(), &decoded);
             assert_eq!(result.secondary_error, None);
             assert_eq!(frame, unchanged);
-            assert!(decode_scientific_frame(&frame).is_err());
+            assert_eq!(
+                decode_scientific_frame_with_sequence(&frame, 42),
+                Ok(decoded.clone())
+            );
         }
     }
 
@@ -844,10 +833,13 @@ mod tests {
                 *byte = state.to_be_bytes()[0];
             }
             let result = diagnose_scientific_frame(&frame, u16::MAX);
+            let crc_error = validate_scientific_frame_crc16(&frame).err();
+            let body_error = decode_scientific_frame_with_sequence(&frame, u16::MAX).err();
             assert_eq!(
                 result.error,
-                decode_scientific_frame_with_sequence(&frame, u16::MAX).err()
+                crc_error.clone().or_else(|| body_error.clone())
             );
+            assert_eq!(result.secondary_error, crc_error.and(body_error));
         }
     }
 }

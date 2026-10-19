@@ -330,7 +330,7 @@ fn central_controls_use_uniform_heights_and_painted_text_alignment() {
 }
 
 fn statistic_texts(texts: &[PaintedText], value: u64) -> [Vec<&PaintedText>; 2] {
-    let labels: Vec<_> = ["接收", "结构合法", "CRC正确", "CRC错误", "绘图"]
+    let labels: Vec<_> = ["接收", "解析成功", "解析失败", "绘图", "保存"]
         .into_iter()
         .map(|label| text_named(texts, label))
         .collect();
@@ -358,7 +358,7 @@ fn quality_grid_is_fixed_across_digit_counts_long_errors_and_saving_states() {
             .enumerate()
         {
             app.acquisition_running = index % 2 == 1;
-            app.diagnostic.plotted_frames = count;
+            app.lvds_view.plotted_frames = count;
             let mut status = LvdsStatusSnapshot {
                 source: "stable layout source".to_owned(),
                 receive_state: "UDP 有效科学帧 · 很长的接收状态不应挤出控件".to_owned(),
@@ -366,8 +366,8 @@ fn quality_grid_is_fixed_across_digit_counts_long_errors_and_saving_states() {
             };
             status.stats.udp_packets = count;
             status.stats.structure_valid_frames = count;
-            status.stats.crc_passed = count;
-            status.stats.crc_failed = count;
+            status.stats.parsed_frames = count;
+            status.stats.parse_failures = count;
             status.storage.enqueued = count;
             status.storage.sink_written = count;
             status.storage.closed = !app.acquisition_running;
@@ -378,7 +378,7 @@ fn quality_grid_is_fixed_across_digit_counts_long_errors_and_saving_states() {
                     "一个非常长的科学文件关闭错误，入队成功不等于sink写入或成功关闭".to_owned(),
                 );
             }
-            app.diagnostic.status = Some(status);
+            app.lvds_view.status = Some(status);
             let _ = render_central(&mut app, &context, logical);
             let (output, measured) = render_central(&mut app, &context, logical);
             assert_central_bounds(measured, logical, physical, scale);
@@ -491,7 +491,7 @@ fn save_buttons_wait_for_backend_state_and_bind_error_keeps_original_hover_detai
         let raw = "UDP bind 192.168.1.100:1534: Can't assign requested address (os error 49); original socket bind failure";
         app.lvds.detail = raw.to_owned();
         app.lvds.connected = false;
-        app.diagnostic.status = Some(LvdsStatusSnapshot {
+        app.lvds_view.status = Some(LvdsStatusSnapshot {
             receive_state: raw.to_owned(),
             ..LvdsStatusSnapshot::default()
         });
@@ -538,7 +538,11 @@ fn empty_state_is_one_centered_pair_and_does_not_move_quality_information() {
         let texts = painted_text(&output);
         let title = text_named(&texts, "暂无 LVDS 数据");
         let description = text_named(&texts, "请开始 UDP 监听或离线 PCAP 回放");
-        let info = controls_named(&texts, &["尚无可校验数据", "当前视图不含 CRC 未通过的样本"]);
+        let info = texts
+            .iter()
+            .filter(|text| text.text == "科学数据未经 CRC 完整性验证")
+            .max_by(|one, two| one.baseline.total_cmp(&two.baseline))
+            .unwrap();
         let assigned = central_layout_rects(central_root(logical));
         let plot_inner = assigned.plot_body.shrink(9.0);
         let group = title.visible.union(description.visible);
@@ -555,14 +559,14 @@ fn empty_state_is_one_centered_pair_and_does_not_move_quality_information() {
 }
 
 #[test]
-fn sixty_seconds_of_mixed_quality_updates_keep_central_docks_and_grid_stable() {
+fn sixty_seconds_of_scientific_updates_keep_central_docks_and_grid_stable() {
     use crate::bridge::BackendEvent;
 
     for (physical, scale) in VIEWPORTS {
         let logical = physical / scale;
         let context = context_at_scale(scale);
         let (mut app, _endpoint) = test_app();
-        app.diagnostic.status = Some(LvdsStatusSnapshot::default());
+        app.lvds_view.status = Some(LvdsStatusSnapshot::default());
         let mut baseline_geometry = None;
         // Sixty seconds of device timestamps, with 20 frames/s and 125 ADC
         // points/channel. This is a deterministic UI simulation, not wall time
@@ -578,8 +582,7 @@ fn sixty_seconds_of_mixed_quality_updates_keep_central_docks_and_grid_stable() {
                     vec![32_832.0; 125],
                 );
             } else {
-                app.handle_backend_event(BackendEvent::DiagnosticSamples {
-                    sequence: Some(frame),
+                app.handle_backend_event(BackendEvent::ScientificSamples {
                     channel_1_start_seconds: start,
                     channel_2_start_seconds: start,
                     sample_interval_seconds: 0.0004,
@@ -587,12 +590,12 @@ fn sixty_seconds_of_mixed_quality_updates_keep_central_docks_and_grid_stable() {
                     channel_2: vec![32_832.0; 125],
                 });
             }
-            let status = app.diagnostic.status.as_mut().unwrap();
+            let status = app.lvds_view.status.as_mut().unwrap();
             let count = u64::from(frame) + 1;
             status.stats.udp_packets = count;
             status.stats.structure_valid_frames = count;
-            status.stats.crc_passed = count.div_ceil(2);
-            status.stats.crc_failed = count / 2;
+            status.stats.parsed_frames = count.div_ceil(2);
+            status.stats.parse_failures = count / 2;
             if frame % 20 != 0 {
                 continue;
             }
@@ -600,7 +603,7 @@ fn sixty_seconds_of_mixed_quality_updates_keep_central_docks_and_grid_stable() {
             let (output, measured) = render_central(&mut app, &context, logical);
             assert_central_bounds(measured, logical, physical, scale);
             let texts = painted_text(&output);
-            let labels = ["接收", "结构合法", "CRC正确", "CRC错误", "绘图"]
+            let labels = ["接收", "解析成功", "解析失败", "绘图", "保存"]
                 .map(|label| text_named(&texts, label).visible.center());
             let geometry = (measured, labels);
             if let Some(baseline) = &baseline_geometry {
@@ -614,10 +617,9 @@ fn sixty_seconds_of_mixed_quality_updates_keep_central_docks_and_grid_stable() {
                     .all(|count| count <= 2_000)
             );
         }
-        assert_eq!(app.diagnostic.plotted_frames, 1_201);
+        assert_eq!(app.lvds_view.plotted_frames, 1_201);
         assert!(app.channel_1.len() <= super::PLOT_CAPACITY);
         assert!(app.channel_2.len() <= super::PLOT_CAPACITY);
-        assert!(app.current_plot_contains_unverified());
     }
 }
 
@@ -635,11 +637,11 @@ fn themed_central_widgets_fit_requested_viewports_with_live_and_frozen_data() {
         };
         status.stats.udp_packets = u64::MAX;
         status.stats.structure_valid_frames = u64::MAX;
-        status.stats.crc_failed = u64::MAX;
+        status.stats.parse_failures = u64::MAX;
         status.storage.enqueued = u64::MAX;
         status.storage.sink_written = u64::MAX;
         status.storage.error = Some("存储错误，不能以绘图成功替代关闭结果".to_owned());
-        app.diagnostic.status = Some(status);
+        app.lvds_view.status = Some(status);
         let assigned = central_layout_rects(central_root(logical));
 
         for data_state in 0..3 {

@@ -2,6 +2,11 @@
 
 All multi-byte integers use network (big-endian) byte order.
 
+> **科学数据未经 CRC 完整性验证。** Production LVDS reception, plots and capture
+> do not calculate or compare CRC16. Structure, device time and ADC bounds remain
+> checked; UDP delivery also passes the existing recent-frame deduplication gate.
+> CRC mode, filtering and detail controls have been removed from the desktop.
+
 ## RS422 command and telemetry response
 
 ```text
@@ -36,15 +41,16 @@ UDP wrapper's `frame_seq` is a separate `u32`; the desktop currently truncates i
 `u16` for the existing science/storage tag. Preserving the full sequence is deferred.
 The UDP `frame_len` field defines the reassembly boundary; the scientific gate requires 269B.
 
-CRC16 uses the lower computer's `Calculate_CRC16` implementation: polynomial `0x1021`,
-initial value `0xFFFF`, no input/output reflection, and no final xor. The core provides
-mandatory validation of `frame[7..267]`, exactly 260 bytes (UTC + microseconds + DATA),
-excluding TYPE and the CRC field at offsets 267–268. Constants separately define the
-input start, exclusive end, and CRC field offset. This range is the updated table's
-working interpretation (`SPEC_ASSUMPTION`); the manufacturer's actual `data` pointer
-and `length` remain to be confirmed. The C function confirms the algorithm alone.
-There is no alternative-range fallback or acceptance of bad CRCs. Earlier anomalous
-captures are excluded as normal scientific-frame acceptance evidence.
+The two trailer bytes remain in the 269-byte wire layout, but production decoding
+does not inspect their CRC value. The retained offline reference API uses the lower
+computer's `Calculate_CRC16` algorithm: polynomial `0x1021`, initial value `0xFFFF`,
+no reflection and no final xor, over `frame[7..267]` (UTC + microseconds + DATA,
+260 bytes). Constants separately define that input range and field offsets 267–268.
+The range remains the updated table's working interpretation (`SPEC_ASSUMPTION`),
+pending the manufacturer's actual `data` pointer and `length`; it does not affect
+production acceptance. Original bytes are never repaired or shifted. A captured
+frame can be accepted without satisfying this offline CRC reference, so acceptance
+must not be described as proof of CRC integrity or hardware correctness.
 
 The data domain contains 125 samples per channel. `DATA0..DATA3` are unsigned big-endian
 16-bit absolute first samples. `DATA4..DATA251` alternate signed two's-complement `i8`
@@ -85,8 +91,10 @@ The numeric `mode` command cannot identify the waveform/DC meaning safely.
 
 The Rust decoder rejects wrong declared lengths, wrong fixed type/device values, invalid
 microsecond fields, invalid reconstructed samples, and extra or truncated bytes. Desktop
-UDP, legacy byte streams, and CLI use the same structural → CRC → time → ADC gate;
-only accepted `ScientificFrame` values reach normal storage/display. CRC errors report
-calculated and received values; desktop logs aggregate counts every 500ms. Protocol
-Mock uses artificial golden frames through UDP encapsulation/reassembly and the real
-decoder; direct GUI sample injection remains a separate UI-only facility.
+UDP, PCAP replay, legacy byte streams, and CLI use the same structure → time → ADC
+decoder. UDP and replay then use the full-`u32` recent-frame deduplication gate;
+Accepted frames reach the single plot path and, while capture is enabled, the existing
+writer. Invalid device time is rejected rather than replaced with host time. `.lpd`
+v2 and HDF5 schemas remain unchanged and carry no new CRC verification guarantee.
+Protocol Mock uses artificial frames through UDP encapsulation/reassembly and the
+real decoder; direct GUI sample injection remains a separate UI-only facility.

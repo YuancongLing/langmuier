@@ -117,35 +117,25 @@ pub struct BackendStateSnapshot {
 
 /// Counts candidates at the production UDP ingress, independently of saving.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct LvdsDiagnosticStats {
+pub struct LvdsReceiveStats {
     pub udp_packets: u64,
     pub outer_valid: u64,
     pub complete_frames: u64,
     /// Candidates passing framing, declared length and fixed fields, before
-    /// CRC, timestamp and ADC checks. This is not a science acceptance count.
+    /// timestamp and ADC checks. This is not a science acceptance count.
     pub structure_valid_frames: u64,
-    pub crc_passed: u64,
-    pub crc_failed: u64,
+    /// Complete candidates passing structure, device time and both ADC channels,
+    /// including duplicates subsequently suppressed by the science gate.
+    pub parsed_frames: u64,
+    pub parse_failures: u64,
     pub header_errors: u64,
     pub length_errors: u64,
     pub field_errors: u64,
     pub timestamp_errors: u64,
     pub adc_errors: u64,
     pub accepted_frames: u64,
-    /// CRC-failed candidates passing every other check, including when the
-    /// display filter suppresses them. They never enter scientific storage.
-    pub diagnostic_candidates: u64,
     pub duplicates: u64,
     pub conflicts: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LvdsFrameDetail {
-    pub sequence: Option<u32>,
-    pub received_crc: Option<u16>,
-    pub calculated_crc: Option<u16>,
-    pub error: Option<String>,
-    pub raw: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -167,31 +157,13 @@ pub struct ScientificStorageStatus {
     pub path: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LvdsStatusSnapshot {
-    /// Allows CRC-failed, otherwise valid plot candidates. The UI exposes the
-    /// inverse as "仅显示 CRC 正确的数据"; storage always stays strict.
-    pub diagnostic_preview: bool,
     pub source: String,
     pub receive_state: String,
-    pub stats: LvdsDiagnosticStats,
-    pub latest: Option<LvdsFrameDetail>,
+    pub stats: LvdsReceiveStats,
     pub replay: Option<ReplayProgress>,
     pub storage: ScientificStorageStatus,
-}
-
-impl Default for LvdsStatusSnapshot {
-    fn default() -> Self {
-        Self {
-            diagnostic_preview: true,
-            source: String::new(),
-            receive_state: String::new(),
-            stats: LvdsDiagnosticStats::default(),
-            latest: None,
-            replay: None,
-            storage: ScientificStorageStatus::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -214,10 +186,6 @@ pub enum UiRequest {
     },
     StartAcquisition,
     StopAcquisition,
-    /// Changes only plot admission; it can be changed during scientific saving.
-    SetDiagnosticPreview {
-        enabled: bool,
-    },
     StartPcapReplay {
         path: String,
     },
@@ -237,15 +205,6 @@ pub enum UiRequest {
 #[derive(Debug, Clone, PartialEq)]
 pub enum BackendEvent {
     LvdsStatus(Box<LvdsStatusSnapshot>),
-    /// Unverified samples have a separate event and never enter the writer.
-    DiagnosticSamples {
-        sequence: Option<u32>,
-        channel_1_start_seconds: f64,
-        channel_2_start_seconds: f64,
-        sample_interval_seconds: f64,
-        channel_1: Vec<f64>,
-        channel_2: Vec<f64>,
-    },
     PortsUpdated {
         rs422: Vec<String>,
     },
