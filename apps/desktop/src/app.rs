@@ -1890,28 +1890,19 @@ impl LangmuirDesktopApp {
         self.measurements.prepare_ms = prepare_start.elapsed().as_secs_f64() * 1000.0;
         self.measurements.rendered = rendered;
 
-        // Both rows are always reserved: quality warnings and hover readouts
-        // never move the plot or the fixed log dock.
+        // Reserve the hover readout row so cursor changes never move the plot
+        // or the fixed log dock.
         let readout_row_height = if ui.available_height() < 100.0 {
             16.0
         } else {
             20.0
         };
-        let readout_height = ui.available_height().clamp(0.0, readout_row_height * 2.0);
+        let readout_height = ui.available_height().clamp(0.0, readout_row_height);
         ui.allocate_ui_with_layout(
             egui::vec2(ui.available_width().max(0.0), readout_height),
             Layout::top_down(Align::Min),
             |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
-                ui.add_sized(
-                    [ui.available_width(), readout_row_height],
-                    egui::Label::new(
-                        RichText::new("科学数据未经 CRC 完整性验证")
-                            .small()
-                            .color(theme::WARNING),
-                    )
-                    .truncate(),
-                );
                 if let Some(cursor) = self.operator.plot_cursor_seconds {
                     let (one, two) = self.display_histories();
                     let values = [one.nearest_value(cursor), two.nearest_value(cursor)];
@@ -2090,65 +2081,76 @@ impl LangmuirDesktopApp {
         let mut request = None;
         let compact = ui.available_height() < 200.0;
         let inner_size = ui.available_size() - egui::Vec2::splat(if compact { 18.0 } else { 26.0 });
-        theme::card().inner_margin(egui::Margin::same(if compact { 8 } else { 12 })).show(ui, |ui| {
-            ui.set_min_size(inner_size.max(egui::Vec2::ZERO));
-            debug_ui_rect("central.operations_card", ui.available_rect_before_wrap());
-            let width = ui.available_width().max(0.0);
-            central_control_style(ui);
-            ui.spacing_mut().item_spacing.y = if compact { 4.0 } else { 12.0 };
-            if compact {
-                central_control_row(ui, |ui| self.lvds_listen_inputs(ui));
-                central_control_row(ui, |ui| {
-                    if width < 320.0 {
-                        ui.menu_button("操作", |ui| {
-                            self.lvds_listen_buttons(ui, &mut request, false);
-                            self.lvds_save_button(ui, &mut request, false);
-                        });
-                    } else {
-                        self.lvds_listen_buttons(ui, &mut request, true);
-                    }
-                    if ui.button(if width < 320.0 { "回放" } else { "离线回放 PCAP" }).clicked() {
-                        self.lvds_view.replay_dialog_open = true;
-                    }
-                    if width >= 320.0 {
-                        self.lvds_save_button(ui, &mut request, true);
-                    }
-                    self.lvds_more_menu(ui, &mut request);
-                });
-                self.lvds_receive_status(ui, true);
-            } else {
-                ui.scope(|ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
+        theme::card()
+            .inner_margin(egui::Margin::same(if compact { 8 } else { 12 }))
+            .show(ui, |ui| {
+                ui.set_min_size(inner_size.max(egui::Vec2::ZERO));
+                debug_ui_rect("central.operations_card", ui.available_rect_before_wrap());
+                let width = ui.available_width().max(0.0);
+                central_control_style(ui);
+                ui.spacing_mut().item_spacing.y = if compact { 4.0 } else { 12.0 };
+                if compact {
+                    central_control_row(ui, |ui| self.lvds_listen_inputs(ui));
                     central_control_row(ui, |ui| {
-                        self.lvds_listen_inputs(ui);
-                        if width >= 540.0 {
-                            self.lvds_listen_buttons(ui, &mut request, false);
+                        if width < 320.0 {
+                            ui.menu_button("操作", |ui| {
+                                self.lvds_listen_buttons(ui, &mut request, false);
+                                self.lvds_save_button(ui, &mut request, false);
+                            });
+                        } else {
+                            self.lvds_listen_buttons(ui, &mut request, true);
+                        }
+                        if ui
+                            .button(if width < 320.0 {
+                                "回放"
+                            } else {
+                                "离线回放 PCAP"
+                            })
+                            .clicked()
+                        {
+                            self.lvds_view.replay_dialog_open = true;
+                        }
+                        if width >= 320.0 {
+                            self.lvds_save_button(ui, &mut request, true);
+                        }
+                        self.lvds_more_menu(ui, &mut request);
+                    });
+                    self.lvds_receive_status(ui, true);
+                } else {
+                    ui.scope(|ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        central_control_row(ui, |ui| {
+                            self.lvds_listen_inputs(ui);
+                            if width >= 540.0 {
+                                self.lvds_listen_buttons(ui, &mut request, false);
+                            }
+                        });
+                        if width < 540.0 {
+                            central_control_row(ui, |ui| {
+                                self.lvds_listen_buttons(ui, &mut request, false)
+                            });
+                            ui.add_space(8.0);
+                        }
+                        self.lvds_receive_status(ui, false);
+                    });
+                    central_control_row(ui, |ui| {
+                        if ui.button("离线回放 PCAP").clicked() {
+                            self.lvds_view.replay_dialog_open = true;
                         }
                     });
-                    if width < 540.0 {
-                        central_control_row(ui, |ui| self.lvds_listen_buttons(ui, &mut request, false));
-                        ui.add_space(8.0);
-                    }
-                    self.lvds_receive_status(ui, false);
-                });
-                central_control_row(ui, |ui| {
-                    if ui.button("离线回放 PCAP").clicked() {
-                        self.lvds_view.replay_dialog_open = true;
-                    }
-                    ui.add_sized([ui.available_width().max(0.0), CENTRAL_CONTROL_HEIGHT],
-                        egui::Label::new(RichText::new("科学数据未经 CRC 完整性验证").small().color(theme::WARNING)).truncate());
-                });
-                central_control_row(ui, |ui| {
-                    self.lvds_save_button(ui, &mut request, false);
-                    self.lvds_more_menu(ui, &mut request);
-                    let text = self.lvds_save_summary();
-                    ui.add_sized([ui.available_width().max(0.0), CENTRAL_CONTROL_HEIGHT],
-                        egui::Label::new(RichText::new(&text).small().monospace()).truncate())
-                        .on_hover_text(format!("{text}\n科学数据未经 CRC 完整性验证；入队、sink 写入与成功关闭分别统计。"));
-                });
-            }
-            self.lvds_quality_grid(ui);
-        });
+                    central_control_row(ui, |ui| {
+                        self.lvds_save_button(ui, &mut request, false);
+                        self.lvds_more_menu(ui, &mut request);
+                        let text = self.lvds_save_summary();
+                        ui.add_sized(
+                            [ui.available_width().max(0.0), CENTRAL_CONTROL_HEIGHT],
+                            egui::Label::new(RichText::new(&text).small().monospace()).truncate(),
+                        )
+                        .on_hover_text(format!("{text}\n入队、sink 写入与成功关闭分别统计。"));
+                    });
+                }
+                self.lvds_quality_grid(ui);
+            });
         if let Some(request) = request {
             self.submit(request);
         }
@@ -2330,7 +2332,7 @@ impl LangmuirDesktopApp {
                     let text = if is_value { RichText::new(value.to_string()).monospace().color(theme::TEXT_SECONDARY) }
                         else { RichText::new(label).small().color(theme::TEXT_MUTED) };
                     let response = ui.add_sized([cell, if is_value { 22.0 } else { 16.0 }], egui::Label::new(text).truncate());
-                    response.on_hover_text(format!("{label}：{value}\n接收为匹配来源的 UDP；解析成功在去重前统计；保存为 sink API 写入数，不代表断电持久化。科学数据未经 CRC 完整性验证。"));
+                    response.on_hover_text(format!("{label}：{value}\n接收为匹配来源的 UDP；解析成功在去重前统计；保存为 sink API 写入数，不代表断电持久化。"));
                 }
             });
         }
@@ -2392,9 +2394,7 @@ impl LangmuirDesktopApp {
                     }
                 });
                 if let Some(status) = &self.lvds_view.status {
-                    ui.label(
-                        "结构、时间及 ADC 合法的数据直接绘图和保存；科学数据未经 CRC 完整性验证。",
-                    );
+                    ui.label("结构、时间及 ADC 合法的数据直接绘图和保存。");
                     if let Some(replay) = &status.replay {
                         ui.label(format!(
                             "{} · 总包 {} · 目标 UDP {}",
@@ -4053,10 +4053,10 @@ mod tests {
                 "CRC16 详情",
                 "严格模式",
                 "诊断模式",
+                "科学数据未经 CRC 完整性验证",
             ] {
                 assert!(!text.iter().any(|label| label.contains(obsolete)));
             }
-            assert!(text.contains(&"科学数据未经 CRC 完整性验证"));
         }
         assert!(endpoint.request_rx.try_recv().is_err());
     }

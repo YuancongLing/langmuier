@@ -527,7 +527,7 @@ fn save_buttons_wait_for_backend_state_and_bind_error_keeps_original_hover_detai
 }
 
 #[test]
-fn empty_state_is_one_centered_pair_and_does_not_move_quality_information() {
+fn empty_state_is_one_centered_pair_below_the_cursor_row() {
     for (physical, scale) in VIEWPORTS {
         let logical = physical / scale;
         let context = context_at_scale(scale);
@@ -538,22 +538,26 @@ fn empty_state_is_one_centered_pair_and_does_not_move_quality_information() {
         let texts = painted_text(&output);
         let title = text_named(&texts, "暂无 LVDS 数据");
         let description = text_named(&texts, "请开始 UDP 监听或离线 PCAP 回放");
-        let info = texts
-            .iter()
-            .filter(|text| text.text == "科学数据未经 CRC 完整性验证")
-            .max_by(|one, two| one.baseline.total_cmp(&two.baseline))
-            .unwrap();
         let assigned = central_layout_rects(central_root(logical));
         let plot_inner = assigned.plot_body.shrink(9.0);
         let group = title.visible.union(description.visible);
         assert!((title.visible.center().x - description.visible.center().x).abs() <= 1.0);
         assert!((group.center().x - plot_inner.center().x).abs() <= 1.0);
-        // The quality/cursor rows stay above the empty group. The actual ink
-        // can differ slightly from font line boxes, hence a 4pt visual tolerance.
-        let empty_body_center = info.visible.bottom().midpoint(plot_inner.bottom());
+        // The cursor row stays above the empty group. Allow for the difference
+        // between the actual text ink and the allocated font line boxes.
+        let cursor_height = if plot_inner.height() < 100.0 {
+            16.0
+        } else {
+            20.0
+        };
+        let empty_body_center = (plot_inner.top() + cursor_height).midpoint(plot_inner.bottom());
         assert!((group.center().y - empty_body_center).abs() <= 14.0);
-        assert!(info.visible.bottom() < group.top());
         assert!(rect_fits(group, plot_inner));
+        assert!(
+            !texts
+                .iter()
+                .any(|text| text.text.contains("科学数据未经 CRC 完整性验证"))
+        );
         assert!(!texts.iter().any(|text| text.text.contains("左键拖动平移")));
     }
 }

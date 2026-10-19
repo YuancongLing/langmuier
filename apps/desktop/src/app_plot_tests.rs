@@ -114,7 +114,7 @@ fn plot_left_drag_enters_manual_and_incoming_samples_do_not_steal_view() {
 }
 
 #[test]
-fn plot_plain_wheel_zooms_and_hover_updates_with_integrity_notice() {
+fn plot_plain_wheel_zooms_and_hover_updates() {
     let mut app = test_app();
     app.handle_backend_event(BackendEvent::ScientificSamples {
         channel_1_start_seconds: 140.0,
