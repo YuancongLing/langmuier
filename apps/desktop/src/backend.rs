@@ -22,10 +22,6 @@ use langmuir_core::{
     parse_udp_lvds_datagram,
 };
 use langmuir_storage::{BatchWriter, StorageEvent, StorageServiceConfig};
-#[cfg(not(any(feature = "hdf5", feature = "hdf5-static")))]
-use langmuir_storage::{BinaryConfig, BinarySink};
-#[cfg(any(feature = "hdf5", feature = "hdf5-static"))]
-use langmuir_storage::{Hdf5Config, Hdf5Sink};
 use langmuir_transport::ReaderMetricsSnapshot;
 use langmuir_transport::{
     BackpressurePolicy, Connector, ReaderConfig, ReaderEvent, ReaderWorker, SerialConfig,
@@ -35,9 +31,9 @@ use langmuir_transport::{CapturePacket, PcapNgReader};
 
 use crate::bridge::{
     BackendBridge, BackendEvent, BackendStateSnapshot, BridgeError, LinkKind, LinkMetricsSnapshot,
-    LogLevel, LvdsReceiveStats, LvdsStatusSnapshot, ReplayProgress, ScientificStorageStatus,
-    TELEMETRY_POLL_INTERVAL_MAX_MILLIS, TELEMETRY_POLL_INTERVAL_MIN_MILLIS, TelemetrySnapshot,
-    UiRequest,
+    LogLevel, LvdsReceiveStats, LvdsStatusSnapshot, ReplayProgress, ScientificSaveFormat,
+    ScientificStorageStatus, TELEMETRY_POLL_INTERVAL_MAX_MILLIS,
+    TELEMETRY_POLL_INTERVAL_MIN_MILLIS, TelemetrySnapshot, UiRequest,
 };
 
 const BRIDGE_REQUEST_CAPACITY: usize = 128;
@@ -54,6 +50,10 @@ const MAX_TELEMETRY_ROWS: usize = 100_000;
 const MAX_READER_EVENTS_PER_TICK: usize = 1_024;
 const DEPLOYED_LVDS_UDP_SOURCE: &str = "192.168.1.128:1534";
 static NEXT_LVDS_SOURCE: AtomicU64 = AtomicU64::new(1);
+
+#[path = "backend_scientific_storage.rs"]
+mod scientific_storage;
+use scientific_storage::{CaptureProgress, ScientificCaptureSink};
 
 fn source_identity(label: &str) -> String {
     let mut id = NEXT_LVDS_SOURCE.load(Ordering::Relaxed);
@@ -749,6 +749,7 @@ struct Controller {
     last_lvds_fault: Option<String>,
     last_storage_fault: Option<String>,
     scientific_writer: Option<BatchWriter<ScientificFrame>>,
+    capture_progress: Option<CaptureProgress>,
     acquisition_running: bool,
     telemetry_polling: Option<TelemetryPolling>,
     telemetry_rows: VecDeque<TelemetrySnapshot>,
@@ -795,6 +796,7 @@ impl Controller {
             last_lvds_fault: None,
             last_storage_fault: None,
             scientific_writer: None,
+            capture_progress: None,
             acquisition_running: false,
             telemetry_polling: None,
             telemetry_rows: VecDeque::new(),
@@ -872,9 +874,9 @@ impl Controller {
             UiRequest::Disconnect { link } => {
                 self.disconnect(link);
             }
-            UiRequest::StartAcquisition => self.start_acquisition(),
+            UiRequest::StartAcquisition { format } => self.start_acquisition(format),
             UiRequest::StopAcquisition => self.stop_acquisition_at_ui_boundary(),
-            UiRequest::StartPcapReplay { path } => self.start_pcap_replay(&path),
+            UiRequest::StartPcapReplay { path, save } => self.start_pcap_replay(&path, save),
             UiRequest::StopPcapReplay => {
                 if self.replay.is_some() {
                     self.disconnect(LinkKind::Lvds);
@@ -896,7 +898,7 @@ impl Controller {
         }
     }
 
-    fn start_pcap_replay(&mut self, path: &str) {
+    fn start_pcap_replay(&mut self, path: &str, save: Option<ScientificSaveFormat>) {
         if self.acquisition_running {
             self.fault("PCAP", "请先停止正式保存，再切换数据来源");
             return;
@@ -906,6 +908,16 @@ impl Controller {
         }
         match PcapReplay::start(path.to_owned()) {
             Ok(replay) => {
+                // The reader may fill its bounded queue, but no frame can be
+                // delivered until every selected output has been created.
+                if let Some(format) = save
+                    && !self.start_scientific_capture(format, &data_path("scientific", "capture"))
+                {
+                    drop(replay);
+                    self.fault("PCAP", "科学数据保存无法启动，已取消回放");
+                    self.publish_lvds_status();
+                    return;
+                }
                 self.replay = Some(replay);
                 self.lvds_connected = true;
                 self.lvds_source = source_identity(&format!("离线 PCAP {path}"));
@@ -1175,7 +1187,7 @@ impl Controller {
         result.is_none_or(|value| value.is_ok())
     }
 
-    fn start_acquisition(&mut self) {
+    fn start_acquisition(&mut self, format: ScientificSaveFormat) {
         if self.acquisition_running {
             return;
         }
@@ -1183,77 +1195,104 @@ impl Controller {
             self.fault("采集", "请先连接 LVDS");
             return;
         }
-        self.last_storage_fault = None;
+        self.start_scientific_capture(format, &data_path("scientific", "capture"));
+    }
 
-        #[cfg(any(feature = "hdf5", feature = "hdf5-static"))]
-        {
-            let path = data_path("scientific", "h5");
-            let sink = match Hdf5Sink::create(Hdf5Config::new(&path)) {
-                Ok(sink) => sink,
-                Err(error) => {
-                    self.fault("HDF5", error.to_string());
-                    return;
-                }
-            };
-            match BatchWriter::start(
-                sink,
-                StorageServiceConfig {
-                    control_timeout: STORAGE_SHUTDOWN_TIMEOUT,
-                    ..StorageServiceConfig::default()
-                },
-            ) {
-                Ok(writer) => {
-                    self.scientific_writer = Some(writer);
-                    self.capture_path = Some(path.clone());
-                }
-                Err(error) => {
-                    self.fault("HDF5", error.to_string());
-                    return;
-                }
-            }
-            self.log(LogLevel::Info, format!("科学数据存储: {}", path.display()));
-            self.acquisition_running = true;
-            self.emit_critical(BackendEvent::AcquisitionChanged { running: true });
-        }
-        #[cfg(not(any(feature = "hdf5", feature = "hdf5-static")))]
-        {
-            let path = data_path("scientific", "lpd");
-            let sink = match BinarySink::create(BinaryConfig::new(&path)) {
-                Ok(sink) => sink,
-                Err(error) => {
-                    self.fault("二进制存储", error.to_string());
-                    return;
-                }
-            };
-            match BatchWriter::start(
-                sink,
-                StorageServiceConfig {
-                    control_timeout: STORAGE_SHUTDOWN_TIMEOUT,
-                    ..StorageServiceConfig::default()
-                },
-            ) {
-                Ok(writer) => {
-                    self.scientific_writer = Some(writer);
-                    self.capture_path = Some(path.clone());
-                }
-                Err(error) => {
-                    self.fault("二进制存储", error.to_string());
-                    return;
-                }
-            }
-            self.log(LogLevel::Info, format!("科学数据存储: {}", path.display()));
-            self.acquisition_running = true;
-            self.emit_critical(BackendEvent::AcquisitionChanged { running: true });
-        }
+    fn start_scientific_capture(&mut self, format: ScientificSaveFormat, stem: &Path) -> bool {
         if self.acquisition_running {
-            self.storage_status = ScientificStorageStatus {
-                path: self.capture_path.as_ref().map(|p| p.display().to_string()),
-                ..ScientificStorageStatus::default()
-            };
-            self.publish_lvds_status();
+            return false;
+        }
+        self.last_storage_fault = None;
+        self.storage_status = ScientificStorageStatus {
+            format,
+            ..ScientificStorageStatus::default()
+        };
+        self.capture_progress = Some(Arc::new(Mutex::new(self.storage_status.clone())));
+        let progress = Arc::clone(self.capture_progress.as_ref().unwrap());
+        let sink = match ScientificCaptureSink::create(format, stem, progress) {
+            Ok(sink) => sink,
+            Err(error) => {
+                self.refresh_capture_progress();
+                let message = error.to_string();
+                self.storage_status.error = Some(message.clone());
+                self.mark_selected_outputs_incomplete(&message);
+                self.fault("科学数据存储", message);
+                self.publish_lvds_status();
+                return false;
+            }
+        };
+        match BatchWriter::start(
+            sink,
+            StorageServiceConfig {
+                control_timeout: STORAGE_SHUTDOWN_TIMEOUT,
+                ..StorageServiceConfig::default()
+            },
+        ) {
+            Ok(writer) => self.scientific_writer = Some(writer),
+            Err(error) => {
+                self.refresh_capture_progress();
+                let message = error.to_string();
+                self.storage_status.error = Some(message.clone());
+                self.mark_selected_outputs_incomplete(&message);
+                self.fault("科学数据存储", message);
+                self.publish_lvds_status();
+                return false;
+            }
+        }
+        self.refresh_capture_progress();
+        self.capture_path = self.storage_status.path.as_ref().map(PathBuf::from);
+        self.log(
+            LogLevel::Info,
+            format!("科学数据存储 {}: {}", format.label(), stem.display()),
+        );
+        self.acquisition_running = true;
+        self.emit_critical(BackendEvent::AcquisitionChanged { running: true });
+        self.publish_lvds_status();
+        true
+    }
+
+    fn refresh_capture_progress(&mut self) {
+        let Some(progress) = &self.capture_progress else {
+            return;
+        };
+        let progress = progress.lock().unwrap();
+        self.storage_status.csv_frames_written = progress.csv_frames_written;
+        self.storage_status.csv_rows_written = progress.csv_rows_written;
+        self.storage_status.lpd_frames_written = progress.lpd_frames_written;
+        self.storage_status.sink_written = match self.storage_status.format {
+            ScientificSaveFormat::Csv => progress.csv_frames_written,
+            ScientificSaveFormat::Lpd => progress.lpd_frames_written,
+            ScientificSaveFormat::LpdAndCsv => {
+                progress.lpd_frames_written.min(progress.csv_frames_written)
+            }
+            #[cfg(any(feature = "hdf5", feature = "hdf5-static"))]
+            ScientificSaveFormat::Hdf5 => self.storage_status.sink_written,
+        };
+        self.storage_status.path.clone_from(&progress.path);
+        self.storage_status.csv_path.clone_from(&progress.csv_path);
+        self.storage_status.lpd_path.clone_from(&progress.lpd_path);
+        self.storage_status.closed = progress.closed;
+        if let Some(error) = &progress.error {
+            self.storage_status.error = Some(error.clone());
         }
     }
 
+    fn mark_selected_outputs_incomplete(&self, reason: &str) {
+        let mut paths = Vec::new();
+        for path in [
+            &self.storage_status.path,
+            &self.storage_status.lpd_path,
+            &self.storage_status.csv_path,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if !paths.contains(path) {
+                self.mark_capture_incomplete(Path::new(path), reason);
+                paths.push(path.clone());
+            }
+        }
+    }
     fn stop_acquisition(&mut self) {
         self.stop_acquisition_with_reason(None);
     }
@@ -1284,12 +1323,23 @@ impl Controller {
                 }
             }
         }
+        self.refresh_capture_progress();
         if let Some(reason) = &incomplete_reason {
-            self.storage_status.error = Some(reason.clone());
+            if let Some(error) = &mut self.storage_status.error {
+                if !error.contains(reason) {
+                    error.push_str("; ");
+                    error.push_str(reason);
+                }
+            } else {
+                self.storage_status.error = Some(reason.clone());
+            }
         }
-        if let (Some(path), Some(reason)) = (capture_path.as_deref(), incomplete_reason.as_deref())
-        {
-            self.mark_capture_incomplete(path, reason);
+        if let Some(reason) = self.storage_status.error.as_deref() {
+            if self.capture_progress.is_some() {
+                self.mark_selected_outputs_incomplete(reason);
+            } else if let Some(path) = capture_path.as_deref() {
+                self.mark_capture_incomplete(path, reason);
+            }
         }
         self.capture_path = None;
         self.emit_critical(BackendEvent::AcquisitionChanged { running: false });
@@ -1727,6 +1777,9 @@ impl Controller {
     }
 
     fn drain_storage(&mut self) {
+        // A timed-out shutdown may leave a detached worker finishing its close.
+        // Keep reporting its reliable per-file progress after writer removal.
+        self.refresh_capture_progress();
         let Some(writer) = &self.scientific_writer else {
             return;
         };
@@ -1735,6 +1788,7 @@ impl Controller {
         let metrics = writer.metrics();
         self.storage_status.enqueued = metrics.submitted_items;
         self.storage_status.sink_written = metrics.written_items;
+        self.refresh_capture_progress();
         let mut storage_failed = false;
         for event in events {
             match event {
@@ -1769,7 +1823,11 @@ impl Controller {
             storage_failed = true;
         }
         if storage_failed && self.acquisition_running {
-            self.stop_acquisition_incomplete("科学数据 writer 异常停止");
+            let reason = self
+                .last_storage_fault
+                .clone()
+                .unwrap_or_else(|| "科学数据 writer 异常停止".to_owned());
+            self.stop_acquisition_incomplete(reason);
         }
     }
 

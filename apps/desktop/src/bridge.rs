@@ -147,14 +147,42 @@ pub struct ReplayProgress {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ScientificSaveFormat {
+    #[default]
+    Lpd,
+    Csv,
+    LpdAndCsv,
+    #[cfg(any(feature = "hdf5", feature = "hdf5-static"))]
+    Hdf5,
+}
+
+impl ScientificSaveFormat {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Lpd => "LPD",
+            Self::Csv => "CSV",
+            Self::LpdAndCsv => "LPD + CSV",
+            #[cfg(any(feature = "hdf5", feature = "hdf5-static"))]
+            Self::Hdf5 => "HDF5",
+        }
+    }
+}
+
 /// Enqueued and sink-written counts are not durable-storage acknowledgements.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ScientificStorageStatus {
+    pub format: ScientificSaveFormat,
     pub enqueued: u64,
     pub sink_written: u64,
+    pub csv_rows_written: u64,
+    pub csv_frames_written: u64,
+    pub lpd_frames_written: u64,
     pub closed: bool,
     pub error: Option<String>,
     pub path: Option<String>,
+    pub csv_path: Option<String>,
+    pub lpd_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -184,10 +212,13 @@ pub enum UiRequest {
     Disconnect {
         link: LinkKind,
     },
-    StartAcquisition,
+    StartAcquisition {
+        format: ScientificSaveFormat,
+    },
     StopAcquisition,
     StartPcapReplay {
         path: String,
+        save: Option<ScientificSaveFormat>,
     },
     StopPcapReplay,
     SetTelemetryPolling {

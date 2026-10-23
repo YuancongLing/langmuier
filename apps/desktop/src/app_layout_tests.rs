@@ -470,7 +470,9 @@ fn save_buttons_wait_for_backend_state_and_bind_error_keeps_original_hover_detai
         click_central_text(&mut app, &context, logical, "开始保存");
         assert_eq!(
             endpoint.request_rx.try_recv().unwrap(),
-            UiRequest::StartAcquisition
+            UiRequest::StartAcquisition {
+                format: crate::bridge::ScientificSaveFormat::Lpd,
+            }
         );
         assert!(
             !app.acquisition_running,

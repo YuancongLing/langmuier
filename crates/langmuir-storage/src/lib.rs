@@ -7,6 +7,7 @@ mod hdf5;
 #[cfg(any(test, feature = "mock"))]
 mod memory;
 mod metrics;
+mod scientific_csv;
 mod service;
 
 pub use binary::{
@@ -19,6 +20,9 @@ pub use hdf5::{Hdf5Config, Hdf5Error, Hdf5Sink};
 #[cfg(any(test, feature = "mock"))]
 pub use memory::{MemorySink, MemorySinkSnapshot, memory_sink};
 pub use metrics::{StorageMetrics, StorageMetricsSnapshot};
+pub use scientific_csv::{
+    SCIENTIFIC_CSV_HEADER, ScientificCsvConfig, ScientificCsvError, ScientificCsvSink,
+};
 pub use service::{
     BatchSink, BatchWriter, StorageEvent, StorageServiceConfig, StorageStatusSnapshot, WriterExit,
     WriterStopReason,

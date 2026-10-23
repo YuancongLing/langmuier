@@ -17,6 +17,9 @@ use tempfile::tempdir;
 use super::{Controller, UdpLvdsIngress};
 use crate::bridge::{BackendEvent, BackendStateSnapshot, LvdsReceiveStats};
 
+#[path = "backend_scientific_csv_tests.rs"]
+mod scientific_csv_tests;
+
 const SOURCE: &str = "192.0.2.1:1534";
 
 fn controller() -> (Controller, Receiver<BackendEvent>, Receiver<BackendEvent>) {
@@ -544,7 +547,7 @@ fn e10_saving_blocks_source_changes_and_preserves_the_current_science_writer() {
     let (mut controller, critical, _display) = controller();
     start_file(&mut controller, &path);
     let source_before = controller.lvds_source.clone();
-    controller.start_pcap_replay("does-not-exist.pcapng");
+    controller.start_pcap_replay("does-not-exist.pcapng", None);
     assert!(controller.replay.is_none());
     assert_eq!(controller.lvds_source, source_before);
     assert_eq!(controller.capture_path.as_deref(), Some(path.as_path()));
@@ -658,7 +661,7 @@ fn capture_to_scientific_file(
     // event display channel lets this test inspect every event without
     // confusing rendering backpressure with protocol rejection.
     let (mut controller, _critical, display) = controller_with_display_capacity(128);
-    controller.start_pcap_replay(capture.to_str().unwrap());
+    controller.start_pcap_replay(capture.to_str().unwrap(), None);
     let replay = controller.replay.as_mut().expect("production PCAP replay");
     // Advance only the replay clock, not device timestamps or packet order.
     // Pacing itself has separate 50 ms boundary tests.
@@ -842,11 +845,13 @@ fn reference_adc_valid(wire: &[u8]) -> bool {
 #[test]
 #[ignore = "requires user capture"]
 fn e7_user_capture_no_crc_science_roundtrip() {
-    let capture = Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../2026101902--朗缪尔.pcapng"
-    ));
-    let original = fs::read(capture).expect("place the user capture in the project root");
+    let capture_path = std::env::var_os("LANGMUIR_USER_PCAP").map_or_else(
+        || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../2026101902--朗缪尔.pcapng"),
+        std::path::PathBuf::from,
+    );
+    let capture = capture_path.as_path();
+    let original = fs::read(capture)
+        .expect("place the user capture in the project root or set LANGMUIR_USER_PCAP");
     let expected = independently_count_capture(capture);
     println!(
         "USER_CAPTURE independent total={} target={} complete={} structure={} parsed={} accepted={} duplicates={} conflicts={}",

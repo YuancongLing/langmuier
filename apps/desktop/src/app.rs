@@ -17,7 +17,7 @@ use langmuir_core::{
 use crate::{
     bridge::{
         BackendBridge, BackendEvent, BackendStateSnapshot, LinkKind, LinkMetricsSnapshot, LogLevel,
-        LvdsStatusSnapshot, TELEMETRY_POLL_INTERVAL_DEFAULT_MILLIS,
+        LvdsStatusSnapshot, ScientificSaveFormat, TELEMETRY_POLL_INTERVAL_DEFAULT_MILLIS,
         TELEMETRY_POLL_INTERVAL_MAX_MILLIS, TELEMETRY_POLL_INTERVAL_MIN_MILLIS,
         TelemetryPollingState, TelemetrySnapshot, UiRequest,
     },
@@ -165,6 +165,8 @@ struct LvdsView {
     replay_dialog_open: bool,
     plotted_frames: u64,
     replay_path: String,
+    replay_save_science: bool,
+    save_format: ScientificSaveFormat,
 }
 
 impl Default for LvdsView {
@@ -173,7 +175,9 @@ impl Default for LvdsView {
             status: None,
             replay_dialog_open: false,
             plotted_frames: 0,
-            replay_path: "2026101902--朗缪尔.pcapng".to_owned(),
+            replay_path: "102301.pcapng".to_owned(),
+            replay_save_science: false,
+            save_format: ScientificSaveFormat::default(),
         }
     }
 }
@@ -736,14 +740,18 @@ impl LangmuirDesktopApp {
                 if running {
                     self.restore_faults_for_source("采集");
                 }
-                self.push_log(
-                    LogLevel::Info,
-                    if running {
-                        "正式科学保存已开始"
-                    } else {
-                        "正式科学保存已停止"
-                    },
-                );
+                let message = if running {
+                    "正式科学保存已开始"
+                } else {
+                    "正式科学保存已停止"
+                };
+                #[cfg(feature = "mock")]
+                let message = if self.mock_mode {
+                    "MOCK 合成波形状态已更新；不写科学文件"
+                } else {
+                    message
+                };
+                self.push_log(LogLevel::Info, message);
             }
             BackendEvent::TelemetryPollingChanged {
                 active,
@@ -790,7 +798,7 @@ impl LangmuirDesktopApp {
                 );
             }
             BackendEvent::CsvExported { path } => {
-                self.push_log(LogLevel::Info, format!("CSV 已导出: {path}"));
+                self.push_log(LogLevel::Info, format!("RS422 遥测 CSV 已导出: {path}"));
             }
             BackendEvent::Fault { source, message } => self.push_fault(source, message),
             BackendEvent::Log { level, message } => self.push_log(level, message),
@@ -2139,6 +2147,9 @@ impl LangmuirDesktopApp {
                         }
                     });
                     central_control_row(ui, |ui| {
+                        if width >= 440.0 {
+                            self.scientific_save_format(ui, "capture");
+                        }
                         self.lvds_save_button(ui, &mut request, false);
                         self.lvds_more_menu(ui, &mut request);
                         let text = self.lvds_save_summary();
@@ -2231,7 +2242,9 @@ impl LangmuirDesktopApp {
             *request = Some(if saving {
                 UiRequest::StopAcquisition
             } else {
-                UiRequest::StartAcquisition
+                UiRequest::StartAcquisition {
+                    format: self.lvds_view.save_format,
+                }
             });
         }
     }
@@ -2247,15 +2260,59 @@ impl LangmuirDesktopApp {
         } else {
             "未保存"
         };
-        format!(
-            "{state} · 入队 {} / sink写入 {}",
+        let summary = format!(
+            "{state} · 入队 {} / 写入 {}",
             storage.map_or(0, |s| s.enqueued),
             storage.map_or(0, |s| s.sink_written)
-        )
+        );
+        if let Some(storage) = storage
+            && matches!(
+                storage.format,
+                ScientificSaveFormat::Csv | ScientificSaveFormat::LpdAndCsv
+            )
+        {
+            return format!("{summary} · CSV 行 {}", storage.csv_rows_written);
+        }
+        summary
+    }
+
+    fn scientific_save_format(&mut self, ui: &mut Ui, location: &'static str) {
+        ui.label("保存格式");
+        ui.add_enabled_ui(!self.acquisition_running, |ui| {
+            let response = ComboBox::from_id_salt(("scientific_save_format", location))
+                .width(100.0)
+                .selected_text(self.lvds_view.save_format.label())
+                .show_ui(ui, |ui| {
+                    for format in [
+                        ScientificSaveFormat::Csv,
+                        ScientificSaveFormat::Lpd,
+                        ScientificSaveFormat::LpdAndCsv,
+                    ] {
+                        ui.selectable_value(
+                            &mut self.lvds_view.save_format,
+                            format,
+                            format.label(),
+                        );
+                    }
+                    #[cfg(any(feature = "hdf5", feature = "hdf5-static"))]
+                    ui.selectable_value(
+                        &mut self.lvds_view.save_format,
+                        ScientificSaveFormat::Hdf5,
+                        ScientificSaveFormat::Hdf5.label(),
+                    );
+                });
+            debug_ui_rect("central.operations.save_format", response.response.rect);
+            response.response.on_hover_text(
+                "LVDS 科学数据保存格式；CSV 保存两路全部原始 ADC。当前保存结束后才能修改格式。",
+            );
+        });
     }
 
     fn lvds_more_menu(&mut self, ui: &mut Ui, request: &mut Option<UiRequest>) {
         ui.menu_button("更多", |ui| {
+            ui.set_max_width(480.0);
+            ui.strong("科学数据保存");
+            ui.horizontal(|ui| self.scientific_save_format(ui, "more"));
             if let Some(status) = &self.lvds_view.status {
                 scientific_storage_status(ui, status);
             } else {
@@ -2266,7 +2323,7 @@ impl LangmuirDesktopApp {
                 *request = Some(UiRequest::RefreshPorts);
                 ui.close();
             }
-            if ui.button("导出遥测 (CSV)").clicked() {
+            if ui.button("导出 RS422 遥测 (CSV)").clicked() {
                 *request = Some(UiRequest::ExportCsv {
                     suggested_name: format!(
                         "langmuir-{}.csv",
@@ -2369,18 +2426,40 @@ impl LangmuirDesktopApp {
                     .as_ref()
                     .and_then(|status| status.replay.as_ref())
                     .is_some_and(|replay| !replay.finished);
+                ui.add_enabled_ui(!self.acquisition_running && !replay_running, |ui| {
+                    ui.checkbox(
+                        &mut self.lvds_view.replay_save_science,
+                        "回放时保存科学数据",
+                    );
+                    ui.horizontal(|ui| self.scientific_save_format(ui, "replay"));
+                });
+                if self.lvds_view.replay_save_science {
+                    ui.label(
+                        RichText::new("从第一帧开始保存全部原始 ADC；回放结束后自动关闭科学文件。")
+                            .small()
+                            .color(theme::TEXT_SECONDARY),
+                    );
+                }
                 ui.horizontal(|ui| {
                     if ui
                         .add_enabled(
                             !self.acquisition_running
                                 && !replay_running
                                 && !self.lvds_view.replay_path.trim().is_empty(),
-                            egui::Button::new("开始回放"),
+                            egui::Button::new(if self.lvds_view.replay_save_science {
+                                "开始回放并保存"
+                            } else {
+                                "开始回放"
+                            }),
                         )
                         .clicked()
                     {
                         request = Some(UiRequest::StartPcapReplay {
                             path: self.lvds_view.replay_path.trim().to_owned(),
+                            save: self
+                                .lvds_view
+                                .replay_save_science
+                                .then_some(self.lvds_view.save_format),
                         });
                     }
                     if ui
@@ -2948,22 +3027,58 @@ fn extend_scientific_channel(
 fn scientific_storage_status(ui: &mut Ui, status: &LvdsStatusSnapshot) {
     let storage = &status.storage;
     ui.label(format!(
-        "正式保存：入队 {} · sink 写入 {} · {}",
+        "LVDS 科学保存 ({})：入队 {} 帧 · 实际写入 {} 帧",
+        storage.format.label(),
         storage.enqueued,
         storage.sink_written,
-        if storage.closed {
+    ));
+    if matches!(
+        storage.format,
+        ScientificSaveFormat::Csv | ScientificSaveFormat::LpdAndCsv
+    ) {
+        ui.label(format!(
+            "科学 CSV：实际写入 {} 帧 · CSV 数据行 {}",
+            storage.csv_frames_written, storage.csv_rows_written,
+        ));
+    }
+    if matches!(
+        storage.format,
+        ScientificSaveFormat::Lpd | ScientificSaveFormat::LpdAndCsv
+    ) {
+        ui.label(format!("LPD：实际写入 {} 帧", storage.lpd_frames_written));
+    }
+    ui.label(format!(
+        "文件状态：{}",
+        if storage.error.is_some() {
+            "错误 / 捕获不完整"
+        } else if storage.closed {
             "已关闭"
+        } else if storage.path.is_some() {
+            "写入中"
         } else {
-            "未关闭"
-        },
+            "未开始"
+        }
     ));
     ui.label(
         RichText::new("入队和 sink 成功不等于断电持久化；停止保存后以实际关闭结果为准。")
             .small()
             .color(theme::TEXT_SECONDARY),
     );
-    if let Some(path) = &storage.path {
-        ui.add(egui::Label::new(path).wrap());
+    for (label, path) in [
+        ("科学 CSV", storage.csv_path.as_ref()),
+        ("LPD", storage.lpd_path.as_ref()),
+        (
+            "文件",
+            storage
+                .path
+                .as_ref()
+                .filter(|_| storage.csv_path.is_none() && storage.lpd_path.is_none()),
+        ),
+    ] {
+        if let Some(path) = path {
+            ui.add(egui::Label::new(format!("{label}：{path}")).wrap())
+                .on_hover_text(path);
+        }
     }
     if let Some(error) = &storage.error {
         ui.colored_label(theme::DANGER, error);
@@ -3985,6 +4100,135 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "mock")]
+    fn mock_acquisition_confirmation_does_not_claim_real_scientific_files() {
+        let (bridge, _endpoint) = channel_bridge(16);
+        let mut app = LangmuirDesktopApp::with_bridge(Box::new(bridge), None, true);
+        app.handle_backend_event(BackendEvent::AcquisitionChanged { running: true });
+        assert!(app.logs.back().unwrap().message.contains("MOCK"));
+        assert!(app.logs.back().unwrap().message.contains("不写科学文件"));
+    }
+
+    #[test]
+    fn scientific_save_format_is_available_before_starting() {
+        let (mut app, endpoint) = lvds_test_app();
+        let context = Context::default();
+        let output = render_lvds_ui(&mut app, &context, Vec::new());
+        assert!(output.shapes.iter().any(|shape| matches!(
+            &shape.shape,
+            Shape::Text(shape) if shape.galley.text() == "保存格式"
+        )));
+        assert!(endpoint.request_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn selected_scientific_format_is_sent_and_locked_during_capture() {
+        use crate::bridge::ScientificSaveFormat;
+
+        let (mut app, endpoint) = lvds_test_app();
+        let context = Context::default();
+        click_lvds_button(&mut app, &context, "LPD");
+        click_lvds_button(&mut app, &context, "CSV");
+        click_lvds_button(&mut app, &context, "开始保存");
+        assert_eq!(
+            endpoint.request_rx.try_recv().unwrap(),
+            UiRequest::StartAcquisition {
+                format: ScientificSaveFormat::Csv,
+            }
+        );
+        assert!(!app.acquisition_running, "wait for backend confirmation");
+
+        app.handle_backend_event(BackendEvent::AcquisitionChanged { running: true });
+        click_lvds_button(&mut app, &context, "CSV");
+        let output = render_lvds_ui(&mut app, &context, Vec::new());
+        assert!(
+            !output.shapes.iter().any(|shape| matches!(
+                &shape.shape,
+                Shape::Text(shape) if shape.galley.text() == "LPD + CSV"
+            )),
+            "the active capture format selector must stay locked"
+        );
+        assert!(endpoint.request_rx.try_recv().is_err());
+
+        app.handle_backend_event(BackendEvent::AcquisitionChanged { running: false });
+        click_lvds_button(&mut app, &context, "CSV");
+        click_lvds_button(&mut app, &context, "LPD + CSV");
+        click_lvds_button(&mut app, &context, "开始保存");
+        assert_eq!(
+            endpoint.request_rx.try_recv().unwrap(),
+            UiRequest::StartAcquisition {
+                format: ScientificSaveFormat::LpdAndCsv,
+            }
+        );
+    }
+
+    #[test]
+    fn replay_scientific_save_is_requested_before_replay_starts() {
+        use crate::bridge::ScientificSaveFormat;
+
+        let (mut app, endpoint) = lvds_test_app();
+        let context = Context::default();
+        click_lvds_button(&mut app, &context, "LPD");
+        click_lvds_button(&mut app, &context, "CSV");
+        click_lvds_button(&mut app, &context, "离线回放 PCAP");
+        app.lvds_view.replay_path = "  capture.pcapng  ".to_owned();
+        click_lvds_button(&mut app, &context, "回放时保存科学数据");
+        click_lvds_button(&mut app, &context, "开始回放并保存");
+        assert_eq!(
+            endpoint.request_rx.try_recv().unwrap(),
+            UiRequest::StartPcapReplay {
+                path: "capture.pcapng".to_owned(),
+                save: Some(ScientificSaveFormat::Csv),
+            }
+        );
+        assert!(endpoint.request_rx.try_recv().is_err());
+        assert!(
+            !app.acquisition_running,
+            "only the backend confirms creation"
+        );
+    }
+
+    #[test]
+    fn scientific_storage_summary_uses_actual_csv_rows_and_retains_errors() {
+        use crate::bridge::ScientificSaveFormat;
+
+        let (mut app, _endpoint) = lvds_test_app();
+        let mut status = status("PCAP replay");
+        status.storage.format = ScientificSaveFormat::LpdAndCsv;
+        status.storage.enqueued = 9;
+        status.storage.sink_written = 2;
+        status.storage.csv_frames_written = 2;
+        status.storage.csv_rows_written = 250;
+        status.storage.lpd_frames_written = 3;
+        status.storage.closed = true;
+        app.apply_lvds_status(status.clone());
+        app.lvds_view.plotted_frames = 999;
+        let summary = app.lvds_save_summary();
+        assert!(summary.contains("已关闭"));
+        assert!(summary.contains("入队 9"));
+        assert!(summary.contains("写入 2"));
+        assert!(summary.contains("CSV 行 250"));
+
+        status.storage.error = Some("CSV disk full".to_owned());
+        app.apply_lvds_status(status);
+        assert!(app.lvds_save_summary().contains("保存错误"));
+    }
+
+    #[test]
+    fn replay_offers_saving_before_the_first_frame() {
+        let (mut app, endpoint) = lvds_test_app();
+        let context = Context::default();
+        app.lvds_view.replay_dialog_open = true;
+        let _ = render_lvds_ui(&mut app, &context, Vec::new());
+        let output = render_lvds_ui(&mut app, &context, Vec::new());
+        assert!(output.shapes.iter().any(|shape| matches!(
+            &shape.shape,
+            Shape::Text(shape) if shape.galley.text() == "回放时保存科学数据"
+        )));
+        assert!(endpoint.request_rx.try_recv().is_err());
+    }
+
+    #[test]
     fn replay_dialog_renders_without_starting_science_or_saving() {
         let (mut app, endpoint) = lvds_test_app();
         let context = Context::default();
@@ -4070,21 +4314,29 @@ mod tests {
             #[cfg(feature = "mock")]
             false,
         );
-        app.submit(UiRequest::StartAcquisition);
+        app.submit(UiRequest::StartAcquisition {
+            format: crate::bridge::ScientificSaveFormat::Lpd,
+        });
         assert!(!app.acquisition_running);
         assert!(app.faults.front().is_some());
         assert_eq!(
             endpoint.request_rx.try_recv().unwrap(),
             UiRequest::RefreshPorts
         );
-        app.submit(UiRequest::StartAcquisition);
+        app.submit(UiRequest::StartAcquisition {
+            format: crate::bridge::ScientificSaveFormat::Lpd,
+        });
         assert_eq!(
             endpoint.request_rx.try_recv().unwrap(),
-            UiRequest::StartAcquisition
+            UiRequest::StartAcquisition {
+                format: crate::bridge::ScientificSaveFormat::Lpd,
+            }
         );
         assert!(!app.acquisition_running, "wait for backend confirmation");
         drop(endpoint);
-        app.submit(UiRequest::StartAcquisition);
+        app.submit(UiRequest::StartAcquisition {
+            format: crate::bridge::ScientificSaveFormat::Lpd,
+        });
         assert!(!app.acquisition_running);
         assert!(app.faults.front().is_some());
     }
@@ -4100,7 +4352,8 @@ mod tests {
         assert_eq!(
             endpoint.request_rx.try_recv().unwrap(),
             UiRequest::StartPcapReplay {
-                path: "2026101902--朗缪尔.pcapng".to_owned(),
+                path: "102301.pcapng".to_owned(),
+                save: None,
             }
         );
         assert!(endpoint.request_rx.try_recv().is_err());

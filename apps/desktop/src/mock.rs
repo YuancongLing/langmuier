@@ -275,7 +275,7 @@ impl BackendBridge for MockBridge {
                 }
                 self.queue_link(link, false, "用户断开".to_owned());
             }
-            UiRequest::StartAcquisition => {
+            UiRequest::StartAcquisition { .. } => {
                 if !self.lvds_connected {
                     self.events.push_back(BackendEvent::Fault {
                         source: "采集".to_owned(),
@@ -440,6 +440,7 @@ mod tests {
         bridge
             .request(UiRequest::StartPcapReplay {
                 path: "capture.pcapng".to_owned(),
+                save: None,
             })
             .unwrap();
         assert!(bridge.events.iter().any(|event| matches!(

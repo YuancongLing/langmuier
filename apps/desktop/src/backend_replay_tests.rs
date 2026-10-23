@@ -12,6 +12,166 @@ use langmuir_transport::{CapturePacket, CapturedUdp};
 use super::{Controller, DEPLOYED_LVDS_UDP_SOURCE, PcapReplay, UdpLvdsIngress};
 use crate::bridge::{BackendEvent, BackendStateSnapshot, ReplayProgress};
 
+#[test]
+fn csv_capture_closes_at_replay_eof_and_preserves_all_raw_samples() {
+    let (replay, tx, _cancelled) = replay(Instant::now());
+    let (mut controller, _display) = controller();
+    controller.replay = Some(replay);
+    controller.lvds_connected = true;
+    let directory = tempfile::tempdir().unwrap();
+    let stem = directory.path().join("science");
+    assert!(controller.start_scientific_capture(crate::bridge::ScientificSaveFormat::Csv, &stem,));
+    for sequence in [65_535, 65_536] {
+        tx.send(Ok(Some(captured(
+            Duration::ZERO,
+            datagram(sequence, &wire(), 1),
+        ))))
+        .unwrap();
+    }
+    tx.send(Ok(None)).unwrap();
+    controller.drain_replay();
+    let status = &controller.storage_status;
+    assert!(status.closed);
+    assert_eq!(status.error, None);
+    assert_eq!((status.enqueued, status.sink_written), (2, 2));
+    assert_eq!(
+        (status.csv_frames_written, status.csv_rows_written),
+        (2, 250)
+    );
+    assert_eq!(status.lpd_frames_written, 0);
+    assert!(status.lpd_path.is_none());
+    assert!(!stem.with_extension("lpd").exists());
+    let csv = std::fs::read_to_string(stem.with_extension("csv")).unwrap();
+    let lines: Vec<_> = csv.lines().collect();
+    assert_eq!(lines.len(), 251);
+    assert_eq!(
+        lines[1],
+        "0,65535,1694498816,999800,0,1694498816999800,4660,43981,CRC_NOT_CHECKED"
+    );
+    assert_eq!(
+        lines[125],
+        "0,65535,1694498816,999800,124,1694498817049400,4784,43857,CRC_NOT_CHECKED"
+    );
+    assert_eq!(
+        lines[126],
+        "1,0,1694498816,999800,0,1694498816999800,4660,43981,CRC_NOT_CHECKED"
+    );
+}
+
+#[test]
+fn dual_capture_manual_stop_closes_matching_outputs_and_keeps_plotting() {
+    let (replay, tx, _cancelled) = replay(Instant::now());
+    let (mut controller, display) = controller();
+    controller.replay = Some(replay);
+    controller.lvds_connected = true;
+    let directory = tempfile::tempdir().unwrap();
+    let stem = directory.path().join("dual");
+    assert!(
+        controller.start_scientific_capture(crate::bridge::ScientificSaveFormat::LpdAndCsv, &stem,)
+    );
+    tx.send(Ok(Some(captured(Duration::ZERO, datagram(7, &wire(), 1)))))
+        .unwrap();
+    controller.drain_replay();
+    controller.stop_acquisition_at_ui_boundary();
+    tx.send(Ok(Some(captured(Duration::ZERO, datagram(8, &wire(), 1)))))
+        .unwrap();
+    controller.drain_replay();
+    assert_eq!(display.try_iter().count(), 2);
+    let status = &controller.storage_status;
+    assert!(status.closed);
+    assert_eq!(status.error, None);
+    assert_eq!(
+        (status.csv_frames_written, status.lpd_frames_written),
+        (1, 1)
+    );
+    assert_eq!(status.csv_rows_written, 125);
+    assert_eq!(
+        std::fs::read(stem.with_extension("lpd")).unwrap().len(),
+        1042
+    );
+    assert_eq!(
+        std::fs::read_to_string(stem.with_extension("csv"))
+            .unwrap()
+            .lines()
+            .count(),
+        126
+    );
+    assert!(!controller.acquisition_running);
+    assert!(!controller.replay.as_ref().unwrap().progress.finished);
+}
+
+#[test]
+fn capture_creation_failure_reports_error_without_starting_or_overwriting() {
+    let (mut controller, _display) = controller();
+    let directory = tempfile::tempdir().unwrap();
+    let stem = directory.path().join("occupied");
+    std::fs::write(stem.with_extension("csv"), "retain existing capture").unwrap();
+    assert!(!controller.start_scientific_capture(crate::bridge::ScientificSaveFormat::Csv, &stem,));
+    assert!(!controller.acquisition_running);
+    assert!(controller.scientific_writer.is_none());
+    assert!(controller.storage_status.error.is_some());
+    assert_eq!(controller.storage_status.enqueued, 0);
+    assert_eq!(controller.storage_status.csv_rows_written, 0);
+    assert_eq!(
+        std::fs::read_to_string(stem.with_extension("csv")).unwrap(),
+        "retain existing capture"
+    );
+}
+
+#[test]
+fn replay_read_error_closes_csv_and_marks_incomplete_capture() {
+    let (replay, tx, _cancelled) = replay(Instant::now());
+    let (mut controller, _display) = controller();
+    controller.replay = Some(replay);
+    let directory = tempfile::tempdir().unwrap();
+    let stem = directory.path().join("interrupted");
+    assert!(controller.start_scientific_capture(crate::bridge::ScientificSaveFormat::Csv, &stem,));
+    tx.send(Ok(Some(captured(Duration::ZERO, datagram(8, &wire(), 1)))))
+        .unwrap();
+    tx.send(Err("broken PCAP".to_owned())).unwrap();
+    controller.drain_replay();
+    assert!(controller.storage_status.closed);
+    assert!(
+        controller
+            .storage_status
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("broken PCAP")
+    );
+    assert_eq!(controller.storage_status.csv_rows_written, 125);
+    assert!(stem.with_extension("csv.incomplete").exists());
+}
+
+#[test]
+fn detached_capture_progress_still_updates_closed_counts_and_retains_error() {
+    let (mut controller, _display) = controller();
+    controller.storage_status.format = crate::bridge::ScientificSaveFormat::LpdAndCsv;
+    controller.storage_status.error = Some("shutdown timed out; capture incomplete".to_owned());
+    controller.capture_progress = Some(Arc::new(Mutex::new(
+        crate::bridge::ScientificStorageStatus {
+            csv_frames_written: 2,
+            csv_rows_written: 250,
+            lpd_frames_written: 1,
+            closed: true,
+            ..crate::bridge::ScientificStorageStatus::default()
+        },
+    )));
+    controller.drain_storage();
+    assert!(controller.storage_status.closed);
+    assert_eq!(controller.storage_status.csv_rows_written, 250);
+    assert_eq!(controller.storage_status.lpd_frames_written, 1);
+    assert_eq!(controller.storage_status.sink_written, 1);
+    assert!(
+        controller
+            .storage_status
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("timed out")
+    );
+}
+
 type PacketResult = Result<Option<CapturePacket>, String>;
 
 fn replay(started: Instant) -> (PcapReplay, Sender<PacketResult>, Receiver<()>) {

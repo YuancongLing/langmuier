@@ -1,0 +1,84 @@
+{
+  "capture": "D:\\RUST\\langmuier\\102301.pcapng",
+  "capture_bytes": 56740,
+  "capture_sha256": "c0fe65e69ca8efe4f98fedd2758d6cb0a043e840ccf6e0814ad6acb1f7b76e6f",
+  "csv": "D:\\RUST\\langmuier\\data\\scientific-20261023-172854.356.csv",
+  "csv_bytes": 1134157,
+  "csv_sha256": "6d20a6e074941b6ca55cd5636c7bcb735acef986627fc9915b4c213ed9d5692a",
+  "total_packets": 153,
+  "target_udp_packets": 153,
+  "accepted_frames": 153,
+  "csv_data_rows": 19125,
+  "csv_total_lines": 19126,
+  "paired_adc_values_checked": 38250,
+  "all_fields_readback": "PASS",
+  "rollback_indexes": [],
+  "sample_records": [
+    {
+      "frame_index": "0",
+      "sequence_u16": "489",
+      "frame_seconds": "148",
+      "frame_microseconds": "899965",
+      "sample_index": "0",
+      "sample_time_us": "148899965",
+      "ch1_adc": "48808",
+      "ch2_adc": "48820",
+      "integrity": "CRC_NOT_CHECKED"
+    },
+    {
+      "frame_index": "0",
+      "sequence_u16": "489",
+      "frame_seconds": "148",
+      "frame_microseconds": "899965",
+      "sample_index": "124",
+      "sample_time_us": "148949565",
+      "ch1_adc": "47779",
+      "ch2_adc": "47418",
+      "integrity": "CRC_NOT_CHECKED"
+    },
+    {
+      "frame_index": "56",
+      "sequence_u16": "545",
+      "frame_seconds": "151",
+      "frame_microseconds": "699965",
+      "sample_index": "0",
+      "sample_time_us": "151699965",
+      "ch1_adc": "48871",
+      "ch2_adc": "48873",
+      "integrity": "CRC_NOT_CHECKED"
+    },
+    {
+      "frame_index": "56",
+      "sequence_u16": "545",
+      "frame_seconds": "151",
+      "frame_microseconds": "699965",
+      "sample_index": "124",
+      "sample_time_us": "151749565",
+      "ch1_adc": "46365",
+      "ch2_adc": "45916",
+      "integrity": "CRC_NOT_CHECKED"
+    },
+    {
+      "frame_index": "152",
+      "sequence_u16": "641",
+      "frame_seconds": "156",
+      "frame_microseconds": "499966",
+      "sample_index": "0",
+      "sample_time_us": "156499966",
+      "ch1_adc": "50916",
+      "ch2_adc": "50793",
+      "integrity": "CRC_NOT_CHECKED"
+    },
+    {
+      "frame_index": "152",
+      "sequence_u16": "641",
+      "frame_seconds": "156",
+      "frame_microseconds": "499966",
+      "sample_index": "124",
+      "sample_time_us": "156549566",
+      "ch1_adc": "49357",
+      "ch2_adc": "49135",
+      "integrity": "CRC_NOT_CHECKED"
+    }
+  ]
+}
