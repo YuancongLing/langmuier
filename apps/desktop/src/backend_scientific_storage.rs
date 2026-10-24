@@ -9,10 +9,8 @@ use std::{
 
 use langmuir_core::ScientificFrame;
 use langmuir_storage::{
-    BatchSink, BinaryConfig, BinarySink, ScientificCsvConfig, ScientificCsvSink,
+    BatchSink, BinaryConfig, BinaryV3Sink as BinarySink, ScientificCsvConfig, ScientificCsvSink,
 };
-#[cfg(any(feature = "hdf5", feature = "hdf5-static"))]
-use langmuir_storage::{Hdf5Config, Hdf5Sink};
 
 use crate::bridge::{ScientificSaveFormat, ScientificStorageStatus};
 
@@ -66,8 +64,7 @@ impl ScientificCaptureSink {
             let path = stem.with_extension("lpd");
             let sink = BinarySink::create(BinaryConfig::new(&path)).map_err(io::Error::other)?;
             capture.add("LPD", sink, |sink, status| {
-                status.lpd_frames_written = u64::try_from(sink.frames_written())
-                    .expect("frame count fits u64 on supported targets");
+                status.lpd_frames_written = sink.frames_written();
             });
             let status = &mut *capture.progress.lock().unwrap();
             status.lpd_path = Some(path.display().to_string());
@@ -92,10 +89,10 @@ impl ScientificCaptureSink {
         }
         #[cfg(any(feature = "hdf5", feature = "hdf5-static"))]
         if format == ScientificSaveFormat::Hdf5 {
-            let path = stem.with_extension("h5");
-            let sink = Hdf5Sink::create(Hdf5Config::new(&path)).map_err(io::Error::other)?;
-            capture.add("HDF5", sink, |_, _| {});
-            capture.progress.lock().unwrap().path = Some(path.display().to_string());
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "HDF5 旧 schema 为每通道 125 点，尚未适配新版 100 点 10bit 协议；请选择 CSV 或 LPD v3",
+            ));
         }
         Ok(capture)
     }
@@ -248,7 +245,7 @@ mod tests {
                 failure,
             },
             |output, status| {
-                status.lpd_frames_written = u64::try_from(output.sink.frames_written()).unwrap();
+                status.lpd_frames_written = output.sink.frames_written();
             },
         );
         sink.add(
@@ -267,7 +264,7 @@ mod tests {
                     utc_seconds: 1,
                     microseconds: 0,
                 },
-                sequence: 9,
+                frame_seq_u8: 9,
                 channel_1: Box::new([100; SAMPLE_COUNT]),
                 channel_2: Box::new([200; SAMPLE_COUNT]),
             })
@@ -284,7 +281,7 @@ mod tests {
         assert_eq!(status.lpd_frames_written, 0);
         assert_eq!(
             (status.csv_frames_written, status.csv_rows_written),
-            (1, 125)
+            (1, 100)
         );
         assert!(status.closed);
         assert!(status.error.as_ref().unwrap().contains("LPD flush failure"));
@@ -293,7 +290,7 @@ mod tests {
                 .unwrap()
                 .lines()
                 .count(),
-            126
+            101
         );
     }
 
@@ -304,7 +301,7 @@ mod tests {
         assert!(writer.shutdown().is_err());
         let status = progress.lock().unwrap();
         assert_eq!(status.lpd_frames_written, 0);
-        assert_eq!(status.csv_rows_written, 125);
+        assert_eq!(status.csv_rows_written, 100);
         assert!(status.closed);
         assert!(status.error.as_ref().unwrap().contains("LPD write failure"));
     }
@@ -319,7 +316,7 @@ mod tests {
             (status.lpd_frames_written, status.csv_frames_written),
             (1, 1)
         );
-        assert_eq!(status.csv_rows_written, 125);
+        assert_eq!(status.csv_rows_written, 100);
         assert!(status.closed);
         assert!(status.error.as_ref().unwrap().contains("LPD close failure"));
         assert_eq!(
@@ -327,7 +324,7 @@ mod tests {
                 .unwrap()
                 .lines()
                 .count(),
-            126
+            101
         );
     }
 }

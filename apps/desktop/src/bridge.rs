@@ -260,6 +260,9 @@ pub enum BackendEvent {
         connected: bool,
         metrics: Box<LinkMetricsSnapshot>,
     },
+    /// Display-only, uncalibrated signed reconstructed ADC values; the backend
+    /// derives these from the accepted code10 frame. The UI must not offset or
+    /// convert them to physical voltage. Both channels share first-sample time.
     ScientificSamples {
         channel_1_start_seconds: f64,
         channel_2_start_seconds: f64,

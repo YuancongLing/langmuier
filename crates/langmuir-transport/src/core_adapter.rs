@@ -100,8 +100,9 @@ mod tests {
         assert_eq!(exit.reason, StopReason::EndOfStream);
         let scientific = scientific.unwrap();
         assert_eq!(scientific.timestamp.microseconds, 9);
-        assert_eq!(scientific.sequence, 0);
-        assert_eq!(scientific.channel_1[0], 2057);
+        assert_eq!(scientific.frame_seq_u8, 9);
+        assert_eq!(scientific.channel_1[0], 521);
+        assert_eq!(scientific.channel_1[99], 620);
         assert_eq!(exit.metrics.frames_decoded, 1);
     }
 
@@ -109,7 +110,7 @@ mod tests {
     fn reader_accepts_decodable_scientific_change_without_updating_crc() {
         let (transport, mut input) = memory_transport(1, Duration::from_millis(5)).unwrap();
         let mut corrupt = lvds_packet(9, 1_700_000_000);
-        corrupt[19] ^= 0x02;
+        corrupt[15] ^= 0x02;
         input.feed(corrupt).unwrap();
         input.close();
         let mut worker = ReaderWorker::spawn(
@@ -133,8 +134,8 @@ mod tests {
             })
             .collect();
         assert_eq!(frames.len(), 1);
-        assert_eq!(frames[0].channel_1[0], 2057);
-        assert_eq!(frames[0].channel_1[1], 2060);
+        assert_eq!(frames[0].channel_1[0], 513);
+        assert_eq!(frames[0].channel_1[1], 522);
         assert_eq!(exit.metrics.frames_decoded, 1);
         assert_eq!(exit.metrics.rejected_frames, 0);
         assert_eq!(exit.metrics.checksum_failures, 0);
@@ -174,9 +175,9 @@ mod tests {
             })
             .collect();
         assert_eq!(frames.len(), 3);
-        assert_eq!(frames[0].channel_1[0], 2_057);
-        assert_eq!(frames[1].channel_1[0], 2_059);
-        assert_eq!(frames[2].channel_1[0], 2_058);
+        assert_eq!(frames[0].channel_1[0], 521);
+        assert_eq!(frames[1].channel_1[0], 523);
+        assert_eq!(frames[2].channel_1[0], 522);
         assert_eq!(exit.metrics.frames_decoded, 3);
         assert_eq!(exit.metrics.rejected_frames, 0);
         assert_eq!(exit.metrics.checksum_failures, 0);

@@ -10,8 +10,8 @@ use eframe::egui::{
 };
 use egui_plot::{Legend, Line, Plot, PlotPoint, PlotPoints, VLine};
 use langmuir_core::{
-    Command, CommandError, CommandFrame, ScanFrequency, command_checksum as core_command_checksum,
-    validate_command_frame,
+    Command, CommandError, CommandFrame, SAMPLE_COUNT, SAMPLE_INTERVAL_MICROS, ScanFrequency,
+    command_checksum as core_command_checksum, validate_command_frame,
 };
 
 use crate::{
@@ -25,9 +25,9 @@ use crate::{
     ui::{fonts, theme},
 };
 
-// UI history: 20 frames/s × 125 samples/frame × 60 s, plus one frame.
+// UI history: 2 kHz × 60 s, plus one complete scientific frame.
 // Scientific file storage is independent of this bounded display history.
-const PLOT_CAPACITY: usize = 150_125;
+const PLOT_CAPACITY: usize = 60 * 1_000_000 / SAMPLE_INTERVAL_MICROS as usize + SAMPLE_COUNT;
 const PLOT_HISTORY_SECONDS: f64 = 60.0;
 const PLOT_WINDOW_SECONDS: f64 = 10.0;
 const MAX_DISPLAY_POINTS: usize = 2_000;
@@ -73,8 +73,6 @@ const CENTRAL_COMPACT_OPERATIONS_HEIGHT: f32 = 154.0;
 const CENTRAL_COMPACT_LOG_HEIGHT: f32 = 80.0;
 const CENTRAL_SHORT_HEIGHT: f32 = 620.0;
 const UI_SCALE_OPTIONS: [f32; 6] = [0.8, 0.9, 1.0, 1.1, 1.25, 1.5];
-const ADC_ZERO_COUNTS: f64 = 32_768.0;
-const ADC_COUNTS_PER_MILLIVOLT: f64 = 6.4;
 const ALARM_COALESCE_WINDOW: Duration = Duration::from_secs(30);
 const DATA_FRESHNESS_WINDOW: Duration = Duration::from_secs(2);
 const UI_RECT_DEBUG_ENV: &str = "LANGMUIR_UI_DEBUG_RECTS";
@@ -159,7 +157,7 @@ enum PlotLayout {
     Split,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct LvdsView {
     status: Option<LvdsStatusSnapshot>,
     replay_dialog_open: bool,
@@ -167,19 +165,6 @@ struct LvdsView {
     replay_path: String,
     replay_save_science: bool,
     save_format: ScientificSaveFormat,
-}
-
-impl Default for LvdsView {
-    fn default() -> Self {
-        Self {
-            status: None,
-            replay_dialog_open: false,
-            plotted_frames: 0,
-            replay_path: "102301.pcapng".to_owned(),
-            replay_save_science: false,
-            save_format: ScientificSaveFormat::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -874,7 +859,7 @@ impl LangmuirDesktopApp {
                     .frequency_edit
                     .ensure_confirmed(u16::from(self.frequency), u16::from(ScanFrequency::MAX))?,
                 ConfigurationMode::Dc => {
-                    self.voltage_edit.ensure_confirmed(self.voltage, u16::MAX)?
+                    self.voltage_edit.ensure_confirmed(self.voltage, u16::MAX)?;
                 }
             }
         }
@@ -1218,6 +1203,66 @@ impl LangmuirDesktopApp {
         } else {
             self.typed_command_bytes().ok()
         };
+        self.command_preview(ui, displayed_frame, raw_mode);
+        let can_send = if raw_mode {
+            raw_frame_validation(&self.raw_command).is_ok()
+        } else {
+            self.typed_command_bytes().is_ok()
+        };
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .add_sized([68.0, 28.0], egui::Button::new("重置"))
+                .clicked()
+            {
+                self.command_family = CommandFamily::Telemetry;
+                self.configuration_mode = ConfigurationMode::Triangle;
+                self.frequency = 10;
+                self.frequency_edit.set_confirmed(10);
+                self.voltage = 5_000;
+                self.voltage_edit.set_confirmed(5_000);
+                self.lvds_enabled = true;
+                self.command_edit_mode = CommandEditMode::Typed;
+                self.raw_command = command_bytes(Command::RequestTelemetry);
+                raw_mode = false;
+            }
+            if raw_mode && ui.button("重算 SUM").clicked() {
+                recalculate_checksum(&mut self.raw_command);
+            }
+            let send_response = ui.add_enabled(
+                can_send,
+                egui::Button::new(RichText::new("发送指令").strong().color(theme::WHITE))
+                    .min_size(egui::vec2(104.0, 28.0))
+                    .fill(theme::PRIMARY),
+            );
+            debug_ui_rect("left.send_command", send_response.rect);
+            if send_response.clicked() {
+                if raw_mode {
+                    match raw_frame_validation(&self.raw_command) {
+                        Ok(()) => self.submit(UiRequest::SendCommand(self.raw_command)),
+                        Err(reason) => {
+                            self.push_fault("RS422 指令", format!("原始帧无效，未发送：{reason}"));
+                        }
+                    }
+                } else {
+                    match self.typed_command_bytes() {
+                        Ok(frame) => self.submit(UiRequest::SendCommand(frame)),
+                        Err(error) => {
+                            self.push_fault("RS422 指令", format!("参数无效，指令未发送：{error}"));
+                        }
+                    }
+                }
+            }
+        });
+        if !raw_mode && self.command_family == CommandFamily::Telemetry {
+            ui.add_space(6.0);
+            full_width_subtle_card(ui, |ui| {
+                theme::section_title(ui, "自动遥测轮询");
+                self.telemetry_polling_control(ui);
+            });
+        }
+    }
+
+    fn command_preview(&self, ui: &mut Ui, displayed_frame: Option<[u8; 12]>, raw_mode: bool) {
         full_width_subtle_card(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 theme::section_title(ui, "指令预览与校验");
@@ -1272,62 +1317,6 @@ impl LangmuirDesktopApp {
                 ui.colored_label(theme::DANGER, error);
             }
         });
-        let can_send = if raw_mode {
-            raw_frame_validation(&self.raw_command).is_ok()
-        } else {
-            self.typed_command_bytes().is_ok()
-        };
-        ui.horizontal_wrapped(|ui| {
-            if ui
-                .add_sized([68.0, 28.0], egui::Button::new("重置"))
-                .clicked()
-            {
-                self.command_family = CommandFamily::Telemetry;
-                self.configuration_mode = ConfigurationMode::Triangle;
-                self.frequency = 10;
-                self.frequency_edit.set_confirmed(10);
-                self.voltage = 5_000;
-                self.voltage_edit.set_confirmed(5_000);
-                self.lvds_enabled = true;
-                self.command_edit_mode = CommandEditMode::Typed;
-                self.raw_command = command_bytes(Command::RequestTelemetry);
-                raw_mode = false;
-            }
-            if raw_mode && ui.button("重算 SUM").clicked() {
-                recalculate_checksum(&mut self.raw_command);
-            }
-            let send_response = ui.add_enabled(
-                can_send,
-                egui::Button::new(RichText::new("发送指令").strong().color(theme::WHITE))
-                    .min_size(egui::vec2(104.0, 28.0))
-                    .fill(theme::PRIMARY),
-            );
-            debug_ui_rect("left.send_command", send_response.rect);
-            if send_response.clicked() {
-                if raw_mode {
-                    match raw_frame_validation(&self.raw_command) {
-                        Ok(()) => self.submit(UiRequest::SendCommand(self.raw_command)),
-                        Err(reason) => {
-                            self.push_fault("RS422 指令", format!("原始帧无效，未发送：{reason}"))
-                        }
-                    }
-                } else {
-                    match self.typed_command_bytes() {
-                        Ok(frame) => self.submit(UiRequest::SendCommand(frame)),
-                        Err(error) => {
-                            self.push_fault("RS422 指令", format!("参数无效，指令未发送：{error}"))
-                        }
-                    }
-                }
-            }
-        });
-        if !raw_mode && self.command_family == CommandFamily::Telemetry {
-            ui.add_space(6.0);
-            full_width_subtle_card(ui, |ui| {
-                theme::section_title(ui, "自动遥测轮询");
-                self.telemetry_polling_control(ui);
-            });
-        }
     }
 
     fn telemetry_polling_control(&mut self, ui: &mut Ui) {
@@ -1375,6 +1364,35 @@ impl LangmuirDesktopApp {
             .color(theme::TEXT_MUTED),
         );
 
+        let changed = self.telemetry_polling_interval_editor(ui);
+        if changed && self.telemetry_polling.active {
+            self.submit(UiRequest::SetTelemetryPolling {
+                enabled: true,
+                interval_millis: self.telemetry_polling_edit_millis,
+            });
+        }
+        ui.horizontal(|ui| {
+            let (label, fill) = if self.telemetry_polling.active {
+                ("停止循环", theme::DANGER)
+            } else {
+                ("开始循环", theme::SUCCESS)
+            };
+            if ui
+                .add_enabled(
+                    self.rs422.connected,
+                    egui::Button::new(RichText::new(label).color(theme::WHITE)).fill(fill),
+                )
+                .clicked()
+            {
+                self.submit(UiRequest::SetTelemetryPolling {
+                    enabled: !self.telemetry_polling.active,
+                    interval_millis: self.telemetry_polling_edit_millis,
+                });
+            }
+        });
+    }
+
+    fn telemetry_polling_interval_editor(&mut self, ui: &mut Ui) -> bool {
         let slider_width = polling_slider_width(ui.available_width());
         let slider_response = ui
             .scope(|ui| {
@@ -1406,13 +1424,13 @@ impl LangmuirDesktopApp {
 
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new(format!("最小 {} ms", TELEMETRY_POLL_INTERVAL_MIN_MILLIS))
+                RichText::new(format!("最小 {TELEMETRY_POLL_INTERVAL_MIN_MILLIS} ms"))
                     .small()
                     .color(theme::TEXT_MUTED),
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label(
-                    RichText::new(format!("最大 {} ms", TELEMETRY_POLL_INTERVAL_MAX_MILLIS))
+                    RichText::new(format!("最大 {TELEMETRY_POLL_INTERVAL_MAX_MILLIS} ms"))
                         .small()
                         .color(theme::TEXT_MUTED),
                 );
@@ -1448,32 +1466,7 @@ impl LangmuirDesktopApp {
                 changed
             })
             .inner;
-        let changed = slider_changed || input_changed;
-        if changed && self.telemetry_polling.active {
-            self.submit(UiRequest::SetTelemetryPolling {
-                enabled: true,
-                interval_millis: self.telemetry_polling_edit_millis,
-            });
-        }
-        ui.horizontal(|ui| {
-            let (label, fill) = if self.telemetry_polling.active {
-                ("停止循环", theme::DANGER)
-            } else {
-                ("开始循环", theme::SUCCESS)
-            };
-            if ui
-                .add_enabled(
-                    self.rs422.connected,
-                    egui::Button::new(RichText::new(label).color(theme::WHITE)).fill(fill),
-                )
-                .clicked()
-            {
-                self.submit(UiRequest::SetTelemetryPolling {
-                    enabled: !self.telemetry_polling.active,
-                    interval_millis: self.telemetry_polling_edit_millis,
-                });
-            }
-        });
+        slider_changed || input_changed
     }
 
     fn command_byte_is_active(&self, index: usize) -> bool {
@@ -1487,41 +1480,49 @@ impl LangmuirDesktopApp {
         }
     }
 
+    fn telemetry_empty_panel(ui: &mut Ui, #[cfg(feature = "mock")] mock_mode: bool) {
+        full_width_card(ui, |ui| {
+            debug_ui_rect(
+                "right.telemetry_empty_card",
+                ui.available_rect_before_wrap(),
+            );
+            ui.horizontal_wrapped(|ui| {
+                theme::section_title(ui, "遥测状态");
+                theme::status_badge(ui, "等待数据", theme::WARNING);
+            });
+            ui.add_space(6.0);
+            ui.vertical_centered(|ui| {
+                ui.label(RichText::new("●").color(theme::WARNING).size(16.0));
+                ui.label(
+                    RichText::new("尚未收到下位机遥测响应")
+                        .color(theme::TEXT_SECONDARY)
+                        .size(11.0),
+                );
+                ui.label(
+                    RichText::new("时间、工作模式和状态将在响应后显示")
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+            });
+            #[cfg(feature = "mock")]
+            if mock_mode {
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new("数据源：Mock 模式（等待模拟遥测）")
+                        .small()
+                        .color(theme::WARNING),
+                );
+            }
+        });
+    }
+
     fn telemetry_panel(&self, ui: &mut Ui) {
         let Some(data) = &self.telemetry else {
-            full_width_card(ui, |ui| {
-                debug_ui_rect(
-                    "right.telemetry_empty_card",
-                    ui.available_rect_before_wrap(),
-                );
-                ui.horizontal_wrapped(|ui| {
-                    theme::section_title(ui, "遥测状态");
-                    theme::status_badge(ui, "等待数据", theme::WARNING);
-                });
-                ui.add_space(6.0);
-                ui.vertical_centered(|ui| {
-                    ui.label(RichText::new("●").color(theme::WARNING).size(16.0));
-                    ui.label(
-                        RichText::new("尚未收到下位机遥测响应")
-                            .color(theme::TEXT_SECONDARY)
-                            .size(11.0),
-                    );
-                    ui.label(
-                        RichText::new("时间、工作模式和状态将在响应后显示")
-                            .small()
-                            .color(theme::TEXT_MUTED),
-                    );
-                });
+            Self::telemetry_empty_panel(
+                ui,
                 #[cfg(feature = "mock")]
-                if self.mock_mode {
-                    ui.add_space(4.0);
-                    ui.label(
-                        RichText::new("数据源：Mock 模式（等待模拟遥测）")
-                            .small()
-                            .color(theme::WARNING),
-                    );
-                }
-            });
+                self.mock_mode,
+            );
             return;
         };
         let fresh = self.telemetry_is_fresh();
@@ -1614,6 +1615,30 @@ impl LangmuirDesktopApp {
         });
     }
 
+    fn fault_empty_notice(ui: &mut Ui) {
+        egui::Frame::new()
+            .fill(theme::SUCCESS_SOFT)
+            .stroke(Stroke::new(1.0, theme::SUCCESS.gamma_multiply(0.45)))
+            .corner_radius(5.0)
+            .inner_margin(egui::Margin::same(7))
+            .show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    theme::status_badge(ui, "正常", theme::SUCCESS);
+                    ui.label(
+                        RichText::new("该筛选下没有报警记录")
+                            .small()
+                            .color(theme::TEXT_SECONDARY),
+                    );
+                });
+                ui.label(
+                    RichText::new("收到设备异常或通信故障后，记录会显示在这里。")
+                        .small()
+                        .color(theme::TEXT_MUTED)
+                        .italics(),
+                );
+            });
+    }
+
     fn fault_panel(&mut self, ui: &mut Ui) {
         full_width_card(ui, |ui| {
             debug_ui_rect("right.alarm_card", ui.available_rect_before_wrap());
@@ -1645,27 +1670,7 @@ impl LangmuirDesktopApp {
                 .take(MAX_VISIBLE_FAULTS)
                 .collect();
             if visible.is_empty() {
-                egui::Frame::new()
-                    .fill(theme::SUCCESS_SOFT)
-                    .stroke(Stroke::new(1.0, theme::SUCCESS.gamma_multiply(0.45)))
-                    .corner_radius(5.0)
-                    .inner_margin(egui::Margin::same(7))
-                    .show(ui, |ui| {
-                        ui.horizontal_wrapped(|ui| {
-                            theme::status_badge(ui, "正常", theme::SUCCESS);
-                            ui.label(
-                                RichText::new("该筛选下没有报警记录")
-                                    .small()
-                                    .color(theme::TEXT_SECONDARY),
-                            );
-                        });
-                        ui.label(
-                            RichText::new("收到设备异常或通信故障后，记录会显示在这里。")
-                                .small()
-                                .color(theme::TEXT_MUTED)
-                                .italics(),
-                        );
-                    });
+                Self::fault_empty_notice(ui);
             } else {
                 for index in visible {
                     let fault = self
@@ -1853,7 +1858,7 @@ impl LangmuirDesktopApp {
                     [ui.available_width().max(0.0), CENTRAL_CONTROL_HEIGHT],
                     egui::Label::new(RichText::new(&cache).small().color(theme::TEXT_MUTED))
                         .truncate(),
-                ).on_hover_text(format!("{cache}\n左键拖动平移 · 滚轮围绕鼠标缩放 · 移动鼠标查看原值\n手动视图不会被新数据抢回；跟随最新恢复实时窗口。"));
+                ).on_hover_text(format!("{cache}\n左键拖动平移 · 滚轮围绕鼠标缩放 · 移动鼠标查看重建 ADC\n手动视图不会被新数据抢回；跟随最新恢复实时窗口。"));
         });
     }
 
@@ -1921,7 +1926,7 @@ impl LangmuirDesktopApp {
                         [ui.available_width(), readout_row_height],
                         egui::Label::new(
                             RichText::new(format!(
-                                "{}  通道1 {} mV  通道2 {} mV",
+                                "设备时间 {} s  通道1 {} ADC  通道2 {} ADC",
                                 format_plot_timestamp(cursor, 0.0),
                                 value_text(values[0]),
                                 value_text(values[1])
@@ -2018,7 +2023,7 @@ impl LangmuirDesktopApp {
                     y_label: if normalized {
                         "独立归一化幅值（实际量程见图例）"
                     } else {
-                        "电压估算 (mV，未校准)"
+                        "ADC 码值"
                     },
                     channels: show_channels,
                     names: [&names[0], &names[1]],
@@ -2055,9 +2060,9 @@ impl LangmuirDesktopApp {
                         range,
                         reset,
                         y_label: if channel == 0 {
-                            "通道 1 电压估算 (mV，未校准)"
+                            "通道 1 ADC 码值"
                         } else {
-                            "通道 2 电压估算 (mV，未校准)"
+                            "通道 2 ADC 码值"
                         },
                         channels: [channel == 0, channel == 1],
                         names: ["通道 1", "通道 2"],
@@ -2135,7 +2140,7 @@ impl LangmuirDesktopApp {
                         });
                         if width < 540.0 {
                             central_control_row(ui, |ui| {
-                                self.lvds_listen_buttons(ui, &mut request, false)
+                                self.lvds_listen_buttons(ui, &mut request, false);
                             });
                             ui.add_space(8.0);
                         }
@@ -2157,7 +2162,7 @@ impl LangmuirDesktopApp {
                             [ui.available_width().max(0.0), CENTRAL_CONTROL_HEIGHT],
                             egui::Label::new(RichText::new(&text).small().monospace()).truncate(),
                         )
-                        .on_hover_text(format!("{text}\n入队、sink 写入与成功关闭分别统计。"));
+                        .on_hover_text(format!("{text}\n显示保存进度及文件状态。"));
                     });
                 }
                 self.lvds_quality_grid(ui);
@@ -2295,16 +2300,13 @@ impl LangmuirDesktopApp {
                         );
                     }
                     #[cfg(any(feature = "hdf5", feature = "hdf5-static"))]
-                    ui.selectable_value(
-                        &mut self.lvds_view.save_format,
-                        ScientificSaveFormat::Hdf5,
-                        ScientificSaveFormat::Hdf5.label(),
-                    );
+                    ui.add_enabled(false, egui::Button::new("HDF5（暂不可用）"))
+                        .on_hover_text("当前数据格式支持 CSV、LPD 和 LPD + CSV。");
                 });
             debug_ui_rect("central.operations.save_format", response.response.rect);
-            response.response.on_hover_text(
-                "LVDS 科学数据保存格式；CSV 保存两路全部原始 ADC。当前保存结束后才能修改格式。",
-            );
+            response
+                .response
+                .on_hover_text("选择科学数据保存格式；保存结束后可修改格式。");
         });
     }
 
@@ -2326,7 +2328,7 @@ impl LangmuirDesktopApp {
             if ui.button("导出 RS422 遥测 (CSV)").clicked() {
                 *request = Some(UiRequest::ExportCsv {
                     suggested_name: format!(
-                        "langmuir-{}.csv",
+                        "langmuier-probe-ground-control-{}.csv",
                         Local::now().format("%Y%m%d-%H%M%S")
                     ),
                 });
@@ -2352,19 +2354,30 @@ impl LangmuirDesktopApp {
         } else {
             raw.to_owned()
         };
-        let response = ui.add_sized(
-            [ui.available_width().max(0.0), 20.0],
-            egui::Label::new(RichText::new(summary).small().color(
-                if raw.contains("异常") || raw.contains("address") {
-                    theme::WARNING
-                } else {
-                    theme::TEXT_MUTED
+        let response = ui
+            .allocate_ui_with_layout(
+                egui::vec2(ui.available_width().max(0.0), 20.0),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.add_sized(
+                        [ui.available_width().max(0.0), 20.0],
+                        egui::Label::new(RichText::new(summary).small().color(
+                            if raw.contains("异常")
+                                || raw.contains("错误")
+                                || raw.contains("address")
+                            {
+                                theme::WARNING
+                            } else {
+                                theme::TEXT_MUTED
+                            },
+                        ))
+                        .truncate(),
+                    )
+                    .on_hover_text(&detail);
                 },
-            ))
-            .truncate(),
-        );
+            )
+            .response;
         debug_ui_rect("central.operations.receive_status", response.rect);
-        response.on_hover_text(detail);
     }
 
     fn lvds_quality_grid(&self, ui: &mut Ui) {
@@ -2389,7 +2402,7 @@ impl LangmuirDesktopApp {
                     let text = if is_value { RichText::new(value.to_string()).monospace().color(theme::TEXT_SECONDARY) }
                         else { RichText::new(label).small().color(theme::TEXT_MUTED) };
                     let response = ui.add_sized([cell, if is_value { 22.0 } else { 16.0 }], egui::Label::new(text).truncate());
-                    response.on_hover_text(format!("{label}：{value}\n接收为匹配来源的 UDP；解析成功在去重前统计；保存为 sink API 写入数，不代表断电持久化。"));
+                    response.on_hover_text(format!("{label}：{value}\n接收为匹配来源的数据包数；解析成功为解码帧数；保存为实际写入帧数。"));
                 }
             });
         }
@@ -2406,14 +2419,14 @@ impl LangmuirDesktopApp {
 
     fn replay_dialog(&mut self, context: &egui::Context, open: &mut bool) {
         let mut request = None;
-        egui::Window::new("离线回放 PCAP / PCAPNG")
+        egui::Window::new("数据回放 · PCAP / PCAPNG")
             .collapsible(false)
             .resizable(false)
             .default_width(560.0)
             .open(open)
             .show(context, |ui| {
                 ui.label(
-                    "离线来源：只读文件，不向网络发送报文。启动回放会切换当前接收来源并清空波形。",
+                    "选择 PCAP 或 PCAPNG 文件，按记录时间显示数据。开始回放将切换数据源并重新加载波形。",
                 );
                 ui.label("捕获文件路径");
                 ui.add(
@@ -2435,9 +2448,11 @@ impl LangmuirDesktopApp {
                 });
                 if self.lvds_view.replay_save_science {
                     ui.label(
-                        RichText::new("从第一帧开始保存全部原始 ADC；回放结束后自动关闭科学文件。")
-                            .small()
-                            .color(theme::TEXT_SECONDARY),
+                        RichText::new(
+                            "按所选格式保存科学数据，回放结束后自动关闭文件。",
+                        )
+                        .small()
+                        .color(theme::TEXT_SECONDARY),
                     );
                 }
                 ui.horizontal(|ui| {
@@ -2469,33 +2484,38 @@ impl LangmuirDesktopApp {
                         request = Some(UiRequest::StopPcapReplay);
                     }
                     if self.acquisition_running {
-                        ui.colored_label(theme::WARNING, "请先停止正式保存，再切换来源");
+                        ui.colored_label(theme::WARNING, "请先停止保存，再切换数据源");
                     }
                 });
                 if let Some(status) = &self.lvds_view.status {
-                    ui.label("结构、时间及 ADC 合法的数据直接绘图和保存。");
-                    if let Some(replay) = &status.replay {
-                        ui.label(format!(
-                            "{} · 总包 {} · 目标 UDP {}",
-                            if replay.finished {
-                                "回放已结束"
-                            } else {
-                                "回放进行中"
-                            },
-                            replay.total_packets,
-                            replay.target_udp_packets
-                        ));
-                        ui.add(egui::Label::new(&replay.path).wrap());
-                        if let Some(error) = &replay.error {
-                            ui.colored_label(theme::DANGER, error);
-                        }
-                    } else {
-                        ui.label("尚未开始离线回放");
-                    }
+                    Self::replay_status(ui, status);
                 }
             });
         if let Some(request) = request {
             self.submit(request);
+        }
+    }
+
+    fn replay_status(ui: &mut Ui, status: &LvdsStatusSnapshot) {
+        if let Some(replay) = &status.replay {
+            ui.label(format!(
+                "{} · 总包 {} · 目标 UDP {}",
+                if replay.error.is_some() {
+                    "回放失败"
+                } else if replay.finished {
+                    "已结束"
+                } else {
+                    "回放中"
+                },
+                replay.total_packets,
+                replay.target_udp_packets
+            ));
+            ui.add(egui::Label::new(&replay.path).wrap());
+            if let Some(error) = &replay.error {
+                ui.add(egui::Label::new(RichText::new(error).color(theme::DANGER)).wrap());
+            }
+        } else {
+            ui.label("就绪");
         }
     }
 
@@ -2563,7 +2583,7 @@ impl LangmuirDesktopApp {
                             .color(theme::TEXT),
                     );
                     ui.label(
-                        RichText::new("Langmuir Probe Ground Control")
+                        RichText::new(crate::APP_NAME)
                             .size(10.0)
                             .color(theme::TEXT_MUTED),
                     );
@@ -2825,7 +2845,7 @@ impl eframe::App for LangmuirDesktopApp {
             debug_ui_rect("central.logs", regions.logs);
 
             ui.scope_builder(egui::UiBuilder::new().max_rect(regions.operations), |ui| {
-                self.operations_panel(ui)
+                self.operations_panel(ui);
             });
             ui.scope_builder(
                 egui::UiBuilder::new().max_rect(regions.plot_toolbar),
@@ -2896,28 +2916,7 @@ fn show_scientific_plot(
     channel_2: &[PlotPoint],
     cursor: Option<f64>,
 ) -> ScientificPlotOutcome {
-    let plot = Plot::new(config.id)
-        .min_size(egui::vec2(1.0, 1.0))
-        .show_axes([config.height >= 100.0; 2])
-        .x_axis_label("时间")
-        .y_axis_label(config.y_label)
-        .x_axis_formatter(|mark, range| {
-            format_plot_timestamp(mark.value, range.end() - range.start())
-        })
-        .allow_drag(true)
-        .pan_pointer_button(PointerButton::Primary)
-        .allow_scroll(false)
-        .allow_zoom(true)
-        .allow_axis_zoom_drag(false)
-        .allow_double_click_reset(false)
-        .allow_boxed_zoom(true)
-        .auto_bounds([false, true])
-        .height(config.height);
-    let plot = if config.height >= 100.0 {
-        plot.legend(Legend::default())
-    } else {
-        plot
-    };
+    let plot = configured_scientific_plot(&config);
     let response = plot.show(ui, |plot_ui| {
         let hovered = plot_ui.response().contains_pointer();
         let (wheel, zoom) = plot_ui.ctx().input(|input| {
@@ -3004,6 +3003,31 @@ fn show_scientific_plot(
     }
 }
 
+fn configured_scientific_plot(config: &ScientificPlotConfig<'_>) -> Plot<'static> {
+    let plot = Plot::new(config.id)
+        .min_size(egui::vec2(1.0, 1.0))
+        .show_axes([config.height >= 100.0; 2])
+        .x_axis_label("设备时间 (s)")
+        .y_axis_label(config.y_label)
+        .x_axis_formatter(|mark, range| {
+            format_plot_timestamp(mark.value, range.end() - range.start())
+        })
+        .allow_drag(true)
+        .pan_pointer_button(PointerButton::Primary)
+        .allow_scroll(false)
+        .allow_zoom(true)
+        .allow_axis_zoom_drag(false)
+        .allow_double_click_reset(false)
+        .allow_boxed_zoom(true)
+        .auto_bounds([false, true])
+        .height(config.height);
+    if config.height >= 100.0 {
+        plot.legend(Legend::default())
+    } else {
+        plot
+    }
+}
+
 fn extend_scientific_channel(
     buffer: &mut TimeSeriesBuffer,
     start_seconds: f64,
@@ -3016,7 +3040,9 @@ fn extend_scientific_channel(
             .scan(start_seconds, |time_seconds, value| {
                 let point = SamplePoint {
                     time_seconds: *time_seconds,
-                    value: adc_counts_to_millivolts(value),
+                    // Backend events already carry signed reconstructed ADC.
+                    // Preserve them without another offset or voltage scaling.
+                    value,
                 };
                 *time_seconds += sample_interval_seconds;
                 Some(point)
@@ -3060,7 +3086,7 @@ fn scientific_storage_status(ui: &mut Ui, status: &LvdsStatusSnapshot) {
         }
     ));
     ui.label(
-        RichText::new("入队和 sink 成功不等于断电持久化；停止保存后以实际关闭结果为准。")
+        RichText::new("文件路径和保存状态如下。")
             .small()
             .color(theme::TEXT_SECONDARY),
     );
@@ -3104,10 +3130,10 @@ mod plot_tests;
 /// logical point. This makes a 60-second Mock run useful for detecting layout
 /// jumps without flooding the log on every repaint.
 fn debug_ui_rect(label: &'static str, rect: egui::Rect) {
+    static LAST: OnceLock<Mutex<HashMap<&'static str, [f32; 4]>>> = OnceLock::new();
     if !ui_rect_debug_enabled() {
         return;
     }
-    static LAST: OnceLock<Mutex<HashMap<&'static str, [f32; 4]>>> = OnceLock::new();
     let snapshot = [rect.min.x, rect.min.y, rect.width(), rect.height()];
     let last = LAST.get_or_init(|| Mutex::new(HashMap::new()));
     let Ok(mut last) = last.lock() else {
@@ -3126,10 +3152,6 @@ fn debug_ui_rect(label: &'static str, rect: egui::Rect) {
         );
         last.insert(label, snapshot);
     }
-}
-
-fn adc_counts_to_millivolts(previous_sample: f64) -> f64 {
-    (previous_sample - ADC_ZERO_COUNTS) / ADC_COUNTS_PER_MILLIVOLT
 }
 
 fn status_dot(ui: &mut Ui, active: bool) {
@@ -3591,11 +3613,11 @@ fn debug_slider_geometry(
     configured_width: f32,
     enabled: bool,
 ) {
+    // Geometry diagnostics should not add continuous I/O to a live plot.
+    static LAST: OnceLock<Mutex<HashMap<&'static str, [u32; 5]>>> = OnceLock::new();
     if !ui_rect_debug_enabled() {
         return;
     }
-    // Geometry diagnostics should not add continuous I/O to a live plot.
-    static LAST: OnceLock<Mutex<HashMap<&'static str, [u32; 5]>>> = OnceLock::new();
     let geometry = [
         parent_rect.width().to_bits(),
         configured_width.to_bits(),
@@ -3825,26 +3847,15 @@ fn format_plot_timestamp(seconds: f64, visible_seconds: f64) -> String {
     if !seconds.is_finite() || seconds < 0.0 {
         return String::new();
     }
-    let Ok(duration) = Duration::try_from_secs_f64(seconds) else {
-        return format!("{seconds:.3}");
-    };
-    let Ok(whole_seconds) = i64::try_from(duration.as_secs()) else {
-        return format!("{seconds:.3}");
-    };
-    let nanoseconds = duration.subsec_nanos();
-    DateTime::<Utc>::from_timestamp(whole_seconds, nanoseconds).map_or_else(
-        || format!("{seconds:.3}"),
-        |date_time| {
-            let local = date_time.with_timezone(&Local);
-            if visible_seconds < 1.0 {
-                local.format("%H:%M:%S%.3f").to_string()
-            } else if visible_seconds < 3_600.0 {
-                local.format("%H:%M:%S").to_string()
-            } else {
-                local.format("%m-%d %H:%M").to_string()
-            }
-        },
-    )
+    // The device epoch is unconfirmed. At fine zoom (and for cursor readout)
+    // show microseconds so consecutive 500 us samples remain distinguishable.
+    if visible_seconds < 1.0 {
+        format!("{seconds:.6}")
+    } else if visible_seconds < 10.0 {
+        format!("{seconds:.4}")
+    } else {
+        format!("{seconds:.3}")
+    }
 }
 
 #[cfg(test)]
@@ -3859,6 +3870,8 @@ mod tests {
     };
     use langmuir_core::Command;
 
+    use langmuir_core::SAMPLE_COUNT;
+
     use crate::bridge::{
         BackendEndpoint, BackendEvent, LvdsStatusSnapshot, UiRequest, channel_bridge,
     };
@@ -3869,10 +3882,10 @@ mod tests {
         COMPACT_COMMAND_SIDEBAR_WIDTH, COMPACT_LAYOUT_BREAKPOINT, COMPACT_TELEMETRY_SIDEBAR_WIDTH,
         HEADER_COMPACT_BREAKPOINT, HEADER_COMPACT_HEIGHT, HEADER_HEIGHT, LangmuirDesktopApp,
         TELEMETRY_SIDEBAR_MAX_WIDTH, TELEMETRY_SIDEBAR_MIN_WIDTH, TELEMETRY_SIDEBAR_WIDTH,
-        adc_counts_to_millivolts, central_layout_rects, command_bytes, command_checksum,
-        fixed_panel_size, frequency_slider_width, hex_bytes, nearest_ui_scale,
-        normalize_plot_points, polling_slider_width, raw_frame_validation, recalculate_checksum,
-        telemetry_preset_active, work_mode_name,
+        central_layout_rects, command_bytes, command_checksum, fixed_panel_size,
+        frequency_slider_width, hex_bytes, nearest_ui_scale, normalize_plot_points,
+        polling_slider_width, raw_frame_validation, recalculate_checksum, telemetry_preset_active,
+        work_mode_name,
     };
 
     fn lvds_test_app() -> (LangmuirDesktopApp, BackendEndpoint) {
@@ -3901,9 +3914,9 @@ mod tests {
         BackendEvent::ScientificSamples {
             channel_1_start_seconds: 100.0,
             channel_2_start_seconds: 100.0,
-            sample_interval_seconds: 0.0004,
-            channel_1: vec![value; 125],
-            channel_2: vec![value + 64.0; 125],
+            sample_interval_seconds: 0.000_500,
+            channel_1: vec![value; SAMPLE_COUNT],
+            channel_2: vec![value + 64.0; SAMPLE_COUNT],
         }
     }
 
@@ -3958,21 +3971,21 @@ mod tests {
     #[test]
     fn scientific_frames_share_one_plot_without_crc_mode() {
         let (mut app, endpoint) = lvds_test_app();
-        app.handle_backend_event(scientific_event(32_768.0));
-        assert_eq!(app.channel_1.len(), 125);
-        assert_eq!(app.channel_2.len(), 125);
+        app.handle_backend_event(scientific_event(0.0));
+        assert_eq!(app.channel_1.len(), SAMPLE_COUNT);
+        assert_eq!(app.channel_2.len(), SAMPLE_COUNT);
         assert_eq!(app.lvds_view.plotted_frames, 1);
         app.handle_scientific_samples(
             101.0,
             101.0,
-            0.0004,
-            vec![32_832.0; 125],
-            vec![32_896.0; 125],
+            0.000_500,
+            vec![64.0; SAMPLE_COUNT],
+            vec![128.0; SAMPLE_COUNT],
         );
-        assert_eq!(app.channel_1.len(), 250);
+        assert_eq!(app.channel_1.len(), 2 * SAMPLE_COUNT);
         let (combined, _) = app.display_plot_points();
         assert_eq!(combined[0], [100.0, 0.0]);
-        assert_eq!(combined.last().unwrap()[1], 10.0);
+        assert_eq!(combined.last().unwrap()[1], 64.0);
         app.apply_lvds_status(status("UDP session 1"));
         assert_eq!(app.lvds_view.plotted_frames, 2);
         assert!(endpoint.request_rx.try_recv().is_err());
@@ -3985,16 +3998,16 @@ mod tests {
         app.handle_scientific_samples(
             100.0,
             100.0,
-            0.0004,
-            vec![32_768.0; 125],
-            vec![32_768.0; 125],
+            0.000_500,
+            vec![0.0; SAMPLE_COUNT],
+            vec![0.0; SAMPLE_COUNT],
         );
         app.toggle_display_freeze();
         app.apply_lvds_status(status("UDP session 1"));
         assert!(app.operator.frozen_plot.is_some());
         app.apply_lvds_status(status("offline PCAP session 2"));
-        app.handle_backend_event(scientific_event(32_768.0));
-        assert_eq!(app.channel_1.len(), 125);
+        app.handle_backend_event(scientific_event(0.0));
+        assert_eq!(app.channel_1.len(), SAMPLE_COUNT);
         app.apply_lvds_status(status("UDP session 3"));
         assert!(app.channel_1.is_empty());
         assert!(app.channel_2.is_empty());
@@ -4006,13 +4019,13 @@ mod tests {
     #[test]
     fn waveform_history_freeze_clear_and_clock_restart_remain_independent() {
         let (mut app, _endpoint) = lvds_test_app();
-        app.handle_backend_event(scientific_event(32_768.0));
+        app.handle_backend_event(scientific_event(0.0));
         app.handle_scientific_samples(
             101.0,
             101.0,
-            0.0004,
-            vec![32_832.0; 125],
-            vec![32_896.0; 125],
+            0.000_500,
+            vec![64.0; SAMPLE_COUNT],
+            vec![128.0; SAMPLE_COUNT],
         );
         assert_eq!(app.lvds_view.plotted_frames, 2);
         assert_eq!(app.display_plot_points().0[0], [100.0, 0.0]);
@@ -4020,20 +4033,26 @@ mod tests {
         app.handle_scientific_samples(
             172.0,
             172.0,
-            0.0004,
-            vec![32_832.0; 125],
-            vec![32_896.0; 125],
+            0.000_500,
+            vec![64.0; SAMPLE_COUNT],
+            vec![128.0; SAMPLE_COUNT],
         );
-        assert_eq!(app.channel_1.len(), 125);
+        assert_eq!(app.channel_1.len(), SAMPLE_COUNT);
         assert_eq!(app.display_plot_points().0[0], [100.0, 0.0]);
         app.toggle_display_freeze();
-        assert_eq!(app.display_plot_points().0[0], [172.0, 10.0]);
-        app.handle_scientific_samples(1.0, 1.0, 0.0004, vec![32_768.0; 125], vec![32_768.0; 125]);
-        assert_eq!(app.channel_1.len(), 125);
+        assert_eq!(app.display_plot_points().0[0], [172.0, 64.0]);
+        app.handle_scientific_samples(
+            1.0,
+            1.0,
+            0.000_500,
+            vec![0.0; SAMPLE_COUNT],
+            vec![0.0; SAMPLE_COUNT],
+        );
+        assert_eq!(app.channel_1.len(), SAMPLE_COUNT);
         app.clear_current_plot();
         assert_eq!(app.lvds_view.plotted_frames, 0);
         assert!(app.channel_1.is_empty());
-        assert!(app.display_plot_points().0.is_empty());
+        assert_eq!(app.display_plot_points().0, [] as [[f64; 2]; 0]);
     }
 
     #[test]
@@ -4045,24 +4064,24 @@ mod tests {
                 app.handle_scientific_samples(
                     start,
                     start,
-                    0.0004,
-                    vec![32_768.0; 125],
-                    vec![32_832.0; 125],
+                    0.000_500,
+                    vec![0.0; SAMPLE_COUNT],
+                    vec![64.0; SAMPLE_COUNT],
                 );
             } else {
                 app.handle_backend_event(BackendEvent::ScientificSamples {
                     channel_1_start_seconds: start,
                     channel_2_start_seconds: start,
-                    sample_interval_seconds: 0.0004,
-                    channel_1: vec![32_768.0; 125],
-                    channel_2: vec![32_832.0; 125],
+                    sample_interval_seconds: 0.000_500,
+                    channel_1: vec![0.0; SAMPLE_COUNT],
+                    channel_2: vec![64.0; SAMPLE_COUNT],
                 });
             }
         }
         assert_eq!(app.lvds_view.plotted_frames, 400);
         assert_eq!(
             app.channel_1.len(),
-            50_000,
+            40_000,
             "20 seconds remain in the 60 second history"
         );
         assert_eq!(app.channel_1.len(), app.channel_2.len());
@@ -4070,7 +4089,7 @@ mod tests {
         assert!(channel_1.len() <= super::MAX_DISPLAY_POINTS);
         assert!(channel_2.len() <= super::MAX_DISPLAY_POINTS);
         assert_eq!(channel_1.first().unwrap()[1], 0.0);
-        assert_eq!(channel_2.last().unwrap()[1], 10.0);
+        assert_eq!(channel_2.last().unwrap()[1], 64.0);
     }
 
     #[test]
@@ -4081,22 +4100,22 @@ mod tests {
             let start = 1_800_000_000.0 + f64::from(frame) * 0.05;
             app.handle_backend_event(BackendEvent::ScientificSamples {
                 channel_1_start_seconds: start,
-                channel_2_start_seconds: start + 0.0002,
-                sample_interval_seconds: 0.0004,
-                channel_1: vec![32_768.0; 125],
-                channel_2: vec![32_832.0; 125],
+                channel_2_start_seconds: start,
+                sample_interval_seconds: 0.000_500,
+                channel_1: vec![0.0; SAMPLE_COUNT],
+                channel_2: vec![64.0; SAMPLE_COUNT],
             });
         }
         assert!(app.scientific_data_is_fresh());
-        assert_eq!(app.channel_1.len(), 50_000);
+        assert_eq!(app.channel_1.len(), 40_000);
         let (channel_1, channel_2) = app.display_plot_points();
         assert!(channel_1.len() <= super::MAX_DISPLAY_POINTS);
         let last_1 = channel_1.last().unwrap();
         let last_2 = channel_2.last().unwrap();
-        assert!((last_1[0] - 1_800_000_019.999_6).abs() < 0.000_05);
-        assert!((last_2[0] - last_1[0] - 0.0002).abs() < 0.000_001);
+        assert!((last_1[0] - 1_800_000_019.999_5).abs() < 0.000_05);
+        assert!((last_2[0] - last_1[0]).abs() < 0.000_001);
         assert_eq!(last_1[1], 0.0);
-        assert_eq!(last_2[1], 10.0);
+        assert_eq!(last_2[1], 64.0);
     }
 
     #[test]
@@ -4198,7 +4217,7 @@ mod tests {
         status.storage.enqueued = 9;
         status.storage.sink_written = 2;
         status.storage.csv_frames_written = 2;
-        status.storage.csv_rows_written = 250;
+        status.storage.csv_rows_written = 200;
         status.storage.lpd_frames_written = 3;
         status.storage.closed = true;
         app.apply_lvds_status(status.clone());
@@ -4207,11 +4226,51 @@ mod tests {
         assert!(summary.contains("已关闭"));
         assert!(summary.contains("入队 9"));
         assert!(summary.contains("写入 2"));
-        assert!(summary.contains("CSV 行 250"));
+        assert!(summary.contains("CSV 行 200"));
 
         status.storage.error = Some("CSV disk full".to_owned());
         app.apply_lvds_status(status);
         assert!(app.lvds_save_summary().contains("保存错误"));
+    }
+
+    #[test]
+    fn failed_replay_shows_the_reason_and_allows_a_new_capture_to_start() {
+        use crate::bridge::ReplayProgress;
+
+        let (mut app, endpoint) = lvds_test_app();
+        let context = Context::default();
+        let error = "未找到可绘制的科学帧：错误的 04/FF 地址已拒收，当前要求 55/AA";
+        let mut snapshot = status("failed replay");
+        snapshot.replay = Some(ReplayProgress {
+            path: "wrong-04ff.pcapng".to_owned(),
+            total_packets: 20,
+            target_udp_packets: 20,
+            finished: true,
+            error: Some(error.to_owned()),
+        });
+        app.apply_lvds_status(snapshot);
+        app.lvds_view.replay_dialog_open = true;
+        app.lvds_view.replay_path = "final-55aa.pcapng".to_owned();
+        let _ = render_lvds_ui(&mut app, &context, Vec::new());
+        let output = render_lvds_ui(&mut app, &context, Vec::new());
+        let text: Vec<_> = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                Shape::Text(shape) => Some(shape.galley.text()),
+                _ => None,
+            })
+            .collect();
+        assert!(text.iter().any(|text| text.contains("回放失败")));
+        assert!(text.contains(&error));
+        click_lvds_button(&mut app, &context, "开始回放");
+        assert_eq!(
+            endpoint.request_rx.try_recv().unwrap(),
+            UiRequest::StartPcapReplay {
+                path: "final-55aa.pcapng".to_owned(),
+                save: None,
+            }
+        );
     }
 
     #[test]
@@ -4237,7 +4296,7 @@ mod tests {
             app.operations_panel(ui);
             app.lvds_dialog(ui.ctx());
         });
-        assert!(!output.shapes.is_empty());
+        assert_ne!(output.shapes, [] as [eframe::epaint::ClippedShape; 0]);
         assert!(endpoint.request_rx.try_recv().is_err());
         assert!(!app.acquisition_running);
         assert!(app.lvds_view.status.is_none());
@@ -4278,7 +4337,7 @@ mod tests {
     }
 
     #[test]
-    fn crc_operations_are_absent_before_during_and_after_saving() {
+    fn receive_status_omits_engineering_notices_before_during_and_after_saving() {
         let (mut app, endpoint) = lvds_test_app();
         let context = Context::default();
         for running in [false, true, false] {
@@ -4298,6 +4357,7 @@ mod tests {
                 "严格模式",
                 "诊断模式",
                 "科学数据未经 CRC 完整性验证",
+                "未标定",
             ] {
                 assert!(!text.iter().any(|label| label.contains(obsolete)));
             }
@@ -4348,11 +4408,17 @@ mod tests {
         click_lvds_button(&mut app, &context, "离线回放 PCAP");
         assert!(app.lvds_view.replay_dialog_open);
         assert!(endpoint.request_rx.try_recv().is_err());
+        // The old-protocol capture must not be preselected. Empty paths keep
+        // replay disabled until the user supplies a new-protocol capture.
+        assert_eq!(app.lvds_view.replay_path, "");
+        click_lvds_button(&mut app, &context, "开始回放");
+        assert!(endpoint.request_rx.try_recv().is_err());
+        app.lvds_view.replay_path = "new-protocol.pcapng".to_owned();
         click_lvds_button(&mut app, &context, "开始回放");
         assert_eq!(
             endpoint.request_rx.try_recv().unwrap(),
             UiRequest::StartPcapReplay {
-                path: "102301.pcapng".to_owned(),
+                path: "new-protocol.pcapng".to_owned(),
                 save: None,
             }
         );
@@ -4471,13 +4537,6 @@ mod tests {
     }
 
     #[test]
-    fn plot_vertical_axis_uses_the_adc_to_millivolt_formula() {
-        assert!(adc_counts_to_millivolts(32_768.0).abs() < 1.0e-12);
-        assert!((adc_counts_to_millivolts(32_774.4) - 1.0).abs() < 1.0e-12);
-        assert!((adc_counts_to_millivolts(0.0) + 5_120.0).abs() < 1.0e-12);
-    }
-
-    #[test]
     fn ui_scale_selection_stays_within_the_supported_range() {
         assert_eq!(nearest_ui_scale(0.8), 0.8);
         assert_eq!(nearest_ui_scale(1.0), 1.0);
@@ -4487,15 +4546,17 @@ mod tests {
 
     #[test]
     fn responsive_regions_have_safe_size_ordering() {
-        assert!(COMMAND_SIDEBAR_MIN_WIDTH < COMMAND_SIDEBAR_WIDTH);
-        assert!(COMMAND_SIDEBAR_WIDTH < COMMAND_SIDEBAR_MAX_WIDTH);
-        assert!(TELEMETRY_SIDEBAR_MIN_WIDTH < TELEMETRY_SIDEBAR_WIDTH);
-        assert!(TELEMETRY_SIDEBAR_WIDTH < TELEMETRY_SIDEBAR_MAX_WIDTH);
-        assert!(CENTRAL_PLOT_TOOLBAR_HEIGHT > 0.0);
-        assert!(CENTRAL_OPERATIONS_HEIGHT > CENTRAL_PLOT_TOOLBAR_HEIGHT);
-        assert!(CENTRAL_LOG_HEIGHT > CENTRAL_PLOT_TOOLBAR_HEIGHT);
-        assert!(HEADER_HEIGHT < HEADER_COMPACT_HEIGHT);
-        assert!(HEADER_COMPACT_BREAKPOINT > 1_024.0);
+        const {
+            assert!(COMMAND_SIDEBAR_MIN_WIDTH < COMMAND_SIDEBAR_WIDTH);
+            assert!(COMMAND_SIDEBAR_WIDTH < COMMAND_SIDEBAR_MAX_WIDTH);
+            assert!(TELEMETRY_SIDEBAR_MIN_WIDTH < TELEMETRY_SIDEBAR_WIDTH);
+            assert!(TELEMETRY_SIDEBAR_WIDTH < TELEMETRY_SIDEBAR_MAX_WIDTH);
+            assert!(CENTRAL_PLOT_TOOLBAR_HEIGHT > 0.0);
+            assert!(CENTRAL_OPERATIONS_HEIGHT > CENTRAL_PLOT_TOOLBAR_HEIGHT);
+            assert!(CENTRAL_LOG_HEIGHT > CENTRAL_PLOT_TOOLBAR_HEIGHT);
+            assert!(HEADER_HEIGHT < HEADER_COMPACT_HEIGHT);
+            assert!(HEADER_COMPACT_BREAKPOINT > 1_024.0);
+        }
     }
 
     #[test]

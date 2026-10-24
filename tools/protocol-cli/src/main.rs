@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use langmuir_core::{
     Command, DEPLOYED_LVDS_RAW_FRAME_LEN, UdpLvdsReassembler, UdpLvdsScienceGate,
     UdpLvdsSequenceMonitor, decode_rs422_telemetry, decode_scientific_frame,
-    parse_udp_lvds_datagram,
+    parse_udp_lvds_datagram, reconstruct_adc16,
 };
 
 fn main() -> ExitCode {
@@ -52,11 +52,13 @@ fn run(arguments: &[String]) -> Result<String, String> {
 fn decode_lvds_output(bytes: &[u8]) -> Result<String, String> {
     let frame = decode_scientific_frame(bytes).map_err(|error| error.to_string())?;
     Ok(format!(
-        "timestamp={:?}\nsequence={}\nch1_first={}\nch2_first={}\nsamples={}\nintegrity=CRC_NOT_CHECKED",
+        "timestamp={:?}\nframe_seq_u8={}\nch1_first_code10={}\nch2_first_code10={}\nch1_first_adc16_reconstructed={}\nch2_first_adc16_reconstructed={}\nsamples={}\nintegrity=CRC_NOT_CHECKED",
         frame.timestamp,
-        frame.sequence,
+        frame.frame_seq_u8,
         frame.channel_1[0],
         frame.channel_2[0],
+        reconstruct_adc16(frame.channel_1[0]),
+        reconstruct_adc16(frame.channel_2[0]),
         frame.channel_1.len()
     ))
 }
@@ -108,8 +110,11 @@ fn receive_udp_lvds(arguments: &[String]) -> Result<String, String> {
         .map_err(|error| format!("cannot create {index_path}: {error}"))?;
     let mut output_writer = BufWriter::new(output_file);
     let mut index_writer = BufWriter::new(index_file);
-    writeln!(index_writer, "frame_sequence,offset_bytes,frame_bytes")
-        .map_err(|error| format!("cannot write {index_path}: {error}"))?;
+    writeln!(
+        index_writer,
+        "udp_frame_sequence_u32,frame_seq_u8,offset_bytes,frame_bytes"
+    )
+    .map_err(|error| format!("cannot write {index_path}: {error}"))?;
 
     let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
     let mut buffer = vec![0_u8; 65_535];
@@ -170,18 +175,17 @@ fn receive_udp_lvds(arguments: &[String]) -> Result<String, String> {
         // sequence and its bytes. Duplicate/conflicting frames never reach
         // either capture file or the requested unique-frame count.
         let now = Instant::now();
-        match science_gate.accept_at(&frame, now) {
-            Ok(result) => {
-                if result.into_frame().is_none() {
-                    continue;
-                }
-            }
+        let scientific = match science_gate.accept_at(&frame, now) {
+            Ok(result) => match result.into_frame() {
+                Some(scientific) => scientific,
+                None => continue,
+            },
             Err(error) => {
                 rejected_scientific_frames = rejected_scientific_frames.saturating_add(1);
                 last_scientific_error = Some(error.to_string());
                 continue;
             }
-        }
+        };
         // Observe only Accepted science using the untruncated wrapper tag.
         // This never reorders capture writes or inserts missing samples.
         sequence_monitor.observe_at(frame.frame_sequence, now);
@@ -191,8 +195,9 @@ fn receive_udp_lvds(arguments: &[String]) -> Result<String, String> {
             .map_err(|error| format!("cannot write {}: {error}", output.display()))?;
         writeln!(
             index_writer,
-            "{},{},{}",
+            "{},{},{},{}",
             frame.frame_sequence,
+            scientific.frame_seq_u8,
             output_offset,
             frame.bytes.len()
         )
@@ -322,7 +327,9 @@ fn parse_hex(input: &str) -> Result<Vec<u8>, String> {
     }
     compact
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| {
             let text = std::str::from_utf8(pair)
                 .map_err(|_| "hex input must contain only ASCII digits".to_owned())?;
@@ -345,28 +352,42 @@ fn usage() -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_lvds_output, parse_hex, run};
+    use std::net::UdpSocket;
+    use std::time::{Duration, SystemTime};
+
+    use super::{decode_lvds_output, parse_hex, receive_udp_lvds, run};
+
+    fn golden_frame(frame_seq_u8: u8) -> [u8; 269] {
+        // Literal packed vectors supplied with the protocol specification.
+        // The reserved CRC bytes intentionally carry no acceptance claim.
+        let mut frame = [0_u8; 269];
+        frame[..15].copy_from_slice(&[
+            0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07, 0xAA, 0x65, 0x00, 0x00, 0x00, 0x00, 0x0F, 0x41,
+            0x78,
+        ]);
+        for group in frame[15..140].as_chunks_mut::<5>().0 {
+            group.copy_from_slice(&[0xFF, 0xC0, 0x08, 0x00, 0x01]);
+        }
+        for group in frame[140..265].as_chunks_mut::<5>().0 {
+            group.copy_from_slice(&[0x00, 0x3F, 0xF0, 0x03, 0xFF]);
+        }
+        frame[265] = frame_seq_u8;
+        frame[267..].copy_from_slice(&[0x12, 0x34]);
+        frame
+    }
 
     #[test]
     fn lvds_cli_decodes_golden_frame_and_ignores_crc_trailer_changes() {
-        // Fixed CRC 44C8 was calculated using the manufacturer's C reference,
-        // not the production Rust checksum function. DATA is 01 FF x 124.
-        let mut frame = [0_u8; 269];
-        frame[..19].copy_from_slice(&[
-            0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07, 0xAA, 0x65, 0x00, 0x00, 0x00, 0x00, 0x0F, 0x41,
-            0x78, 0x12, 0x34, 0xAB, 0xCD,
-        ]);
-        for offset in (19..267).step_by(2) {
-            frame[offset] = 0x01;
-            frame[offset + 1] = 0xFF;
-        }
-        frame[267..].copy_from_slice(&[0x44, 0xC8]);
+        let mut frame = golden_frame(255);
         let output = decode_lvds_output(&frame).unwrap();
         assert!(output.contains("utc_seconds: 1694498816"));
         assert!(output.contains("microseconds: 999800"));
-        assert!(output.contains("ch1_first=4660"));
-        assert!(output.contains("ch2_first=43981"));
-        assert!(output.contains("samples=125"));
+        assert!(output.contains("frame_seq_u8=255"));
+        assert!(output.contains("ch1_first_code10=1023"));
+        assert!(output.contains("ch2_first_code10=0"));
+        assert!(output.contains("ch1_first_adc16_reconstructed=32704"));
+        assert!(output.contains("ch2_first_adc16_reconstructed=-32768"));
+        assert!(output.contains("samples=100"));
 
         frame[268] ^= 1;
         assert_eq!(decode_lvds_output(&frame).unwrap(), output);
@@ -377,6 +398,61 @@ mod tests {
                 .unwrap_err()
                 .contains("microseconds")
         );
+    }
+
+    #[test]
+    fn udp_cli_capture_preserves_outer_u32_and_inner_seq8() {
+        let reservation = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let bind_address = reservation.local_addr().unwrap();
+        let source = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let source_address = source.local_addr().unwrap();
+        let unique = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory =
+            std::env::temp_dir().join(format!("langmuir-cli-udp-{}-{unique}", std::process::id()));
+        std::fs::create_dir(&directory).unwrap();
+        let output_path = directory.join("capture.bin");
+        let arguments = vec![
+            bind_address.to_string(),
+            source_address.to_string(),
+            "2".to_owned(),
+            output_path.to_str().unwrap().to_owned(),
+            "2".to_owned(),
+        ];
+        drop(reservation);
+        let receiver = std::thread::spawn(move || receive_udp_lvds(&arguments));
+        let first = golden_frame(255);
+        let second = golden_frame(0);
+        for _ in 0..200 {
+            for (sequence, frame) in [(65_535_u32, &first), (65_536, &second)] {
+                let mut datagram = vec![0_u8; 24];
+                datagram[..4].copy_from_slice(&[0x55, 0xAA, 0x01, 0xA5]);
+                datagram[4..8].copy_from_slice(&sequence.to_be_bytes());
+                datagram[8..12].copy_from_slice(&269_u32.to_be_bytes());
+                datagram[14..16].copy_from_slice(&1_u16.to_be_bytes());
+                datagram[20..22].copy_from_slice(&269_u16.to_be_bytes());
+                datagram.extend_from_slice(frame);
+                source.send_to(&datagram, bind_address).unwrap();
+            }
+            if receiver.is_finished() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let result = receiver.join().unwrap().unwrap();
+        assert!(result.contains("unique frames written=2"));
+        assert_eq!(
+            std::fs::read(&output_path).unwrap(),
+            [first, second].concat()
+        );
+        let index_path = format!("{}.index.csv", output_path.display());
+        assert_eq!(
+            std::fs::read_to_string(index_path).unwrap(),
+            "udp_frame_sequence_u32,frame_seq_u8,offset_bytes,frame_bytes\n65535,255,0,269\n65536,0,269,269\n"
+        );
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

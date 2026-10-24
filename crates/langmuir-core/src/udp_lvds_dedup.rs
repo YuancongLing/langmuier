@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use crate::{
     FrameError, LVDS_FRAME_LEN, ReassembledLvdsFrame, ScientificFrame, UdpLvdsError,
-    decode_scientific_frame_with_sequence,
+    decode_scientific_frame,
 };
 
 /// Recent accepted-frame lifetime, measured from first acceptance. This is a
@@ -67,8 +67,8 @@ struct AcceptedFrame {
 /// session. Create a fresh object after reconnecting or explicitly starting a
 /// new session. The manufacturer has not defined reset semantics: sequence
 /// decreases never clear this cache automatically, since they may be late UDP
-/// traffic. Full `u32` keys are independent of the legacy scientific model's
-/// `u16` sequence. Sequence wrap neither sorts nor resets accepted records.
+/// traffic. Full `u32` keys are independent of the inner scientific frame's
+/// `u8` sequence. Sequence wrap neither sorts nor resets accepted records.
 ///
 /// Matching uses every original wire byte. A valid same-sequence conflict is
 /// suppressed separately and leaves the first accepted record unchanged. Both
@@ -130,13 +130,7 @@ impl UdpLvdsScienceGate {
         now: Instant,
     ) -> Result<UdpLvdsScienceResult, FrameError> {
         self.expire_at(now);
-        // Preserve the existing model's low 16 bits only after retaining the
-        // full outer sequence for all cache lookups and conflict decisions.
-        let [_, _, sequence_high, sequence_low] = complete.frame_sequence.to_be_bytes();
-        let frame = decode_scientific_frame_with_sequence(
-            &complete.bytes,
-            u16::from_be_bytes([sequence_high, sequence_low]),
-        )?;
+        let frame = decode_scientific_frame(&complete.bytes)?;
         self.counters.validated_frames = self.counters.validated_frames.saturating_add(1);
 
         if let Some(previous) = self
@@ -245,9 +239,9 @@ mod tests {
         let result = gate.accept_at(&frame, now).unwrap();
         assert_eq!(result.disposition(), UdpLvdsDisposition::Accepted);
         let scientific = result.into_frame().unwrap();
-        assert_eq!(scientific.sequence, 5);
-        assert_eq!(scientific.channel_1[0], 4660);
-        assert_eq!(scientific.channel_2[124], 43857);
+        assert_eq!(scientific.frame_seq_u8, 255);
+        assert_eq!(scientific.channel_1[0], 1023);
+        assert_eq!(scientific.channel_2[99], 1023);
         for offset in 1..=10 {
             assert_disposition(
                 &mut gate,
@@ -326,6 +320,25 @@ mod tests {
             assert!(result.into_frame().is_some());
         }
         assert_eq!(gate.metrics().accepted_frames, 4);
+        assert_eq!(gate.metrics().duplicate_frames, 0);
+        assert_eq!(gate.metrics().sequence_conflicts, 0);
+    }
+
+    #[test]
+    fn inner_sequence_wrap_is_independent_of_full_outer_u32_keys() {
+        let now = Instant::now();
+        let mut gate = UdpLvdsScienceGate::default();
+        for (outer, inner) in [(65_535, 255), (65_536, 0), (131_072, 0)] {
+            let mut candidate = complete(outer);
+            candidate.bytes[265] = inner;
+            let frame = gate
+                .accept_at(&candidate, now)
+                .unwrap()
+                .into_frame()
+                .unwrap();
+            assert_eq!(frame.frame_seq_u8, inner);
+        }
+        assert_eq!(gate.metrics().accepted_frames, 3);
         assert_eq!(gate.metrics().duplicate_frames, 0);
         assert_eq!(gate.metrics().sequence_conflicts, 0);
     }
@@ -476,18 +489,18 @@ mod tests {
     }
 
     #[test]
-    fn invalid_structure_time_and_adc_never_poison_the_cache() {
+    fn invalid_structure_time_and_reserved_byte_never_poison_the_cache() {
         let now = Instant::now();
         let mut gate = UdpLvdsScienceGate::default();
         let mut invalid_time = golden_frame();
         invalid_time[11..15].copy_from_slice(&1_000_000_u32.to_be_bytes());
         refresh_crc16(&mut invalid_time);
-        let mut invalid_adc = golden_frame();
-        invalid_adc[15..17].copy_from_slice(&u16::MAX.to_be_bytes());
-        refresh_crc16(&mut invalid_adc);
+        let mut invalid_reserved = golden_frame();
+        invalid_reserved[266] = 1;
+        refresh_crc16(&mut invalid_reserved);
         let mut invalid_header = golden_frame();
         invalid_header[0] = 0;
-        for (sequence, bytes) in [invalid_time, invalid_adc, invalid_header]
+        for (sequence, bytes) in [invalid_time, invalid_reserved, invalid_header]
             .into_iter()
             .enumerate()
         {

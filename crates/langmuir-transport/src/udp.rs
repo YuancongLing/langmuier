@@ -210,9 +210,10 @@ mod tests {
                 event => panic!("unexpected UDP reader event: {event:?}"),
             }
         };
-        assert_eq!(frame.sequence, 0);
+        assert_eq!(frame.frame_seq_u8, 37);
         assert_eq!(frame.timestamp.utc_seconds, 1_700_000_000);
-        assert_eq!(frame.channel_1[0], 2_085);
+        assert_eq!(frame.channel_1[0], 549);
+        assert_eq!(frame.channel_1[99], 648);
         worker.shutdown().unwrap();
     }
 }

@@ -1,0 +1,165 @@
+{
+  "date": "2026-10-24",
+  "overall_acceptance": "PASS",
+  "blocker": null,
+  "original_txt": {
+    "path": "D:\\RUST\\langmuier\\lvds.txt",
+    "bytes": 10780,
+    "sha256": "b5a2eee986fbe4f26da33da67bfeab17b8f9185f72ed0c6f81f232f3c2f15add",
+    "status": "PASS",
+    "parsed_frames": 20,
+    "provenance": "User-pasted chat HEX stored locally as ASCII with one LF per line. This hash identifies the local chat transcription, not an original disk file supplied by the user.",
+    "paste_byte_audit": "PASS"
+  },
+  "strict_final_protocol": {
+    "status": "PASS",
+    "header_hex": "EB9055AA0107AA",
+    "wrong_04FF_rejected": true
+  },
+  "original_4000_codes_python_vs_rust": "PASS",
+  "original_derived_pcap_20_datagrams_byte_preservation": "PASS",
+  "original_04FF_negative_20_frames_0accepted_0plot_0stored": "PASS",
+  "original_native_windows_gui_20_frames": {
+    "status": "PASS",
+    "mode": "Windows x64 non-Mock Release, HDF5 off",
+    "executable": "target/delivery/windows-x64/LangmuirGroundControl.exe",
+    "executable_sha256": "9f3035c9a6687b249d6da3172f23964a628968c8ca1b08a19de2643b2b2f5eb9",
+    "working_directory": "target/qa/lvds-55aa-final/native-run",
+    "capture": {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-user\\lvds-from-txt-derived.pcapng",
+      "bytes": 7516,
+      "sha256": "e082a83fd079df35484f42b891b59e294849b747874be7410aedc8fee5c42813"
+    },
+    "target_udp": 20,
+    "parsed": 20,
+    "parse_failures": 0,
+    "accepted": 20,
+    "plotted_frames": 20,
+    "points_per_channel": 2000,
+    "save_format": "LPD + CSV",
+    "save_before_first_frame": true,
+    "enqueued": 20,
+    "written": 20,
+    "csv_data_rows": 2000,
+    "writers_closed": true,
+    "screenshots": [
+      "docs/qa/LVDS_55AA_USER_EOF_WINDOWS.jpg",
+      "docs/qa/LVDS_55AA_USER_OVERLAY_WINDOWS.jpg",
+      "docs/qa/LVDS_55AA_USER_SPLIT_WINDOWS.jpg",
+      "docs/qa/LVDS_55AA_USER_FREEZE_WINDOWS.jpg"
+    ],
+    "hardware_connected": false,
+    "ui_interactions_observed": [
+      "overlay",
+      "split",
+      "wheel zoom",
+      "left drag pan",
+      "reset/follow button",
+      "freeze and resume"
+    ],
+    "scope": "20 user-pasted HEX frames, about 1 second; not real probe communication or a 60-second acquisition"
+  },
+  "original_csv_2000_rows_all_11_columns": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-final\\native-run\\data\\scientific-20261024-181541.169.csv",
+    "bytes": 157266,
+    "sha256": "307b5501af8205f93ad08be0e7d08e432e2f2bdb9b33eb042c1d289f906ee1eb",
+    "status": "PASS",
+    "data_rows": 2000,
+    "columns_checked": 22000
+  },
+  "original_lpd_v3_8220_bytes_20_records": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-final\\native-run\\data\\scientific-20261024-181541.169.lpd",
+    "bytes": 8220,
+    "sha256": "7cab73808160fa118329d07d1e56a971ab19357be55c1bdb03ae4a67384c9f02",
+    "status": "PASS",
+    "version": 3,
+    "file_bytes": 8220,
+    "records": 20,
+    "codes_checked": 4000
+  },
+  "real_probe_communication": "NOT_RUN",
+  "60_second_continuous_acquisition": "NOT_RUN",
+  "verification_commands": [
+    {
+      "command": "C:\\Users\\Administrator\\miniconda3\\python.exe -m unittest discover -s tools/qa -p test_lvds_txt_*.py -v",
+      "exit_code": 0,
+      "seconds": 1.412,
+      "log": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-final\\python-txt-tests-current.log"
+    },
+    {
+      "command": "cargo fmt --all -- --check",
+      "exit_code": 0,
+      "seconds": 0.99,
+      "log": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-final\\fmt-current.log"
+    },
+    {
+      "command": "cargo check --workspace --all-targets --locked",
+      "exit_code": 0,
+      "seconds": 2.191,
+      "log": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-final\\check-current.log"
+    },
+    {
+      "command": "cargo test --workspace --features langmuir-desktop/mock --locked",
+      "exit_code": 0,
+      "seconds": 21.275,
+      "log": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-final\\workspace-tests-current.log"
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+      "exit_code": 0,
+      "seconds": 2.679,
+      "log": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-final\\clippy-default-current.log"
+    }
+  ],
+  "rust_tests": {
+    "status": "PASS",
+    "passed": 287,
+    "failed": 0,
+    "ignored_in_default_suite": 4,
+    "separately_run_original_tests": [
+      {
+        "test": "final55_original_txt_decoder_and_address_gate_contract",
+        "status": "PASS",
+        "exit_code": 0,
+        "log": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-user\\rust-original-positive-negative.log",
+        "log_sha256": "6c0918ee146f66711ab19ef4ebd37f73a8c0867040c7970af45433dcbc76f3db",
+        "test_build_mock_feature": true
+      },
+      {
+        "test": "final55_derived_pcap_and_native_files_match_original_txt",
+        "status": "PASS",
+        "exit_code": 0,
+        "log": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-user\\rust-derived-pcap-native-readback.log",
+        "log_sha256": "d50d1bc1d08b24fc9477238c974f30174454e6b8443e91727fa93161a2e4cdf5",
+        "test_build_mock_feature": true
+      }
+    ],
+    "ignored_reason": "2 existing explicit user PCAP tests + 2 new original TXT acceptance tests"
+  },
+  "python_tests": {
+    "status": "PASS",
+    "passed": 28,
+    "failed": 0
+  },
+  "package": "docs/qa/LVDS_55AA_WINDOWS_PACKAGE.json",
+  "original_pcaps_unchanged": [
+    {
+      "path": "D:\\RUST\\langmuier\\102301.pcapng",
+      "bytes": 56740,
+      "sha256": "c0fe65e69ca8efe4f98fedd2758d6cb0a043e840ccf6e0814ad6acb1f7b76e6f"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\20261019--朗缪尔.pcapng",
+      "bytes": 293112,
+      "sha256": "3f7d3bb2c78f7757c3f04d6bd946e6f6710a76271b245a065e8aac7624d1a2ea"
+    }
+  ],
+  "git": {
+    "staged": false,
+    "committed": false,
+    "pushed": false,
+    "status_log": "target/qa/lvds-55aa-final/git-status-final.txt",
+    "diff_stat_log": "target/qa/lvds-55aa-final/git-diff-stat-final.txt",
+    "whitespace_check_exit_code": 0
+  }
+}

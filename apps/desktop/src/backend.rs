@@ -19,7 +19,7 @@ use langmuir_core::{
     Command, DEPLOYED_LVDS_RAW_FRAME_LEN, FrameError, LvdsStreamDecoder, Rs422StreamDecoder,
     Rs422Telemetry, SAMPLE_INTERVAL_MICROS, ScientificFrame, UdpLvdsDisposition, UdpLvdsError,
     UdpLvdsReassembler, UdpLvdsScienceGate, UdpLvdsSequenceMetrics, UdpLvdsSequenceMonitor,
-    parse_udp_lvds_datagram,
+    parse_udp_lvds_datagram, reconstruct_adc16,
 };
 use langmuir_storage::{BatchWriter, StorageEvent, StorageServiceConfig};
 use langmuir_transport::ReaderMetricsSnapshot;
@@ -124,7 +124,7 @@ impl PcapReplay {
                                 break;
                             }
                             Err(crossbeam_channel::SendTimeoutError::Timeout(value)) => {
-                                item = value
+                                item = value;
                             }
                         }
                     }
@@ -163,6 +163,7 @@ impl PcapReplay {
                 match self.packets.try_recv() {
                     Ok(Ok(Some(packet))) => self.pending = Some(packet),
                     Ok(Ok(None)) => {
+                        self.progress.error = self.empty_science_error();
                         self.progress.finished = true;
                         break;
                     }
@@ -210,7 +211,7 @@ impl PcapReplay {
                 };
                 self.ingress
                     .push_at(udp.source, &udp.payload, protocol_now, |delivery| {
-                        deliveries.push(delivery)
+                        deliveries.push(delivery);
                     });
             }
         }
@@ -224,6 +225,28 @@ impl PcapReplay {
                 self.ingress.expire_at(time);
             }
         }
+    }
+    fn empty_science_error(&self) -> Option<String> {
+        let stats = &self.ingress.receive_stats;
+        if stats.accepted_frames > 0 {
+            return None;
+        }
+        let reason = if self.progress.target_udp_packets == 0 {
+            format!("没有目标 UDP；只接收来源 {DEPLOYED_LVDS_UDP_SOURCE}，请检查抓包中的 UDP 来源")
+        } else if self.ingress.wrong_address_frames > 0 {
+            format!(
+                "检测到错误的 04/FF 内层地址候选 {} 帧，当前要求 55/AA；错误地址已拒收，请检查 PCAP 内层科学帧",
+                self.ingress.wrong_address_frames
+            )
+        } else if let Some(error) = &self.ingress.last_parse_error {
+            format!("科学帧解析失败：{error}")
+        } else {
+            "未重组出有效科学帧，请检查 UDP 封装和分片是否完整".to_owned()
+        };
+        Some(format!(
+            "未找到可绘制的科学帧（目标 UDP {}，完整帧 {}，解析失败 {}）：{reason}",
+            self.progress.target_udp_packets, stats.complete_frames, stats.parse_failures
+        ))
     }
 }
 
@@ -268,7 +291,7 @@ pub fn audit_pcap(path: &str) -> Result<String, String> {
         {
             target = target.saturating_add(1);
             ingress.push_at(udp.source, &udp.payload, at, |_| {
-                formal = formal.saturating_add(1)
+                formal = formal.saturating_add(1);
             });
         }
         ingress.expire_at(at);
@@ -282,6 +305,10 @@ pub fn audit_pcap(path: &str) -> Result<String, String> {
 #[cfg(test)]
 #[path = "backend_e2e_tests.rs"]
 mod e2e_tests;
+
+#[cfg(test)]
+#[path = "backend_10bit_tests.rs"]
+mod protocol_10bit_tests;
 
 #[cfg(test)]
 #[path = "backend_replay_tests.rs"]
@@ -335,6 +362,8 @@ struct UdpLvdsIngress {
     metrics: ReaderMetricsSnapshot,
     receive_stats: LvdsReceiveStats,
     last_parse_error: Option<FrameError>,
+    /// Observation only: complete candidates bearing the wrong 04/FF addresses.
+    wrong_address_frames: u64,
     last_datagram: Option<Instant>,
     last_science: Option<Instant>,
 }
@@ -394,6 +423,7 @@ impl UdpLvdsIngress {
             metrics: ReaderMetricsSnapshot::default(),
             receive_stats: LvdsReceiveStats::default(),
             last_parse_error: None,
+            wrong_address_frames: 0,
             last_datagram: None,
             last_science: None,
         }
@@ -439,6 +469,13 @@ impl UdpLvdsIngress {
         self.sync_reassembly_metrics();
         match result {
             Ok(Some(frame)) => {
+                if frame.bytes.len() == DEPLOYED_LVDS_RAW_FRAME_LEN
+                    && frame
+                        .bytes
+                        .starts_with(&[0xEB, 0x90, 0x04, 0xFF, 0x01, 0x07, 0xAA])
+                {
+                    self.wrong_address_frames = self.wrong_address_frames.saturating_add(1);
+                }
                 let result = self.science_gate.accept_at(&frame, now);
                 self.record_complete_result(result.as_ref().err());
                 self.sync_dedup_metrics();
@@ -921,16 +958,13 @@ impl Controller {
                 self.replay = Some(replay);
                 self.lvds_connected = true;
                 self.lvds_source = source_identity(&format!("离线 PCAP {path}"));
-                self.lvds_endpoint = format!("离线回放 {path}");
+                self.lvds_endpoint = format!("文件回放 {path}");
                 self.emit_critical(BackendEvent::LinkChanged {
                     link: LinkKind::Lvds,
                     connected: true,
                     detail: self.lvds_endpoint.clone(),
                 });
-                self.log(
-                    LogLevel::Info,
-                    "开始只读 PCAP 回放，按抓包时间推进；不会发送网络报文",
-                );
+                self.log(LogLevel::Info, "开始文件回放");
             }
             Err(error) => self.fault("PCAP", error.to_string()),
         }
@@ -957,13 +991,13 @@ impl Controller {
                 if self.acquisition_running {
                     self.stop_acquisition();
                 }
-                self.log(LogLevel::Info, "离线回放完成");
+                self.log(LogLevel::Info, "文件回放已结束");
             }
             self.lvds_connected = false;
             self.emit_critical(BackendEvent::LinkChanged {
                 link: LinkKind::Lvds,
                 connected: false,
-                detail: "离线回放已结束".to_owned(),
+                detail: "已结束".to_owned(),
             });
             self.publish_lvds_status();
         }
@@ -979,14 +1013,11 @@ impl Controller {
             format!("接收异常：{error}")
         } else if let Some(replay) = &self.replay {
             if let Some(error) = &replay.progress.error {
-                format!("离线回放错误：{error}")
+                format!("回放错误：{error}")
             } else if replay.progress.finished {
-                "离线回放完成".to_owned()
+                "已结束".to_owned()
             } else {
-                format!(
-                    "离线回放 · {}",
-                    replay.ingress.receive_state(Instant::now())
-                )
+                format!("回放中 · {}", replay.ingress.receive_state(Instant::now()))
             }
         } else if let Some(ingress) = ingress {
             ingress.receive_state(Instant::now()).to_owned()
@@ -1649,12 +1680,12 @@ impl Controller {
                 channel_1: frame
                     .channel_1
                     .iter()
-                    .map(|&value| f64::from(value))
+                    .map(|&code10| f64::from(reconstruct_adc16(code10)))
                     .collect(),
                 channel_2: frame
                     .channel_2
                     .iter()
-                    .map(|&value| f64::from(value))
+                    .map(|&code10| f64::from(reconstruct_adc16(code10)))
                     .collect(),
             })
         };
@@ -2326,26 +2357,14 @@ mod tests {
     }
 
     fn deployed_lvds_payload() -> Vec<u8> {
-        let mut payload = vec![0_u8; DEPLOYED_LVDS_RAW_FRAME_LEN];
-        payload[..7].copy_from_slice(&[0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07, 0xAA]);
-        payload[7..11].copy_from_slice(&1_694_498_816_u32.to_be_bytes());
-        payload[11..15].copy_from_slice(&999_800_u32.to_be_bytes());
-        payload[15..17].copy_from_slice(&0x1234_u16.to_be_bytes());
-        payload[17..19].copy_from_slice(&0xABCD_u16.to_be_bytes());
-        for offset in (19..267).step_by(2) {
-            payload[offset] = 0x01;
-            payload[offset + 1] = 0xFF;
-        }
-        // Independently evaluated with the manufacturer's C reference over
-        // bytes 7..267, not generated by the production Rust CRC function.
-        payload[267..269].copy_from_slice(&0x44C8_u16.to_be_bytes());
-        payload
+        super::protocol_10bit_tests::golden_frame(7)
     }
 
     fn next_deployed_lvds_payload() -> Vec<u8> {
         let mut payload = deployed_lvds_payload();
         payload[7..11].copy_from_slice(&1_694_498_817_u32.to_be_bytes());
         payload[11..15].copy_from_slice(&49_800_u32.to_be_bytes());
+        payload[265] = 8;
         // Independent manufacturer-C result, 50ms after the first golden frame.
         payload[267..269].copy_from_slice(&0x5EF9_u16.to_be_bytes());
         payload
@@ -2385,8 +2404,8 @@ mod tests {
         assert_eq!(ingress.metrics.length_failures, 0);
         assert_eq!(ingress.metrics.udp_fragment_errors, 1);
         assert_eq!(decoded.len(), 1);
-        assert_eq!(decoded[0].sequence, 7);
-        assert_eq!(decoded[0].channel_1[0], 0x1234);
+        assert_eq!(decoded[0].frame_seq_u8, 7);
+        assert_eq!(decoded[0].channel_1[0], 1023);
         assert_eq!(
             ingress.metrics.bytes_read,
             u64::try_from(24 + valid_payload.len() + 24 + 268).unwrap()
@@ -2520,7 +2539,10 @@ mod tests {
 
     fn assert_golden_science_outputs(persisted: &[ScientificFrame], events: Vec<BackendEvent>) {
         assert_eq!(persisted.len(), 2);
-        assert_eq!((persisted[0].sequence, persisted[1].sequence), (7, 8));
+        assert_eq!(
+            (persisted[0].frame_seq_u8, persisted[1].frame_seq_u8),
+            (7, 8)
+        );
         assert_eq!(persisted[0].timestamp.microseconds, 999_800);
         assert_eq!(persisted[1].timestamp.microseconds, 49_800);
         assert_eq!(
@@ -2528,15 +2550,9 @@ mod tests {
             1
         );
         for frame in persisted {
-            for index in 0..125 {
-                assert_eq!(
-                    frame.channel_1[index],
-                    0x1234 + u32::try_from(index).unwrap()
-                );
-                assert_eq!(
-                    frame.channel_2[index],
-                    0xABCD - u32::try_from(index).unwrap()
-                );
+            for index in 0..100 {
+                assert_eq!(frame.channel_1[index], [1023, 0, 512, 1][index % 4]);
+                assert_eq!(frame.channel_2[index], [0, 1023, 0, 1023][index % 4]);
             }
         }
         let mut start_times = Vec::new();
@@ -2552,10 +2568,10 @@ mod tests {
                 panic!("unexpected display event");
             };
             assert_eq!(channel_1_start_seconds, channel_2_start_seconds);
-            assert_eq!(sample_interval_seconds, 0.0004);
-            assert_eq!((channel_1.len(), channel_2.len()), (125, 125));
-            assert_eq!((channel_1[0], channel_1[124]), (4660.0, 4784.0));
-            assert_eq!((channel_2[0], channel_2[124]), (43981.0, 43857.0));
+            assert_eq!(sample_interval_seconds, 0.0005);
+            assert_eq!((channel_1.len(), channel_2.len()), (100, 100));
+            assert_eq!((channel_1[0], channel_1[99]), (32704.0, -32704.0));
+            assert_eq!((channel_2[0], channel_2[99]), (-32768.0, 32704.0));
             start_times.push(channel_1_start_seconds);
         }
         assert_eq!(start_times.len(), 2);
@@ -2595,9 +2611,9 @@ mod tests {
             );
         }
         assert_eq!(delivered.len(), 3);
-        assert_eq!(delivered[0].sequence, 7);
-        assert_eq!(delivered[1].sequence, 7); // Storage model remains u16.
-        assert_eq!(delivered[2].sequence, 8);
+        assert_eq!(delivered[0].frame_seq_u8, 7);
+        assert_eq!(delivered[1].frame_seq_u8, 7); // Inner seq8 is independent of the outer u32.
+        assert_eq!(delivered[2].frame_seq_u8, 7);
         assert_eq!(ingress.metrics.reassembled_frames, 6);
         assert_eq!(ingress.metrics.frames_decoded, 5);
         assert_eq!(ingress.metrics.scientific_frames_delivered, 3);
@@ -2720,7 +2736,7 @@ mod tests {
                 source,
                 &udp_lvds_datagram(sequence, payload.len(), payload),
                 now,
-                |frame| delivered.push(frame.sequence),
+                |frame| delivered.push(frame.frame_seq_u8),
             );
         }
         ingress.push_at(
@@ -2729,7 +2745,7 @@ mod tests {
             now,
             |_| panic!("wrong source must not reach sequence observation"),
         );
-        assert_eq!(delivered, [100, 102]);
+        assert_eq!(delivered, [7, 7]);
         assert_eq!(ingress.metrics.udp_sequence.observed_frames, 2);
         assert_eq!(ingress.metrics.udp_sequence.forward_jumps, 1);
         assert_eq!(ingress.metrics.udp_sequence.pending_gaps, 1);
@@ -2748,9 +2764,9 @@ mod tests {
             source,
             &udp_lvds_datagram(101, valid.len(), &valid),
             deadline,
-            |frame| delivered.push(frame.sequence),
+            |frame| delivered.push(frame.frame_seq_u8),
         );
-        assert_eq!(delivered, [100, 102, 101]);
+        assert_eq!(delivered, [7, 7, 7]);
         assert_eq!(ingress.metrics.udp_sequence.observed_frames, 3);
         assert_eq!(ingress.metrics.udp_sequence.late_fills, 1);
         assert_eq!(ingress.metrics.udp_sequence.late_fills_after_expiry, 1);
@@ -2787,14 +2803,16 @@ mod tests {
         let mut callbacks = Vec::new();
         for (index, sequence) in [100_u16, 100, 101, 104, 103, 102].into_iter().enumerate() {
             let mut payload = deployed_lvds_payload();
-            payload[15..17].copy_from_slice(&sequence.to_be_bytes());
+            payload[265] = u8::try_from(sequence).unwrap();
+            payload[15] = u8::try_from(sequence >> 2).unwrap();
+            payload[16] = u8::try_from((sequence & 3) << 6).unwrap();
             refresh_reference_crc(&mut payload);
             ingress.push_at(
                 source,
                 &udp_lvds_datagram(u32::from(sequence), payload.len(), &payload),
                 now + Duration::from_millis(u64::try_from(index).unwrap() * 50),
                 |frame| {
-                    callbacks.push(frame.sequence);
+                    callbacks.push(frame.frame_seq_u8);
                     controller.handle_scientific_frame(frame);
                 },
             );
@@ -2807,7 +2825,7 @@ mod tests {
             .unwrap();
         assert_eq!(callbacks, [100, 101, 104, 103, 102]);
         let persisted = stored.lock().unwrap();
-        let stored_order: Vec<_> = persisted.iter().map(|frame| frame.sequence).collect();
+        let stored_order: Vec<_> = persisted.iter().map(|frame| frame.frame_seq_u8).collect();
         assert_eq!(stored_order, callbacks);
         let displayed: Vec<_> = display_rx
             .try_iter()
@@ -2818,7 +2836,10 @@ mod tests {
                 channel_1[0]
             })
             .collect();
-        assert_eq!(displayed, [100.0, 101.0, 104.0, 103.0, 102.0]);
+        assert_eq!(
+            displayed,
+            [-26368.0, -26304.0, -26112.0, -26176.0, -26240.0]
+        );
         assert!(critical_rx.is_empty());
         assert_eq!(ingress.metrics.scientific_frames_delivered, 5);
         assert_eq!(ingress.metrics.duplicate_frames_suppressed, 1);
@@ -2874,8 +2895,7 @@ mod tests {
         refresh_reference_crc(&mut bad);
         variants.push(bad);
         let mut bad = valid.clone();
-        bad[15..17].copy_from_slice(&0_u16.to_be_bytes());
-        bad[19] = 0xFF;
+        bad[266] = 0xFF;
         refresh_reference_crc(&mut bad);
         variants.push(bad);
         for (sequence, bad) in variants.iter().enumerate() {
@@ -2893,10 +2913,10 @@ mod tests {
         assert_eq!(ingress.metrics.length_failures, 1);
         assert_eq!(ingress.metrics.udp_fragment_errors, 1);
         assert_eq!(ingress.metrics.header_failures, 1);
-        assert_eq!(ingress.metrics.field_failures, 2);
+        assert_eq!(ingress.metrics.field_failures, 3);
         assert_eq!(ingress.metrics.checksum_failures, 0);
         assert_eq!(ingress.metrics.timestamp_failures, 1);
-        assert_eq!(ingress.metrics.sample_failures, 1);
+        assert_eq!(ingress.metrics.sample_failures, 0);
         assert_eq!(ingress.metrics.last_checksum_mismatch, None);
         assert_eq!(ingress.receive_stats.complete_frames, 6);
         assert_eq!(ingress.receive_stats.parsed_frames, 0);
@@ -3329,8 +3349,11 @@ mod tests {
         }
         assert_eq!(deliveries.len(), 3);
         assert_eq!(
-            deliveries.iter().map(|f| f.sequence).collect::<Vec<_>>(),
-            [1, 2, 3]
+            deliveries
+                .iter()
+                .map(|f| f.frame_seq_u8)
+                .collect::<Vec<_>>(),
+            [7, 7, 7]
         );
         assert_eq!(deliveries[0].channel_1, deliveries[1].channel_1);
         assert_eq!(deliveries[1].channel_2, deliveries[2].channel_2);

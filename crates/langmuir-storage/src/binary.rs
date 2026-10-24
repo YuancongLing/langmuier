@@ -2,7 +2,10 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-use langmuir_core::{SAMPLE_COUNT, SAMPLE_INTERVAL_MICROS, ScientificFrame};
+use crate::{
+    LEGACY_SAMPLE_COUNT_V2 as SAMPLE_COUNT,
+    LEGACY_SAMPLE_INTERVAL_MICROS_V2 as SAMPLE_INTERVAL_MICROS, LegacyScientificFrameV2,
+};
 use thiserror::Error;
 
 use crate::BatchSink;
@@ -61,7 +64,10 @@ pub enum BinaryError {
     Closed,
 }
 
-/// Portable, dependency-free scientific-frame sink.
+/// Portable, dependency-free legacy `.lpd` v2 sink.
+///
+/// This writer accepts only historical 125-point frames. New code10 scientific
+/// frames belong in [`crate::BinaryV3Sink`]; the v2 schema remains unchanged.
 ///
 /// All integer fields are little-endian. Files are opened with `create_new`,
 /// so an existing capture is never truncated or overwritten.
@@ -127,10 +133,10 @@ impl BinarySink {
     }
 }
 
-impl BatchSink<ScientificFrame> for BinarySink {
+impl BatchSink<LegacyScientificFrameV2> for BinarySink {
     type Error = BinaryError;
 
-    fn write_batch(&mut self, frames: &[ScientificFrame]) -> Result<(), Self::Error> {
+    fn write_batch(&mut self, frames: &[LegacyScientificFrameV2]) -> Result<(), Self::Error> {
         if frames.is_empty() {
             return Ok(());
         }
@@ -140,10 +146,10 @@ impl BatchSink<ScientificFrame> for BinarySink {
             encoded.extend_from_slice(&frame.timestamp.utc_seconds.to_le_bytes());
             encoded.extend_from_slice(&frame.timestamp.microseconds.to_le_bytes());
             encoded.extend_from_slice(&frame.sequence.to_le_bytes());
-            for sample in frame.channel_1.iter() {
+            for sample in frame.channel_1.as_ref() {
                 encoded.extend_from_slice(&sample.to_le_bytes());
             }
-            for sample in frame.channel_2.iter() {
+            for sample in frame.channel_2.as_ref() {
                 encoded.extend_from_slice(&sample.to_le_bytes());
             }
         }
@@ -200,7 +206,7 @@ mod tests {
 
     use super::*;
 
-    fn frame(index: u32) -> ScientificFrame {
+    fn frame(index: u32) -> LegacyScientificFrameV2 {
         let mut channel_1 = Box::new([0_u32; SAMPLE_COUNT]);
         let mut channel_2 = Box::new([0_u32; SAMPLE_COUNT]);
         for sample_index in 0..SAMPLE_COUNT {
@@ -208,7 +214,7 @@ mod tests {
             channel_1[sample_index] = index * 10_000 + sample;
             channel_2[sample_index] = 1_000_000 + index * 10_000 + sample;
         }
-        ScientificFrame {
+        LegacyScientificFrameV2 {
             timestamp: Timestamp {
                 utc_seconds: 1_700_000_000 + index,
                 microseconds: 123_456,

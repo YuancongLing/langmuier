@@ -1,0 +1,104 @@
+{
+  "date": "2026-10-24",
+  "application_name": "Langmuier Probe Ground Control",
+  "result": "PASS",
+  "source_base_commit": "51816489ff829174ca32d1bf789f1edca61ec6e4",
+  "source_scope": "Working tree prepared for the GitHub commit containing this report.",
+  "changes_since_protocol_acceptance": [
+    "Full product name in the window and application header, with matching executable and package filenames.",
+    "Formal playback and plot wording in the desktop UI.",
+    "Storage shutdown observes worker completion as well as acknowledgement to preserve the original sink failure.",
+    "Deterministic regression for a sink failure after Shutdown is queued but before it is processed.",
+    "Protocol and desktop documentation updated to the final 100-sample, 500-us, seq8, CSV and LPD-v3 behavior."
+  ],
+  "rust_tests": {
+    "passed": 288,
+    "failed": 0,
+    "ignored": 4,
+    "ignored_reason": "Four explicit external-data tests; historical original-data acceptance is recorded separately."
+  },
+  "python_tests": {
+    "passed": 28,
+    "failed": 0
+  },
+  "checks": [
+    {
+      "command": "cargo fmt --all -- --check",
+      "exit_code": 0,
+      "log": {
+        "path": "target/qa/github-submit-20261024/final-fmt.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "command": "cargo check --workspace --all-targets --locked",
+      "exit_code": 0,
+      "log": {
+        "path": "target/qa/github-submit-20261024/final-check.log",
+        "bytes": 1306,
+        "sha256": "4a3c717c9987f8cd49cbd6a5529137e69e94ece32b22d4a23d119a732b3acaa0"
+      }
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+      "exit_code": 0,
+      "log": {
+        "path": "target/qa/github-submit-20261024/final-clippy.log",
+        "bytes": 1306,
+        "sha256": "f478fc3d69f29a288c8ee95479efbd88e83480645eb73958b2a965f9b3819fa4"
+      }
+    },
+    {
+      "command": "cargo test --workspace --features langmuir-desktop/mock --locked -- --test-threads=1",
+      "exit_code": 0,
+      "log": {
+        "path": "target/qa/github-submit-20261024/final-test.log",
+        "bytes": 58176,
+        "sha256": "a0d6fbe117814a2bbb297c6e1be2b314baf6dc82fa4e5174dc12cbf17e735ef6"
+      }
+    },
+    {
+      "command": "python -m unittest discover -s tools/qa -p test_lvds_txt_*.py -v",
+      "exit_code": 0,
+      "log": {
+        "path": "target/qa/github-submit-20261024/final-python.log",
+        "bytes": 10270,
+        "sha256": "656be25a7a5643d16fe9bbe4e41d4a79be74f87a130e855dc90d6a40ab9c0e2e"
+      }
+    },
+    {
+      "command": "RUSTFLAGS=\"-C target-feature=+crt-static\" cargo +stable-x86_64-pc-windows-msvc build --release -p langmuir-desktop --target x86_64-pc-windows-msvc --target-dir target --no-default-features --locked",
+      "exit_code": 0,
+      "log": {
+        "path": "target/qa/github-submit-20261024/final-release.log",
+        "bytes": 1114,
+        "sha256": "80dafa371fab08c175f3e4c509c6cba13e384c59cd047d66f103e3c1c55dfff2"
+      }
+    }
+  ],
+  "windows_build": {
+    "target": "x86_64-pc-windows-msvc",
+    "mock": false,
+    "hdf5": false,
+    "static_crt": true,
+    "executable": {
+      "path": "target/delivery/windows-x64/LangmuierProbeGroundControl.exe",
+      "bytes": 9266176,
+      "sha256": "c0c84db6106a15f7f772617840d56c48c350c492aef35a08410de16e39ebf73f"
+    },
+    "package": {
+      "path": "target/delivery/LangmuierProbeGroundControl-windows-x64.zip",
+      "bytes": 3882809,
+      "sha256": "24bf7300995af405235fa4f45fcce932bde693c6fe4cf81508a3e349ccaefa6e"
+    },
+    "compiled_and_packaged_executable_bytes_match": true,
+    "package_entries": [
+      "LangmuierProbeGroundControl.exe",
+      "README.md"
+    ],
+    "native_gui_for_this_build": "NOT_RUN; earlier native protocol acceptance is preserved in LVDS_55AA_FINAL_STATUS.json."
+  },
+  "prior_protocol_acceptance": "LVDS_55AA_FINAL_STATUS.json",
+  "raw_inputs_runtime_data_and_binaries_in_source_commit": false
+}

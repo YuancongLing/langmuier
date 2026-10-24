@@ -26,8 +26,7 @@ pub use lvds::{
     LVDS_DATA_TYPE, LVDS_DEVICE_ID, LVDS_FRAME_LEN, LVDS_PAYLOAD_LEN, LVDS_RECEIVER_ADDRESS,
     LVDS_SENDER_ADDRESS, SAMPLE_COUNT, SAMPLE_INTERVAL_MICROS, ScientificFrame,
     ScientificFrameDiagnosis, Timestamp, UnverifiedScientificFrame, decode_scientific_frame,
-    decode_scientific_frame_with_sequence, diagnose_scientific_frame,
-    validate_scientific_frame_crc16,
+    diagnose_scientific_frame, reconstruct_adc16, unpack_4x10, validate_scientific_frame_crc16,
 };
 pub use model::{
     AcquisitionState, CommandCounters, CoreMetrics, DeviceState, LinkState, ScientificFrameSummary,

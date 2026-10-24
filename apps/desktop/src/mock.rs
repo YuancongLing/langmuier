@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use langmuir_core::Command;
+use langmuir_core::{Command, SAMPLE_COUNT, SAMPLE_INTERVAL_MICROS};
 
 use crate::bridge::{
     BackendBridge, BackendEvent, BridgeError, LinkKind, LogLevel, LvdsStatusSnapshot,
@@ -13,8 +13,6 @@ use crate::bridge::{
 };
 
 const MOCK_FRAME_INTERVAL: Duration = Duration::from_millis(50);
-const MOCK_SAMPLES_PER_FRAME: u32 = 125;
-const SAMPLE_INTERVAL_SECONDS: f64 = 0.0004;
 
 pub struct MockBridge {
     events: VecDeque<BackendEvent>,
@@ -85,19 +83,21 @@ impl MockBridge {
         let sequence_phase =
             u32::try_from(self.sequence % 1_000_000).expect("the modulo result always fits in u32");
         let phase = f64::from(sequence_phase) * 0.17;
-        let sample_capacity =
-            usize::try_from(MOCK_SAMPLES_PER_FRAME).expect("the mock sample count fits in usize");
-        let mut channel_1 = Vec::with_capacity(sample_capacity);
-        let mut channel_2 = Vec::with_capacity(sample_capacity);
-        for index in 0..MOCK_SAMPLES_PER_FRAME {
-            let x = phase + f64::from(index) / f64::from(MOCK_SAMPLES_PER_FRAME) * TAU;
-            channel_1.push(32_768.0 + 18_000.0 * x.sin());
-            channel_2.push(32_768.0 + 12_000.0 * (x * 1.7).cos());
+        let sample_count = u32::try_from(SAMPLE_COUNT).expect("the mock sample count fits in u32");
+        let sample_interval_seconds = f64::from(SAMPLE_INTERVAL_MICROS) / 1_000_000.0;
+        let mut channel_1 = Vec::with_capacity(SAMPLE_COUNT);
+        let mut channel_2 = Vec::with_capacity(SAMPLE_COUNT);
+        for index in 0..sample_count {
+            let x = phase + f64::from(index) / f64::from(sample_count) * TAU;
+            // Explicit MOCK data follows the new signed, 64-count quantization
+            // contract without fabricating a real accepted scientific frame.
+            channel_1.push((18_000.0 * x.sin() / 64.0).round() * 64.0);
+            channel_2.push((12_000.0 * (x * 1.7).cos() / 64.0).round() * 64.0);
         }
         self.events.push_back(BackendEvent::ScientificSamples {
             channel_1_start_seconds: now,
             channel_2_start_seconds: now,
-            sample_interval_seconds: SAMPLE_INTERVAL_SECONDS,
+            sample_interval_seconds,
             channel_1,
             channel_2,
         });
@@ -111,7 +111,7 @@ impl MockBridge {
             .next_frame
             .checked_add(MOCK_FRAME_INTERVAL)
             .unwrap_or_else(Instant::now);
-        self.next_frame_time_seconds += SAMPLE_INTERVAL_SECONDS * f64::from(MOCK_SAMPLES_PER_FRAME);
+        self.next_frame_time_seconds += sample_interval_seconds * f64::from(sample_count);
     }
 
     fn telemetry_snapshot(&self, now: f64) -> TelemetrySnapshot {
@@ -354,6 +354,35 @@ fn unix_time_seconds() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn migration_mock_waveforms_follow_signed_100_sample_contract() {
+        let mut bridge = MockBridge::new();
+        bridge.events.clear();
+        bridge.next_frame_time_seconds = 12.25;
+        bridge.generate_frame();
+        let BackendEvent::ScientificSamples {
+            channel_1_start_seconds,
+            channel_2_start_seconds,
+            sample_interval_seconds,
+            channel_1,
+            channel_2,
+        } = bridge.events.pop_front().unwrap()
+        else {
+            panic!("mock generation must emit scientific samples");
+        };
+        assert_eq!((channel_1.len(), channel_2.len()), (100, 100));
+        assert_eq!(
+            (channel_1_start_seconds, channel_2_start_seconds),
+            (12.25, 12.25)
+        );
+        assert_eq!(sample_interval_seconds, 0.000_500);
+        assert!(channel_1.iter().chain(&channel_2).all(|value| {
+            (-32_768.0..=32_704.0).contains(value) && value.rem_euclid(64.0) == 0.0
+        }));
+        assert!(channel_1.iter().any(|value| *value < 0.0));
+        assert!(channel_1.iter().any(|value| *value > 0.0));
+    }
 
     #[test]
     fn overdue_mock_clock_catches_up_at_twenty_hertz() {

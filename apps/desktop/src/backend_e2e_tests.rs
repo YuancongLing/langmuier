@@ -9,8 +9,8 @@ use std::{
 use crossbeam_channel::{Receiver, bounded};
 use langmuir_core::ScientificFrame;
 use langmuir_storage::{
-    BINARY_FRAME_LEN, BINARY_HEADER_LEN, BatchSink, BatchWriter, BinaryConfig, BinarySink,
-    StorageServiceConfig,
+    BatchSink, BatchWriter, BinaryConfig, BinaryV3Sink as BinarySink, StorageServiceConfig,
+    V3_FRAME_LEN as BINARY_FRAME_LEN, V3_HEADER_LEN as BINARY_HEADER_LEN,
 };
 use tempfile::tempdir;
 
@@ -22,7 +22,7 @@ mod scientific_csv_tests;
 
 const SOURCE: &str = "192.0.2.1:1534";
 
-fn controller() -> (Controller, Receiver<BackendEvent>, Receiver<BackendEvent>) {
+pub(super) fn controller() -> (Controller, Receiver<BackendEvent>, Receiver<BackendEvent>) {
     controller_with_display_capacity(8)
 }
 
@@ -42,23 +42,14 @@ fn controller_with_display_capacity(
 }
 
 fn golden() -> Vec<u8> {
-    let mut wire = vec![0_u8; 269];
-    wire[..19].copy_from_slice(&[
-        0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07, 0xAA, 0x65, 0, 0, 0, 0, 0x0F, 0x41, 0x78, 0x12, 0x34,
-        0xAB, 0xCD,
-    ]);
-    for pair in wire[19..267].as_chunks_mut::<2>().0 {
-        pair.copy_from_slice(&[1, 0xFF]);
-    }
-    // Fixed result from the manufacturer's independent C reference vector.
-    wire[267..269].copy_from_slice(&[0x44, 0xC8]);
-    wire
+    super::protocol_10bit_tests::golden_frame(7)
 }
 
 fn next_golden() -> Vec<u8> {
     let mut wire = golden();
     wire[7..11].copy_from_slice(&1_694_498_817_u32.to_be_bytes());
     wire[11..15].copy_from_slice(&49_800_u32.to_be_bytes());
+    wire[265] = 8;
     wire[267..269].copy_from_slice(&[0x5E, 0xF9]);
     wire
 }
@@ -76,7 +67,7 @@ fn datagram(sequence: u32, wire: &[u8]) -> Vec<u8> {
     bytes
 }
 
-fn feed(
+pub(super) fn feed(
     ingress: &mut UdpLvdsIngress,
     controller: &mut Controller,
     sequence: u32,
@@ -128,9 +119,8 @@ fn e1_e5_e6_real_file_round_trip_keeps_only_decodable_deduplicated_science() {
     bad_header[0] ^= 1;
     let mut bad_time = first.clone();
     bad_time[11..15].copy_from_slice(&1_000_000_u32.to_be_bytes());
-    let mut bad_adc = first.clone();
-    bad_adc[15..17].copy_from_slice(&0_u16.to_be_bytes());
-    bad_adc[19] = 0x80;
+    let mut bad_reserved = first.clone();
+    bad_reserved[266] = 1;
     let now = Instant::now();
     for (sequence, wire) in [
         (100, &first),
@@ -139,7 +129,7 @@ fn e1_e5_e6_real_file_round_trip_keeps_only_decodable_deduplicated_science() {
         (103, &bad_time),
         (100, &first),
         (100, &second),
-        (104, &bad_adc),
+        (104, &bad_reserved),
         (105, &second),
     ] {
         feed(&mut ingress, &mut controller, sequence, wire, now);
@@ -151,7 +141,7 @@ fn e1_e5_e6_real_file_round_trip_keeps_only_decodable_deduplicated_science() {
         (
             stats.header_errors,
             stats.timestamp_errors,
-            stats.adc_errors
+            stats.field_errors
         ),
         (1, 1, 1)
     );
@@ -170,44 +160,46 @@ fn e1_e5_e6_real_file_round_trip_keeps_only_decodable_deduplicated_science() {
         panic!("decodable data must use the ordinary scientific event");
     };
     assert_eq!(
-        (channel_1[0], channel_1[1], channel_1[124]),
-        (4660.0, 4660.0, 4783.0)
+        (channel_1[0], channel_1[1], channel_1[99]),
+        (32704.0, -32768.0, -32704.0)
     );
     assert!(matches!(&events[2], BackendEvent::ScientificSamples { .. }));
 
     controller.stop_acquisition();
     assert!(!controller.acquisition_running);
     assert!(controller.scientific_writer.is_none());
-    let expected = [(100, &first), (101, &bad_crc), (105, &second)].map(|(sequence, wire)| {
-        langmuir_core::decode_scientific_frame_with_sequence(wire, sequence).unwrap()
-    });
+    let expected = [&first, &bad_crc, &second]
+        .map(|wire| langmuir_core::decode_scientific_frame(wire).unwrap());
     assert_scientific_file(&fs::read(&path).unwrap(), &expected);
     assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
 }
 
 fn assert_scientific_file(bytes: &[u8], expected: &[ScientificFrame]) {
-    // Independent fixed v2 header, rather than a header rebuilt by the sink.
+    // Independent v3 metadata and record offsets; v2 remains separately tested.
     assert_eq!(
-        &bytes[..32],
+        &bytes[..40],
         &[
-            b'L', b'M', b'P', b'R', b'O', b'B', b'E', 0, 2, 0, 32, 0, 4, 3, 2, 1, 125, 0, 0, 0,
-            144, 1, 0, 0, 242, 3, 0, 0, 1, 0, 0, 0,
+            b'L', b'M', b'P', b'R', b'O', b'B', b'E', 0, 3, 0, 40, 0, 4, 3, 2, 1, 100, 0, 0, 0,
+            244, 1, 0, 0, 153, 1, 0, 0, 1, 0, 0, 0, 3, 0, 0, 0, 2, 0, 8, 0,
         ]
     );
     assert_eq!(
         bytes.len(),
         usize::from(BINARY_HEADER_LEN) + expected.len() * BINARY_FRAME_LEN as usize
     );
-    for (record, frame) in bytes[32..].as_chunks::<1010>().0.iter().zip(expected) {
+    for (record, frame) in bytes[40..].as_chunks::<409>().0.iter().zip(expected) {
         assert_eq!(read_u32(record, 0), frame.timestamp.utc_seconds);
         assert_eq!(read_u32(record, 4), frame.timestamp.microseconds);
-        assert_eq!(
-            u16::from_le_bytes(record[8..10].try_into().unwrap()),
-            frame.sequence
-        );
-        for index in 0..125 {
-            assert_eq!(read_u32(record, 10 + index * 4), frame.channel_1[index]);
-            assert_eq!(read_u32(record, 510 + index * 4), frame.channel_2[index]);
+        assert_eq!(record[8], frame.frame_seq_u8);
+        for index in 0..100 {
+            assert_eq!(
+                u16::from_le_bytes(record[9 + index * 2..11 + index * 2].try_into().unwrap()),
+                frame.channel_1[index]
+            );
+            assert_eq!(
+                u16::from_le_bytes(record[209 + index * 2..211 + index * 2].try_into().unwrap()),
+                frame.channel_2[index]
+            );
         }
     }
 }
@@ -228,8 +220,7 @@ fn e2_tail_and_decodable_science_changes_plot_and_save_without_crc_recalculation
     let mut expected = Vec::new();
     for (index, wire) in wires.iter().enumerate() {
         let sequence = u16::try_from(index + 1).unwrap();
-        expected
-            .push(langmuir_core::decode_scientific_frame_with_sequence(wire, sequence).unwrap());
+        expected.push(langmuir_core::decode_scientific_frame(wire).unwrap());
         feed(
             &mut ingress,
             &mut controller,
@@ -269,7 +260,7 @@ fn t3_legal_frame_plots_and_saves_through_the_single_science_route() {
     else {
         panic!("a legal scientific frame must plot");
     };
-    assert_eq!((channel_1.len(), channel_2.len()), (125, 125));
+    assert_eq!((channel_1.len(), channel_2.len()), (100, 100));
     assert_eq!(
         (
             ingress.receive_stats.parsed_frames,
@@ -280,11 +271,11 @@ fn t3_legal_frame_plots_and_saves_through_the_single_science_route() {
     controller.stop_acquisition();
     assert_eq!(controller.storage_status.enqueued, 1);
     assert_eq!(controller.storage_status.sink_written, 1);
-    assert_eq!(fs::read(path).unwrap().len(), 32 + 1010);
+    assert_eq!(fs::read(path).unwrap().len(), 40 + 409);
 }
 
 #[test]
-fn e3_science_acceptance_requires_structure_time_and_all_adc_to_be_valid() {
+fn e3_science_acceptance_requires_structure_time_and_reserved_byte() {
     let mut ingress = UdpLvdsIngress::new(SOURCE.parse().unwrap());
     let (mut controller, _critical, display) = controller();
     let now = Instant::now();
@@ -306,28 +297,23 @@ fn e3_science_acceptance_requires_structure_time_and_all_adc_to_be_valid() {
     bad_time[11..15].copy_from_slice(&u32::MAX.to_be_bytes());
     feed(&mut ingress, &mut controller, 10, &bad_time, now);
     assert!(display.is_empty());
-    for channel in [0_usize, 1] {
-        let mut bad_adc = golden();
-        bad_adc[19..267].fill(0);
-        bad_adc[15 + channel * 2..17 + channel * 2].copy_from_slice(&u16::MAX.to_be_bytes());
-        bad_adc[19 + 123 * 2 + channel] = 1;
+    for reserved in [1_u8, 255] {
+        let mut invalid = golden();
+        invalid[266] = reserved;
         feed(
             &mut ingress,
             &mut controller,
-            20 + u32::try_from(channel).unwrap(),
-            &bad_adc,
+            20 + u32::from(reserved),
+            &invalid,
             now,
         );
-        assert!(
-            display.is_empty(),
-            "last sample overflow on channel {channel}"
-        );
+        assert!(display.is_empty(), "reserved byte must be zero");
     }
     assert_eq!(ingress.receive_stats.header_errors, 1);
     assert_eq!(ingress.receive_stats.length_errors, 1);
-    assert_eq!(ingress.receive_stats.field_errors, 3);
+    assert_eq!(ingress.receive_stats.field_errors, 5);
     assert_eq!(ingress.receive_stats.timestamp_errors, 1);
-    assert_eq!(ingress.receive_stats.adc_errors, 2);
+    assert_eq!(ingress.receive_stats.adc_errors, 0);
     assert_eq!(ingress.receive_stats.parsed_frames, 0);
     assert_eq!(ingress.receive_stats.parse_failures, 8);
     assert_eq!(ingress.metrics.scientific_frames_delivered, 0);
@@ -346,10 +332,7 @@ fn e4_four_hundred_live_frames_keep_all_points_and_device_time_without_saving() 
         let mut wire = golden();
         wire[7..11].copy_from_slice(&utc.to_be_bytes());
         wire[11..15].copy_from_slice(&offset.to_be_bytes());
-        let first_1 = 1000 + u16::try_from(sequence).unwrap();
-        let first_2 = 20_000 + u16::try_from(sequence).unwrap();
-        wire[15..17].copy_from_slice(&first_1.to_be_bytes());
-        wire[17..19].copy_from_slice(&first_2.to_be_bytes());
+        wire[265] = sequence.to_be_bytes()[3];
         feed(
             &mut ingress,
             &mut controller,
@@ -370,15 +353,21 @@ fn e4_four_hundred_live_frames_keep_all_points_and_device_time_without_saving() 
         let expected_start = f64::from(utc) + f64::from(offset) / 1_000_000.0;
         assert_eq!(channel_1_start_seconds, expected_start);
         assert_eq!(channel_2_start_seconds, expected_start);
-        assert_eq!(sample_interval_seconds, 0.0004);
-        assert_eq!((channel_1.len(), channel_2.len()), (125, 125));
-        for index in 0..125 {
+        assert_eq!(sample_interval_seconds, 0.0005);
+        assert_eq!((channel_1.len(), channel_2.len()), (100, 100));
+        for index in 0..100 {
             let step = f64::from(u32::try_from(index).unwrap());
-            assert_eq!(channel_1[index], f64::from(first_1) + step);
-            assert_eq!(channel_2[index], f64::from(first_2) - step);
+            assert_eq!(
+                channel_1[index],
+                [32704.0, -32768.0, 0.0, -32704.0][index % 4]
+            );
+            assert_eq!(
+                channel_2[index],
+                [-32768.0, 32704.0, -32768.0, 32704.0][index % 4]
+            );
             let sample_time = channel_1_start_seconds + step * sample_interval_seconds;
             let total_micros =
-                999_800 + u64::from(sequence) * 50_000 + u64::try_from(index).unwrap() * 400;
+                999_800 + u64::from(sequence) * 50_000 + u64::try_from(index).unwrap() * 500;
             let sample_utc = 1_694_498_816 + u32::try_from(total_micros / 1_000_000).unwrap();
             let sample_micros = u32::try_from(total_micros % 1_000_000).unwrap();
             let expected_time = f64::from(sample_utc) + f64::from(sample_micros) / 1_000_000.0;
@@ -472,9 +461,9 @@ fn e8_no_crc_gate_keeps_ttl_recovery_dedup_and_full_sequence_monitoring_unchange
     assert_eq!(
         frames
             .iter()
-            .map(|frame| frame.sequence)
+            .map(|frame| frame.frame_seq_u8)
             .collect::<Vec<_>>(),
-        [u16::MAX, 0, 2, 1]
+        [7, 7, 7, 8]
     );
     assert_eq!(
         display
@@ -534,7 +523,7 @@ fn e10_udp_receive_state_uses_data_and_exact_timeout_instead_of_bind_success() {
         "正在收到 UDP 数据 / 等待完整 LVDS"
     );
     ingress.push_at(source, &datagram(2, &golden()), deadline, |_| {
-        delivered += 1
+        delivered += 1;
     });
     assert_eq!(delivered, 2);
     assert_eq!(ingress.receive_state(deadline), "正在收到有效科学帧");
@@ -569,7 +558,7 @@ fn e10_saving_blocks_source_changes_and_preserves_the_current_science_writer() {
     controller.stop_acquisition();
     assert!(controller.storage_status.closed);
     assert_eq!(controller.storage_status.sink_written, 0);
-    assert_eq!(fs::read(path).unwrap().len(), 32);
+    assert_eq!(fs::read(path).unwrap().len(), 40);
     let (fresh, _critical, _display) = self::controller();
     assert!(!fresh.acquisition_running);
     assert!(fresh.scientific_writer.is_none());
@@ -632,13 +621,10 @@ fn storage_failure_is_reported_without_rolling_back_science_acceptance() {
     controller.stop_acquisition();
     assert!(!controller.acquisition_running);
     assert!(!controller.storage_status.closed);
+    let storage_error = controller.storage_status.error.as_deref().unwrap();
     assert!(
-        controller
-            .storage_status
-            .error
-            .as_deref()
-            .unwrap()
-            .contains("injected science write failure")
+        storage_error.contains("injected science write failure"),
+        "unexpected storage error: {storage_error}"
     );
     assert_eq!(controller.storage_status.sink_written, 0);
     assert_eq!(ingress.metrics, before);
@@ -690,17 +676,23 @@ fn capture_to_scientific_file(
             normal_events += 1;
             assert_eq!(channel_1_start_seconds, frame.channel_1_base_seconds());
             assert_eq!(channel_2_start_seconds, frame.channel_2_base_seconds());
-            assert_eq!(sample_interval_seconds, 0.0004);
-            assert_eq!((channel_1.len(), channel_2.len()), (125, 125));
+            assert_eq!(sample_interval_seconds, 0.0005);
+            assert_eq!((channel_1.len(), channel_2.len()), (100, 100));
             assert!(
                 channel_1
                     .iter()
                     .chain(channel_2.iter())
                     .all(|v| v.is_finite())
             );
-            for index in 0..125 {
-                assert_eq!(channel_1[index], f64::from(frame.channel_1[index]));
-                assert_eq!(channel_2[index], f64::from(frame.channel_2[index]));
+            for index in 0..100 {
+                assert_eq!(
+                    channel_1[index],
+                    f64::from(i32::from(frame.channel_1[index]) * 64 - 32768)
+                );
+                assert_eq!(
+                    channel_2[index],
+                    f64::from(i32::from(frame.channel_2[index]) * 64 - 32768)
+                );
             }
             points[0] += u64::try_from(channel_1.len()).unwrap();
             points[1] += u64::try_from(channel_2.len()).unwrap();
@@ -723,8 +715,8 @@ fn capture_to_scientific_file(
     assert!(controller.storage_status.closed);
     assert_eq!(controller.storage_status.error, None);
     let bytes = fs::read(path).unwrap();
-    assert_eq!((bytes.len() - 32) % 1010, 0);
-    let file_frames = u64::try_from((bytes.len() - 32) / 1010).unwrap();
+    assert_eq!((bytes.len() - 40) % 409, 0);
+    let file_frames = u64::try_from((bytes.len() - 40) / 409).unwrap();
     assert_eq!(normal_events, stats.accepted_frames);
     assert_eq!(file_frames, stats.accepted_frames);
     assert_eq!(controller.storage_status.enqueued, stats.accepted_frames);
@@ -785,24 +777,21 @@ fn independently_count_capture(capture: &Path) -> CaptureCensus {
         let wire = parsed.payload;
         assert_eq!(wire.len(), 269);
         census.complete += 1;
-        // Independent fixed-byte, integer-time and differential-ADC oracle.
+        // Independent fixed-byte, integer-time and 40-bit packed-code oracle.
         // The trailing two bytes never participate in validity.
-        let structure_ok = wire[..7] == [0xEB, 0x90, 0x55, 0xAA, 1, 7, 0xAA];
+        let structure_ok = wire[..7] == [0xEB, 0x90, 0x55, 0xAA, 1, 7, 0xAA] && wire[266] == 0;
         census.structure_valid += u64::from(structure_ok);
         let time_ok = u32::from_be_bytes(wire[11..15].try_into().unwrap()) < 1_000_000;
-        let valid = structure_ok && time_ok && reference_adc_valid(wire);
+        let valid = structure_ok && time_ok;
         let sequence = parsed.header.frame_sequence;
-        let [_, _, high, low] = sequence.to_be_bytes();
-        let decoded = langmuir_core::decode_scientific_frame_with_sequence(
-            wire,
-            u16::from_be_bytes([high, low]),
-        );
+        let decoded = langmuir_core::decode_scientific_frame(wire);
         assert_eq!(
             decoded.is_ok(),
             valid,
             "independent structure/time/ADC oracle"
         );
         let Ok(frame) = decoded else { continue };
+        assert_eq!(frame, reference_frame(wire));
         census.parsed += 1;
         // Independently apply the documented five-second / 256-entry FIFO
         // acceptance policy to the capture's original monotonic timestamps.
@@ -828,18 +817,29 @@ fn independently_count_capture(capture: &Path) -> CaptureCensus {
     census
 }
 
-fn reference_adc_valid(wire: &[u8]) -> bool {
-    for channel in 0..2 {
-        let first = 15 + channel * 2;
-        let mut sample = i32::from(u16::from_be_bytes([wire[first], wire[first + 1]]));
-        for index in 0..124 {
-            sample += i32::from(i8::from_be_bytes([wire[19 + index * 2 + channel]]));
-            if !(0..=65_535).contains(&sample) {
-                return false;
+fn reference_frame(wire: &[u8]) -> ScientificFrame {
+    let decode = |block: &[u8]| {
+        let mut values = Box::new([0_u16; 100]);
+        for (group_index, bytes) in block.as_chunks::<5>().0.iter().enumerate() {
+            let packed = bytes
+                .iter()
+                .fold(0_u64, |acc, byte| acc * 256 + u64::from(*byte));
+            for point in 0..4 {
+                values[group_index * 4 + point] =
+                    u16::try_from((packed >> ((3 - point) * 10)) & 1023).unwrap();
             }
         }
+        values
+    };
+    ScientificFrame {
+        timestamp: langmuir_core::Timestamp {
+            utc_seconds: u32::from_be_bytes(wire[7..11].try_into().unwrap()),
+            microseconds: u32::from_be_bytes(wire[11..15].try_into().unwrap()),
+        },
+        frame_seq_u8: wire[265],
+        channel_1: decode(&wire[15..140]),
+        channel_2: decode(&wire[140..265]),
     }
-    true
 }
 
 #[test]
@@ -889,7 +889,7 @@ fn e7_user_capture_no_crc_science_roundtrip() {
     assert_eq!(actual.stats.duplicates, expected.duplicates);
     assert_eq!(actual.stats.conflicts, expected.conflicts);
     assert_eq!(actual.events, u64::try_from(expected.frames.len()).unwrap());
-    assert_eq!(actual.points, [actual.events * 125; 2]);
+    assert_eq!(actual.points, [actual.events * 100; 2]);
     assert_scientific_file(&actual.bytes, &expected.frames);
     if let Some(path) = std::env::var_os("LANGMUIR_GUI_SCIENCE_FILE") {
         // Optional read-only audit of a file closed by the actual GUI. Saving
@@ -905,14 +905,14 @@ fn e7_user_capture_no_crc_science_roundtrip() {
         let first_record = &gui_bytes[header_len..header_len + record_len];
         let utc = read_u32(first_record, 0);
         let micros = read_u32(first_record, 4);
-        let sequence = u16::from_le_bytes(first_record[8..10].try_into().unwrap());
+        let sequence = first_record[8];
         let first_index = expected
             .frames
             .iter()
             .position(|frame| {
                 frame.timestamp.utc_seconds == utc
                     && frame.timestamp.microseconds == micros
-                    && frame.sequence == sequence
+                    && frame.frame_seq_u8 == sequence
             })
             .expect("GUI first record must match the original capture");
         assert_scientific_file(&gui_bytes, &expected.frames[first_index..]);

@@ -33,7 +33,7 @@ pub struct CommandCounters {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScientificFrameSummary {
     pub timestamp: Timestamp,
-    pub sequence: u16,
+    pub frame_seq_u8: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -105,7 +105,7 @@ mod tests {
                 utc_seconds: 1,
                 microseconds: 2,
             },
-            sequence: 7,
+            frame_seq_u8: 7,
         };
         state.apply_scientific_summary(summary);
         assert_eq!(state.latest_scientific, Some(summary));
@@ -119,7 +119,7 @@ mod tests {
             ..StreamMetrics::default()
         };
         metrics.synchronize_streams(StreamMetrics::default(), lvds);
-        assert_eq!(metrics.scientific_samples_decoded, 750);
+        assert_eq!(metrics.scientific_samples_decoded, 600);
         metrics.commands_encoded = u64::MAX;
         metrics.record_command_encoded();
         assert_eq!(metrics.commands_encoded, u64::MAX);

@@ -1,6 +1,12 @@
 /target/
 /target-release-*/
 /data/
+/apps/desktop/data/
+/*.pcapng
+/lvds.txt
+/lvds.pcapng.provenance.json
+__pycache__/
+*.py[cod]
 *.h5
 *.lpd
 .DS_Store

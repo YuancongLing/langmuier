@@ -1,9 +1,10 @@
 # Wire protocol compatibility
 
-All multi-byte integers use network (big-endian) byte order.
+All wire-protocol multi-byte integers use network (big-endian) byte order. The
+versioned local storage formats described below use little-endian integers.
 
 > **科学数据未经 CRC 完整性验证。** Production LVDS reception, plots and capture
-> do not calculate or compare CRC16. Structure, device time and ADC bounds remain
+> do not calculate or compare CRC16. Structure, fixed fields and device time remain
 > checked; UDP delivery also passes the existing recent-frame deduplication gate.
 > CRC mode, filtering and detail controls have been removed from the desktop.
 
@@ -33,13 +34,44 @@ magnetic field, DDS2, or an auxiliary status field.
 UDP fragment wrapper (24 bytes) | LVDS raw frame (269 bytes, after reassembly)
 ```
 
-The user-confirmed scientific layout is `269` bytes. The raw
-frame is `EB 90 | 55 | AA | 01 07 | AA | UTC(u32) | microseconds(u32) |
-data[252] | CRC16(u16, big-endian)`. `0x0107 = 263` is the declared valid-data length
-from `type` through the two-byte CRC16. The LVDS body has no packet-sequence field; the
-UDP wrapper's `frame_seq` is a separate `u32`; the desktop currently truncates it to
-`u16` for the existing science/storage tag. Preserving the full sequence is deferred.
-The UDP `frame_len` field defines the reassembly boundary; the scientific gate requires 269B.
+The current scientific frame starts with `EB 90 55 AA 01 07 AA` and contains
+exactly `269` bytes. Sender `55` and receiver `AA` are required; the earlier
+`04/FF` addresses are rejected. `0x0107 = 263` is the declared valid-data length
+from `type` through the two-byte CRC16.
+
+| Zero-based frame offset | Length | Field |
+| --- | --- | --- |
+| 0 | 2 | Header `EB 90` |
+| 2 | 1 | Sender `55` |
+| 3 | 1 | Receiver `AA` |
+| 4 | 2 | Declared length `01 07` |
+| 6 | 1 | Scientific type `AA` |
+| 7 | 4 | Device seconds, unsigned `u32` |
+| 11 | 4 | Device microseconds, unsigned `u32`, less than `1000000` |
+| 15 | 125 | `DATA0..DATA124`: channel 1 packed code10 samples |
+| 140 | 125 | `DATA125..DATA249`: channel 2 packed code10 samples |
+| 265 | 1 | `DATA250`: inner `frame_seq_u8` |
+| 266 | 1 | `DATA251`: reserved, must be `00` |
+| 267 | 2 | Received CRC16 trailer, not checked in production |
+
+Each channel contains `100` unsigned 10-bit codes in `0..=1023`, packed as four
+consecutive codes per five-byte group. Treating each group as one big-endian
+40-bit word, the codes occupy bits `39..30`, `29..20`, `19..10` and `9..0`.
+This is not the historical absolute-sample/signed-delta representation.
+
+Both channels share the transmitted timestamp of their first sample. Sample
+`i` has device time `seconds * 1000000 + microseconds + i * 500` microseconds,
+for `i = 0..99`: `500` microseconds per sample, `2000` samples/s per channel,
+and a `50` ms frame span. No extra `200` microseconds are added. The device
+seconds field is retained without assuming a calendar epoch. The plot uses
+signed reconstructed ADC values `code10 * 64 - 32768`, in `-32768..=32704`;
+these values are quantization estimates, not a lossless ADC16 recovery or
+calibrated voltage.
+
+The UDP `frame_len` field defines the reassembly boundary; the scientific gate
+requires 269B. The outer wrapper's `frame_seq` remains a full `u32` used for
+reassembly, deduplication and sequence monitoring. It is independent of the inner
+`frame_seq_u8` at offset 265 and is not truncated to create the stored sequence.
 
 The two trailer bytes remain in the 269-byte wire layout, but production decoding
 does not inspect their CRC value. The retained offline reference API uses the lower
@@ -52,15 +84,34 @@ production acceptance. Original bytes are never repaired or shifted. A captured
 frame can be accepted without satisfying this offline CRC reference, so acceptance
 must not be described as proof of CRC integrity or hardware correctness.
 
-The data domain contains 125 samples per channel. `DATA0..DATA3` are unsigned big-endian
-16-bit absolute first samples. `DATA4..DATA251` alternate signed two's-complement `i8`
-deltas for channels 1 and 2; each sample is reconstructed from the previous sample and
-must remain in `0..=65535`; the manufacturer's negative-delta encoding remains pending
-confirmation. Each frame starts from its own absolute samples. UTC and microseconds identify the first sample of
-both channels. The implementation derives a 400-microsecond sample interval from the
-10K sample rate with 4:1 selection (2500 samples/s, 125 points per 50ms frame).
-The plot retains `(ADC - 32768) / 6.4` as an uncalibrated mV estimate; manufacturer
-calibration has not been confirmed. ADC storage and the existing file formats are unchanged.
+## Scientific storage
+
+CSV produces 100 paired-channel rows per accepted frame, in accepted order,
+with these 11 columns:
+
+```text
+frame_index,frame_seconds,frame_microseconds,frame_seq_u8,sample_index,sample_time_us,ch1_code10,ch2_code10,ch1_adc16_reconstructed,ch2_adc16_reconstructed,integrity
+```
+
+The two `code10` columns preserve the received values, reconstructed columns use
+`code10 * 64 - 32768`, and `integrity` is always `CRC_NOT_CHECKED`.
+
+New binary captures use `.lpd` v3: a 40-byte header followed by 409-byte records,
+with all multi-byte integers little-endian. The header explicitly identifies v3,
+100 samples per channel, a 500-microsecond interval, u16 code10 representation,
+two channels, an eight-bit inner sequence, raw device time and unchecked CRC.
+Each record stores device seconds `u32`, microseconds `u32`, `frame_seq_u8`,
+100 channel-1 `u16` codes and 100 channel-2 `u16` codes, without padding.
+
+The historical v2 writer retains its 32-byte header, 1010-byte records, 125 points
+per channel and u32 sample representation, accepting only
+`LegacyScientificFrameV2`. Legacy HDF5 retains its `[N,125]` schema. Neither
+legacy writer accepts the current scientific model; the desktop disables HDF5
+for the new protocol. New frames are never padded with 25 points or relabeled
+as v2. Older analysis tools must explicitly support v3 to read new LPD files.
+
+See [the final 55/AA protocol acceptance report](LVDS_55AA_FINAL_ACCEPTANCE.md)
+for the recorded test inputs, independent readback and validation scope.
 
 ## Uplink control command (12 bytes)
 
@@ -89,12 +140,13 @@ The legacy CLI names `frequency`, `mode`, and `voltage` are rejected with an
 explicit migration message; use `triangle`, `sine`, and `dc` for new scripts.
 The numeric `mode` command cannot identify the waveform/DC meaning safely.
 
-The Rust decoder rejects wrong declared lengths, wrong fixed type/device values, invalid
-microsecond fields, invalid reconstructed samples, and extra or truncated bytes. Desktop
-UDP, PCAP replay, legacy byte streams, and CLI use the same structure → time → ADC
+The Rust decoder rejects wrong declared lengths, wrong fixed addresses/type,
+nonzero reserved bytes, invalid microsecond fields, and extra or truncated bytes. Desktop
+UDP, PCAP replay, legacy byte streams, and CLI use the same structure → time → code10
 decoder. UDP and replay then use the full-`u32` recent-frame deduplication gate;
-Accepted frames reach the single plot path and, while capture is enabled, the existing
-writer. Invalid device time is rejected rather than replaced with host time. `.lpd`
-v2 and HDF5 schemas remain unchanged and carry no new CRC verification guarantee.
+Accepted frames reach the single plot path and, while capture is enabled, the
+CSV/LPDv3 writer. Invalid device time is rejected rather than replaced with host
+time. Accepted order and raw timestamps are retained in storage, including valid
+device-time rollback; the plot starts a new display window on rollback.
 Protocol Mock uses artificial frames through UDP encapsulation/reassembly and the
 real decoder; direct GUI sample injection remains a separate UI-only facility.

@@ -1,0 +1,39 @@
+{
+  "result": "PASS",
+  "source": "target\\qa\\lvds-10bit\\native-plot-measurements.csv",
+  "source_sha256": "8e91433235b3b9503bf4aa2f942c434d6844f8f440c37e1a106c15fbb1b41688",
+  "method": "Native Windows x64 non-Mock static CRT release; synthetic PCAP replay, 1300 frames at 20 frames/s and 100 points/channel/frame; science file saving off",
+  "measurement_scope": "CPU time inside app update and plot preparation; excludes GPU, presentation/wait time, whole-process CPU percentage and working-set measurement",
+  "active_filter": "0 < plotted < 1300; excludes empty startup and idle after EOF",
+  "total_measurement_rows": 4653,
+  "active_measurement_rows": 3893,
+  "active_span_seconds": 64.929081,
+  "accepted_and_plotted_frames": 1300,
+  "native_replay_duration_seconds": 64.951,
+  "update_cpu": {
+    "median_ms": 1.1298,
+    "p95_ms": 2.3515,
+    "max_ms": 6.7671
+  },
+  "plot_preparation_cpu": {
+    "median_ms": 0.0109,
+    "p95_ms": 0.1422,
+    "max_ms": 1.0498
+  },
+  "peak_cached_points_per_channel": [
+    120000,
+    120000
+  ],
+  "final_cached_points_per_channel": [
+    120000,
+    120000
+  ],
+  "peak_render_points_per_channel": [
+    1156,
+    1156
+  ],
+  "cache_capacity_per_channel": 120100,
+  "render_budget_per_channel": 2000,
+  "native_eof_screenshot": "docs/qa/LVDS_10BIT_PERFORMANCE_WINDOWS.png",
+  "real_new_device_acceptance": "NOT_RUN"
+}

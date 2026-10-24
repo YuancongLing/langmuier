@@ -820,8 +820,8 @@ mod tests {
             assert_eq!(complete.frame_sequence, sequence);
             assert_eq!(complete.bytes, golden_frame());
             let science = decode_scientific_frame(&complete.bytes).unwrap();
-            assert_eq!(science.channel_1.len(), 125);
-            assert_eq!(science.channel_2.len(), 125);
+            assert_eq!(science.channel_1.len(), 100);
+            assert_eq!(science.channel_2.len(), 100);
             assert_eq!(reassembler.metrics().in_flight_frames, 0);
             assert_eq!(reassembler.metrics().buffered_payload_bytes, 0);
         }

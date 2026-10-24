@@ -11,6 +11,8 @@ use super::{
     central_layout_rects, fonts, frequency_parameter, full_width_card, full_width_subtle_card,
     integer_parameter_u16, theme,
 };
+use langmuir_core::SAMPLE_COUNT;
+
 use crate::bridge::{BackendEndpoint, LvdsStatusSnapshot, channel_bridge};
 
 const VIEWPORTS: [(Vec2, f32); 3] = [
@@ -574,7 +576,7 @@ fn sixty_seconds_of_scientific_updates_keep_central_docks_and_grid_stable() {
         let (mut app, _endpoint) = test_app();
         app.lvds_view.status = Some(LvdsStatusSnapshot::default());
         let mut baseline_geometry = None;
-        // Sixty seconds of device timestamps, with 20 frames/s and 125 ADC
+        // Sixty seconds of device timestamps, with 20 frames/s and 100 ADC
         // points/channel. This is a deterministic UI simulation, not wall time
         // or a native visual-performance claim.
         for frame in 0..=1_200_u32 {
@@ -583,17 +585,17 @@ fn sixty_seconds_of_scientific_updates_keep_central_docks_and_grid_stable() {
                 app.handle_scientific_samples(
                     start,
                     start,
-                    0.0004,
-                    vec![32_768.0; 125],
-                    vec![32_832.0; 125],
+                    0.000_500,
+                    vec![0.0; SAMPLE_COUNT],
+                    vec![64.0; SAMPLE_COUNT],
                 );
             } else {
                 app.handle_backend_event(BackendEvent::ScientificSamples {
                     channel_1_start_seconds: start,
                     channel_2_start_seconds: start,
-                    sample_interval_seconds: 0.0004,
-                    channel_1: vec![32_768.0; 125],
-                    channel_2: vec![32_832.0; 125],
+                    sample_interval_seconds: 0.000_500,
+                    channel_1: vec![0.0; SAMPLE_COUNT],
+                    channel_2: vec![64.0; SAMPLE_COUNT],
                 });
             }
             let status = app.lvds_view.status.as_mut().unwrap();
@@ -655,9 +657,9 @@ fn themed_central_widgets_fit_requested_viewports_with_live_and_frozen_data() {
                 app.handle_scientific_samples(
                     1_800_000_000.0,
                     1_800_000_000.000_2,
-                    0.0004,
-                    vec![32_800.0; 125],
-                    vec![32_900.0; 125],
+                    0.000_500,
+                    vec![-64.0; SAMPLE_COUNT],
+                    vec![128.0; SAMPLE_COUNT],
                 );
                 app.acquisition_running = true;
             } else if data_state == 2 {
@@ -696,7 +698,7 @@ fn themed_central_widgets_fit_requested_viewports_with_live_and_frozen_data() {
                             measured[3] = ui.min_rect();
                         });
                     });
-                    assert!(!output.shapes.is_empty());
+                    assert_ne!(output.shapes, []);
                     assert!((context.pixels_per_point() - scale).abs() < 0.001);
                     for ((name, actual), region) in ["operations", "toolbar", "plot", "logs"]
                         .into_iter()

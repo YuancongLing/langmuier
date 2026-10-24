@@ -358,15 +358,23 @@ impl<T: Send + 'static> BatchWriter<T> {
         if ack_wait.is_zero() {
             return Err(self.detach_after_timeout());
         }
-        let shutdown_result = match ack_rx.recv_timeout(ack_wait) {
-            Ok(result) => result,
-            Err(RecvTimeoutError::Timeout) => {
+        // A sink failure can terminate the worker after Shutdown is queued but
+        // before it is received, leaving its acknowledgement sender queued.
+        let shutdown_result = crossbeam_channel::select_biased! {
+            recv(self.completion) -> completion => {
+                return interpret_exit(self.join_completed(completion.ok())?);
+            },
+            recv(ack_rx) -> acknowledgement => {
+                if let Ok(result) = acknowledgement {
+                    result
+                } else {
+                    let wait = deadline.saturating_duration_since(Instant::now());
+                    return interpret_exit(self.wait_for_completion(wait)?);
+                }
+            },
+            default(ack_wait) => {
                 return Err(self.detach_after_timeout());
-            }
-            Err(RecvTimeoutError::Disconnected) => {
-                let wait = deadline.saturating_duration_since(Instant::now());
-                return interpret_exit(self.wait_for_completion(wait)?);
-            }
+            },
         };
         let wait = deadline.saturating_duration_since(Instant::now());
         let exit = self.wait_for_completion(wait)?;
@@ -382,24 +390,18 @@ impl<T: Send + 'static> BatchWriter<T> {
             return Err(self.detach_after_timeout());
         }
         match self.completion.recv_timeout(timeout) {
-            Ok(exit) => {
-                let Some(join) = self.join.take() else {
-                    return Err(StorageError::AlreadyJoined);
-                };
-                join.join().map_err(|_| StorageError::WorkerPanicked)?;
-                Ok(exit)
-            }
+            Ok(exit) => self.join_completed(Some(exit)),
             Err(RecvTimeoutError::Timeout) => Err(self.detach_after_timeout()),
-            Err(RecvTimeoutError::Disconnected) => {
-                let Some(join) = self.join.take() else {
-                    return Err(StorageError::AlreadyJoined);
-                };
-                match join.join() {
-                    Ok(_) => Err(StorageError::CompletionChannelClosed),
-                    Err(_) => Err(StorageError::WorkerPanicked),
-                }
-            }
+            Err(RecvTimeoutError::Disconnected) => self.join_completed(None),
         }
+    }
+
+    fn join_completed(&mut self, exit: Option<WriterExit>) -> Result<WriterExit, StorageError> {
+        let Some(join) = self.join.take() else {
+            return Err(StorageError::AlreadyJoined);
+        };
+        join.join().map_err(|_| StorageError::WorkerPanicked)?;
+        exit.ok_or(StorageError::CompletionChannelClosed)
     }
 
     fn detach_after_timeout(&mut self) -> StorageError {
@@ -850,6 +852,68 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn shutdown_preserves_sink_failure_when_queued_request_is_not_processed() {
+        struct GatedFailingSink {
+            entered: Sender<()>,
+            release: Receiver<()>,
+        }
+
+        impl BatchSink<u8> for GatedFailingSink {
+            type Error = std::io::Error;
+
+            fn write_batch(&mut self, _items: &[u8]) -> Result<(), Self::Error> {
+                self.entered.send(()).unwrap();
+                self.release.recv().unwrap();
+                Err(std::io::Error::other("injected gated write failure"))
+            }
+
+            fn flush(&mut self) -> Result<(), Self::Error> {
+                Ok(())
+            }
+        }
+
+        let (entered_tx, entered_rx) = bounded(1);
+        let (release_tx, release_rx) = bounded(1);
+        let writer = BatchWriter::start(
+            GatedFailingSink {
+                entered: entered_tx,
+                release: release_rx,
+            },
+            StorageServiceConfig {
+                batch_size: 1,
+                control_timeout: Duration::from_secs(1),
+                ..StorageServiceConfig::default()
+            },
+        )
+        .unwrap();
+        writer.submit(7).unwrap();
+        entered_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+
+        let control = writer.control.clone();
+        let shutdown = thread::spawn(move || writer.shutdown());
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while control.is_empty() && Instant::now() < deadline {
+            thread::yield_now();
+        }
+        let shutdown_queued = control.len() == 1;
+        release_tx.send(()).unwrap();
+        let error = shutdown.join().unwrap().unwrap_err();
+        drop(control);
+
+        assert!(shutdown_queued, "shutdown did not reach the blocked writer");
+        assert!(
+            matches!(
+                &error,
+                StorageError::Sink {
+                    operation: "write batch",
+                    message,
+                } if message == "injected gated write failure"
+            ),
+            "unexpected shutdown error: {error}"
+        );
     }
 
     #[test]

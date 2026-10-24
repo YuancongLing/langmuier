@@ -1,0 +1,26 @@
+{
+  "capture": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-10bit\\SYNTHETIC-new-protocol.pcapng",
+    "bytes": 73648,
+    "sha256": "f6ce758b9e93382eabfb1a5d8137ff8e8165fb16593ad5e6e6fb1184be0adf0a"
+  },
+  "source": "SYNTHETIC independent fixture; NOT real device acceptance",
+  "total_packets": 200,
+  "accepted_frames": 200,
+  "csv_data_rows": 20000,
+  "signed_adc_values_checked": 40000,
+  "rollback_indexes": [
+    100
+  ],
+  "csv": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-10bit\\capture-readback\\scientific-20261024-145100.419.csv",
+    "bytes": 1338897,
+    "sha256": "170760edd4c885c97ca0074e8527aeabf7d3994986f1bb9c91dd964784c07520"
+  },
+  "lpd_v3": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-10bit\\capture-readback\\scientific-20261024-145100.419.lpd",
+    "bytes": 81840,
+    "sha256": "351ee8f2f67f18a64c24c51acc9e0aaf9f2e9489445e0be73a12781f3b381828"
+  },
+  "readback": "PASS"
+}

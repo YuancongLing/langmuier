@@ -1,0 +1,79 @@
+{
+  "result": "PASS",
+  "source": {
+    "path": "D:\\RUST\\langmuier\\target\\x86_64-pc-windows-msvc\\release\\langmuir-desktop.exe",
+    "bytes": 9266176,
+    "sha256": "9f3035c9a6687b249d6da3172f23964a628968c8ca1b08a19de2643b2b2f5eb9"
+  },
+  "delivered_exe": {
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\windows-x64\\LangmuirGroundControl.exe",
+    "bytes": 9266176,
+    "sha256": "9f3035c9a6687b249d6da3172f23964a628968c8ca1b08a19de2643b2b2f5eb9"
+  },
+  "archive": {
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\LangmuirGroundControl-windows-x64.zip",
+    "bytes": 3899908,
+    "sha256": "bb3f8cef8f62b0b438a0442ccd101c6133ae3a7dfbafb7fc3ca02986483beafc"
+  },
+  "readme": {
+    "path": "D:\\RUST\\langmuier\\docs\\WINDOWS_BUILD.md",
+    "bytes": 9458,
+    "sha256": "d72e9728ed53466d612f5cce55a440d2d8835d65955b499992eb10e35526eae1"
+  },
+  "zip_entries": [
+    "LangmuirGroundControl.exe",
+    "README.md"
+  ],
+  "zip_crc_and_content_match": true,
+  "pe_machine": "0x8664",
+  "pe_format": "PE32+ Windows x64",
+  "imports": [
+    "ADVAPI32.dll",
+    "GDI32.dll",
+    "KERNEL32.dll",
+    "OPENGL32.dll",
+    "SHELL32.dll",
+    "USER32.dll",
+    "api-ms-win-core-synch-l1-2-0.dll",
+    "bcryptprimitives.dll",
+    "cfgmgr32.dll",
+    "dwmapi.dll",
+    "imm32.dll",
+    "kernel32.dll",
+    "ntdll.dll",
+    "ole32.dll",
+    "setupapi.dll",
+    "shell32.dll",
+    "shlwapi.dll",
+    "user32.dll",
+    "uxtheme.dll",
+    "ws2_32.dll"
+  ],
+  "no_dynamic_msvc_crt_imports": true,
+  "build_command": "cargo +stable-x86_64-pc-windows-msvc build --release -p langmuir-desktop --target x86_64-pc-windows-msvc --target-dir target --no-default-features --locked",
+  "rustflags": "-C target-feature=+crt-static",
+  "mock_feature": false,
+  "hdf5_feature": false,
+  "native_ui_evidence": {
+    "scope": "20 user-pasted HEX frames, about 1 second; not real probe communication or a 60-second acquisition",
+    "original_txt_20_frames": "PASS",
+    "mock_feature": false,
+    "screenshots": [
+      "docs/qa/LVDS_55AA_USER_EOF_WINDOWS.jpg",
+      "docs/qa/LVDS_55AA_USER_OVERLAY_WINDOWS.jpg",
+      "docs/qa/LVDS_55AA_USER_SPLIT_WINDOWS.jpg",
+      "docs/qa/LVDS_55AA_USER_FREEZE_WINDOWS.jpg"
+    ],
+    "python_readback": "docs/qa/LVDS_55AA_USER_NATIVE_READBACK.json",
+    "rust_readback_log": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-user\\rust-derived-pcap-native-readback.log",
+    "observation": "target/qa/lvds-55aa-user/native-ui-observation.json"
+  },
+  "current_build": {
+    "command": "cargo +stable-x86_64-pc-windows-msvc build --release -p langmuir-desktop --target x86_64-pc-windows-msvc --target-dir target --no-default-features --locked",
+    "rustflags": "-C target-feature=+crt-static",
+    "exit_code": 0,
+    "seconds": 0.843,
+    "mock_feature": false,
+    "hdf5_feature": false
+  }
+}

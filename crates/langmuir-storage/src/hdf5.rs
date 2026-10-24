@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use crate::{LEGACY_SAMPLE_COUNT_V2 as SAMPLE_COUNT, LegacyScientificFrameV2};
 use ::hdf5::{Attribute, Dataset, File};
-use langmuir_core::{SAMPLE_COUNT, ScientificFrame};
 use ndarray::Array2;
 use thiserror::Error;
 
@@ -56,7 +56,9 @@ pub enum Hdf5Error {
 }
 
 /// HDF5 sink with the same dataset names, dimensions, and scalar types as the
-/// optimized Python logger.
+/// optimized Python logger. This legacy `[N,125]` writer accepts only
+/// [`LegacyScientificFrameV2`]. New 100-point code10 scientific acquisition is
+/// intentionally unsupported; no padding or schema reinterpretation occurs.
 pub struct Hdf5Sink {
     path: PathBuf,
     file: Option<File>,
@@ -171,16 +173,16 @@ impl Hdf5Sink {
     }
 }
 
-impl BatchSink<ScientificFrame> for Hdf5Sink {
+impl BatchSink<LegacyScientificFrameV2> for Hdf5Sink {
     type Error = Hdf5Error;
 
-    fn write_batch(&mut self, frames: &[ScientificFrame]) -> Result<(), Self::Error> {
+    fn write_batch(&mut self, frames: &[LegacyScientificFrameV2]) -> Result<(), Self::Error> {
         if frames.is_empty() {
             return Ok(());
         }
         let times: Vec<f64> = frames
             .iter()
-            .map(ScientificFrame::channel_1_base_seconds)
+            .map(LegacyScientificFrameV2::channel_1_base_seconds)
             .collect();
         let sequences: Vec<u16> = frames.iter().map(|frame| frame.sequence).collect();
         let mut channel_1 = Vec::with_capacity(frames.len() * SAMPLE_COUNT);
@@ -311,12 +313,12 @@ fn validate_config(config: &Hdf5Config) -> Result<(), Hdf5Error> {
 
 #[cfg(test)]
 mod tests {
-    use langmuir_core::{ScientificFrame, Timestamp};
+    use langmuir_core::Timestamp;
     use tempfile::tempdir;
 
     use super::*;
 
-    fn frame(index: u32) -> ScientificFrame {
+    fn frame(index: u32) -> LegacyScientificFrameV2 {
         let mut channel_1 = Box::new([0_u32; SAMPLE_COUNT]);
         let mut channel_2 = Box::new([0_u32; SAMPLE_COUNT]);
         for sample in 0..SAMPLE_COUNT {
@@ -324,7 +326,7 @@ mod tests {
             channel_1[sample] = index * 1000 + sample_u32;
             channel_2[sample] = 1_000_000 + index * 1000 + sample_u32;
         }
-        ScientificFrame {
+        LegacyScientificFrameV2 {
             timestamp: Timestamp {
                 utc_seconds: 1_700_000_000 + index,
                 microseconds: 123_456,

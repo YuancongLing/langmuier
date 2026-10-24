@@ -1,0 +1,124 @@
+{
+  "source": {
+    "path": "D:\\RUST\\langmuier\\lvds.txt",
+    "bytes": 10780,
+    "sha256": "b5a2eee986fbe4f26da33da67bfeab17b8f9185f72ed0c6f81f232f3c2f15add"
+  },
+  "frame_count": 20,
+  "sample_count_per_channel": 2000,
+  "baseline_assertion": "PASS",
+  "CRC": "NOT_CHECKED",
+  "csv": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-final\\native-run\\data\\scientific-20261024-181541.169.csv",
+    "bytes": 157266,
+    "sha256": "307b5501af8205f93ad08be0e7d08e432e2f2bdb9b33eb042c1d289f906ee1eb",
+    "status": "PASS",
+    "data_rows": 2000,
+    "columns_checked": 22000
+  },
+  "lpd_v3": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-final\\native-run\\data\\scientific-20261024-181541.169.lpd",
+    "bytes": 8220,
+    "sha256": "7cab73808160fa118329d07d1e56a971ab19357be55c1bdb03ae4a67384c9f02",
+    "status": "PASS",
+    "version": 3,
+    "file_bytes": 8220,
+    "records": 20,
+    "codes_checked": 4000
+  },
+  "verification_command": [
+    "C:\\Users\\Administrator\\miniconda3\\python.exe",
+    "tools/qa/lvds_txt_reference.py",
+    "--txt",
+    "lvds.txt",
+    "--csv",
+    "target\\qa\\lvds-55aa-final\\native-run\\data\\scientific-20261024-181541.169.csv",
+    "--lpd",
+    "target\\qa\\lvds-55aa-final\\native-run\\data\\scientific-20261024-181541.169.lpd",
+    "--assert-supplied-baseline"
+  ],
+  "verification_exit_code": 0,
+  "capture_provenance": "User chat-pasted HEX saved as ASCII/LF; derived UDP/PCAPNG wrapper, not original NIC capture",
+  "native_application_mode": "Windows x64 non-Mock Release; actual GUI outputs",
+  "derived_pcap": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-user\\lvds-from-txt-derived.pcapng",
+    "bytes": 7516,
+    "sha256": "e082a83fd079df35484f42b891b59e294849b747874be7410aedc8fee5c42813"
+  },
+  "observed_lpd_header": {
+    "magic": "LMPROBE",
+    "version": 3,
+    "header_bytes": 40,
+    "endian_marker": 16909060,
+    "samples_per_channel": 100,
+    "sample_interval_us": 500,
+    "record_bytes": 409,
+    "representation": 1,
+    "flags": 3,
+    "channel_count": 2,
+    "sequence_bits": 8
+  },
+  "observed_timeline": {
+    "first_sample_time_us": 1700000000000000,
+    "last_sample_time_us": 1700000000999500,
+    "all_sample_step_us": [
+      500
+    ],
+    "frame_microseconds": [
+      0,
+      50000,
+      100000,
+      150000,
+      200000,
+      250000,
+      300000,
+      350000,
+      400000,
+      450000,
+      500000,
+      550000,
+      600000,
+      650000,
+      700000,
+      750000,
+      800000,
+      850000,
+      900000,
+      950000
+    ],
+    "inner_sequences_u8": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19
+    ],
+    "integrity": [
+      "CRC_NOT_CHECKED"
+    ]
+  },
+  "normal_lpd_eof": true,
+  "rust_reader_cross_check": {
+    "test": "backend::protocol_10bit_tests::final55_derived_pcap_and_native_files_match_original_txt",
+    "status": "PASS",
+    "exit_code": 0,
+    "log_path": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-user\\rust-derived-pcap-native-readback.log",
+    "log_sha256": "d50d1bc1d08b24fc9477238c974f30174454e6b8443e91727fa93161a2e4cdf5",
+    "scope": "Actual PcapNgReader validates every inner byte, explicit endpoints, outer u32 and 50ms; actual BinaryV3Reader validates full v3 header, 20 records and clean EOF against original production decode"
+  }
+}

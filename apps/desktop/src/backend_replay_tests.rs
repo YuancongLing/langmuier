@@ -6,7 +6,9 @@ use std::{
 };
 
 use crossbeam_channel::{Receiver, Sender, bounded};
-use langmuir_storage::{BatchWriter, BinaryConfig, BinarySink, StorageServiceConfig};
+use langmuir_storage::{
+    BatchWriter, BinaryConfig, BinaryV3Sink as BinarySink, StorageServiceConfig,
+};
 use langmuir_transport::{CapturePacket, CapturedUdp};
 
 use super::{Controller, DEPLOYED_LVDS_UDP_SOURCE, PcapReplay, UdpLvdsIngress};
@@ -36,25 +38,25 @@ fn csv_capture_closes_at_replay_eof_and_preserves_all_raw_samples() {
     assert_eq!((status.enqueued, status.sink_written), (2, 2));
     assert_eq!(
         (status.csv_frames_written, status.csv_rows_written),
-        (2, 250)
+        (2, 200)
     );
     assert_eq!(status.lpd_frames_written, 0);
     assert!(status.lpd_path.is_none());
     assert!(!stem.with_extension("lpd").exists());
     let csv = std::fs::read_to_string(stem.with_extension("csv")).unwrap();
     let lines: Vec<_> = csv.lines().collect();
-    assert_eq!(lines.len(), 251);
+    assert_eq!(lines.len(), 201);
     assert_eq!(
         lines[1],
-        "0,65535,1694498816,999800,0,1694498816999800,4660,43981,CRC_NOT_CHECKED"
+        "0,1694498816,999800,7,0,1694498816999800,1023,0,32704,-32768,CRC_NOT_CHECKED"
     );
     assert_eq!(
-        lines[125],
-        "0,65535,1694498816,999800,124,1694498817049400,4784,43857,CRC_NOT_CHECKED"
+        lines[100],
+        "0,1694498816,999800,7,99,1694498817049300,1,1023,-32704,32704,CRC_NOT_CHECKED"
     );
     assert_eq!(
-        lines[126],
-        "1,0,1694498816,999800,0,1694498816999800,4660,43981,CRC_NOT_CHECKED"
+        lines[101],
+        "1,1694498816,999800,7,0,1694498816999800,1023,0,32704,-32768,CRC_NOT_CHECKED"
     );
 }
 
@@ -84,17 +86,17 @@ fn dual_capture_manual_stop_closes_matching_outputs_and_keeps_plotting() {
         (status.csv_frames_written, status.lpd_frames_written),
         (1, 1)
     );
-    assert_eq!(status.csv_rows_written, 125);
+    assert_eq!(status.csv_rows_written, 100);
     assert_eq!(
         std::fs::read(stem.with_extension("lpd")).unwrap().len(),
-        1042
+        449
     );
     assert_eq!(
         std::fs::read_to_string(stem.with_extension("csv"))
             .unwrap()
             .lines()
             .count(),
-        126
+        101
     );
     assert!(!controller.acquisition_running);
     assert!(!controller.replay.as_ref().unwrap().progress.finished);
@@ -139,8 +141,158 @@ fn replay_read_error_closes_csv_and_marks_incomplete_capture() {
             .unwrap()
             .contains("broken PCAP")
     );
-    assert_eq!(controller.storage_status.csv_rows_written, 125);
+    assert_eq!(controller.storage_status.csv_rows_written, 100);
     assert!(stem.with_extension("csv.incomplete").exists());
+}
+
+#[test]
+fn replay_eof_rejects_wrong_04ff_addresses_and_marks_empty_csv_incomplete() {
+    let (replay, tx, _cancelled) = replay(Instant::now());
+    let (mut controller, display) = controller();
+    controller.replay = Some(replay);
+    let directory = tempfile::tempdir().unwrap();
+    let stem = directory.path().join("wrong-address-rejected");
+    assert!(controller.start_scientific_capture(crate::bridge::ScientificSaveFormat::Csv, &stem,));
+    let mut wrong_address = wire();
+    wrong_address[2..4].copy_from_slice(&[0x04, 0xFF]);
+    tx.send(Ok(Some(captured(
+        Duration::ZERO,
+        datagram(9, &wrong_address, 1),
+    ))))
+    .unwrap();
+    tx.send(Ok(None)).unwrap();
+
+    controller.drain_replay();
+
+    assert!(display.is_empty());
+    let replay = controller.replay.as_ref().unwrap();
+    assert!(replay.progress.finished);
+    assert_eq!(replay.ingress.receive_stats.accepted_frames, 0);
+    assert_eq!(replay.ingress.receive_stats.parse_failures, 1);
+    assert_eq!(replay.ingress.receive_stats.field_errors, 1);
+    assert_eq!(replay.ingress.metrics.rejected_frames, 1);
+    let error = replay
+        .progress
+        .error
+        .as_deref()
+        .expect("wrong-address-only capture must not report successful EOF");
+    assert!(error.contains("错误的 04/FF"), "{error}");
+    assert!(error.contains("当前要求 55/AA"), "{error}");
+    assert!(controller.lvds_status().receive_state.contains(error));
+    assert!(controller.storage_status.closed);
+    assert_eq!(controller.storage_status.csv_rows_written, 0);
+    assert!(
+        controller
+            .storage_status
+            .error
+            .as_deref()
+            .unwrap()
+            .contains(error)
+    );
+    assert!(stem.with_extension("csv.incomplete").exists());
+    assert_eq!(
+        std::fs::read_to_string(stem.with_extension("csv"))
+            .unwrap()
+            .lines()
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn replay_eof_without_target_udp_explains_the_source_filter() {
+    let started = Instant::now();
+    let (mut replay, tx, _cancelled) = replay(started);
+    let mut other_source = captured(Duration::ZERO, datagram(9, &wire(), 1));
+    other_source.udp.as_mut().unwrap().source = "192.0.2.9:1534".parse().unwrap();
+    tx.send(Ok(Some(other_source))).unwrap();
+    tx.send(Ok(Some(CapturePacket {
+        timestamp: Duration::ZERO,
+        udp: None,
+    })))
+    .unwrap();
+    tx.send(Ok(None)).unwrap();
+    let mut frames = Vec::new();
+
+    replay.drain_deliveries(started, &mut frames);
+
+    assert_eq!(frames, [] as [langmuir_core::ScientificFrame; 0]);
+    assert!(replay.progress.finished);
+    assert_eq!(replay.progress.total_packets, 2);
+    assert_eq!(replay.progress.target_udp_packets, 0);
+    let error = replay
+        .progress
+        .error
+        .as_deref()
+        .expect("no matching UDP must explain why there is no waveform");
+    assert!(error.contains("目标 UDP"), "{error}");
+    assert!(error.contains(DEPLOYED_LVDS_UDP_SOURCE), "{error}");
+    assert!(!error.contains("04/FF"), "{error}");
+}
+
+#[test]
+fn replay_eof_with_mixed_addresses_preserves_valid_55aa_science() {
+    let (replay, tx, _cancelled) = replay(Instant::now());
+    let (mut controller, display) = controller();
+    controller.replay = Some(replay);
+    let directory = tempfile::tempdir().unwrap();
+    let stem = directory.path().join("mixed-addresses");
+    assert!(controller.start_scientific_capture(crate::bridge::ScientificSaveFormat::Csv, &stem,));
+    let mut wrong_address = wire();
+    wrong_address[2..4].copy_from_slice(&[0x04, 0xFF]);
+    for (sequence, body) in [(9, &wrong_address), (9, &wire()), (10, &wrong_address)] {
+        tx.send(Ok(Some(captured(
+            Duration::ZERO,
+            datagram(sequence, body, 1),
+        ))))
+        .unwrap();
+    }
+    tx.send(Ok(None)).unwrap();
+
+    controller.drain_replay();
+
+    assert_eq!(display.len(), 1);
+    let replay = controller.replay.as_ref().unwrap();
+    assert!(replay.progress.finished);
+    assert_eq!(replay.progress.error, None);
+    assert_eq!(replay.ingress.receive_stats.accepted_frames, 1);
+    assert_eq!(replay.ingress.receive_stats.parse_failures, 2);
+    assert_eq!(replay.ingress.receive_stats.field_errors, 2);
+    assert_eq!(replay.ingress.receive_stats.duplicates, 0);
+    assert!(controller.storage_status.closed);
+    assert_eq!(controller.storage_status.error, None);
+    assert_eq!(controller.storage_status.csv_rows_written, 100);
+    assert!(!stem.with_extension("csv.incomplete").exists());
+}
+
+#[test]
+fn replay_eof_with_invalid_new_device_time_reports_the_actual_parse_error() {
+    let started = Instant::now();
+    let (mut replay, tx, _cancelled) = replay(started);
+    let mut invalid_time = wire();
+    invalid_time[11..15].copy_from_slice(&1_000_000_u32.to_be_bytes());
+    tx.send(Ok(Some(captured(
+        Duration::ZERO,
+        datagram(9, &invalid_time, 1),
+    ))))
+    .unwrap();
+    tx.send(Ok(None)).unwrap();
+    let mut frames = Vec::new();
+
+    replay.drain_deliveries(started, &mut frames);
+
+    assert_eq!(frames, [] as [langmuir_core::ScientificFrame; 0]);
+    assert!(replay.progress.finished);
+    assert_eq!(replay.ingress.receive_stats.accepted_frames, 0);
+    assert_eq!(replay.ingress.receive_stats.timestamp_errors, 1);
+    let error = replay
+        .progress
+        .error
+        .as_deref()
+        .expect("invalid device time must not report successful EOF");
+    assert!(error.contains("1000000"), "{error}");
+    assert!(error.contains("microseconds"), "{error}");
+    assert!(!error.contains("04/FF"), "{error}");
 }
 
 #[test]
@@ -151,7 +303,7 @@ fn detached_capture_progress_still_updates_closed_counts_and_retains_error() {
     controller.capture_progress = Some(Arc::new(Mutex::new(
         crate::bridge::ScientificStorageStatus {
             csv_frames_written: 2,
-            csv_rows_written: 250,
+            csv_rows_written: 200,
             lpd_frames_written: 1,
             closed: true,
             ..crate::bridge::ScientificStorageStatus::default()
@@ -159,7 +311,7 @@ fn detached_capture_progress_still_updates_closed_counts_and_retains_error() {
     )));
     controller.drain_storage();
     assert!(controller.storage_status.closed);
-    assert_eq!(controller.storage_status.csv_rows_written, 250);
+    assert_eq!(controller.storage_status.csv_rows_written, 200);
     assert_eq!(controller.storage_status.lpd_frames_written, 1);
     assert_eq!(controller.storage_status.sink_written, 1);
     assert!(
@@ -201,16 +353,7 @@ fn replay(started: Instant) -> (PcapReplay, Sender<PacketResult>, Receiver<()>) 
 }
 
 fn wire() -> Vec<u8> {
-    let mut frame = vec![0; 269];
-    frame[..19].copy_from_slice(&[
-        0xEB, 0x90, 0x55, 0xAA, 1, 7, 0xAA, 0x65, 0, 0, 0, 0, 0x0F, 0x41, 0x78, 0x12, 0x34, 0xAB,
-        0xCD,
-    ]);
-    for pair in frame[19..267].as_chunks_mut::<2>().0 {
-        pair.copy_from_slice(&[1, 0xFF]);
-    }
-    frame[267..269].copy_from_slice(&[0x44, 0xC8]);
-    frame
+    super::protocol_10bit_tests::golden_frame(7)
 }
 
 fn datagram(sequence: u32, body: &[u8], fragments: u16) -> Vec<u8> {
@@ -289,10 +432,10 @@ fn replay_four_hundred_frames_ignore_tail_and_refresh_both_channels_without_savi
         let expected_time = f64::from(utc) + f64::from(micros) / 1_000_000.0;
         assert_eq!(channel_1_start_seconds, expected_time);
         assert_eq!(channel_2_start_seconds, expected_time);
-        assert_eq!(sample_interval_seconds, 0.0004);
-        assert_eq!((channel_1.len(), channel_2.len()), (125, 125));
-        assert_eq!((channel_1[0], channel_1[124]), (4660.0, 4784.0));
-        assert_eq!((channel_2[0], channel_2[124]), (43_981.0, 43_857.0));
+        assert_eq!(sample_interval_seconds, 0.0005);
+        assert_eq!((channel_1.len(), channel_2.len()), (100, 100));
+        assert_eq!((channel_1[0], channel_1[99]), (32704.0, -32704.0));
+        assert_eq!((channel_2[0], channel_2[99]), (-32768.0, 32704.0));
         points[0] += u64::try_from(channel_1.len()).unwrap();
         points[1] += u64::try_from(channel_2.len()).unwrap();
         assert!(display.is_empty());
@@ -309,7 +452,7 @@ fn replay_four_hundred_frames_ignore_tail_and_refresh_both_channels_without_savi
     assert_eq!(replay.ingress.receive_stats.parse_failures, 0);
     assert_eq!(replay.ingress.receive_stats.accepted_frames, 400);
     assert_eq!(replay.ingress.metrics.udp_sequence.observed_frames, 400);
-    assert_eq!(points, [50_000; 2]);
+    assert_eq!(points, [40_000; 2]);
     assert_eq!(controller.storage_status.enqueued, 0);
 }
 
@@ -367,14 +510,14 @@ fn mixed_replay_preserves_science_order_and_saves_all_decodable_unique_frames() 
     assert_eq!(controller.storage_status.enqueued, 4);
     assert_eq!(controller.storage_status.sink_written, 4);
     let bytes = std::fs::read(path).unwrap();
-    assert_eq!(bytes.len(), 32 + 4 * 1010);
-    let sequences: Vec<_> = bytes[32..]
-        .as_chunks::<1010>()
+    assert_eq!(bytes.len(), 40 + 4 * 409);
+    let sequences: Vec<_> = bytes[40..]
+        .as_chunks::<409>()
         .0
         .iter()
-        .map(|record| u16::from_le_bytes(record[8..10].try_into().unwrap()))
+        .map(|record| record[8])
         .collect();
-    assert_eq!(sequences, [1, 2, 3, 5]);
+    assert_eq!(sequences, [7, 7, 7, 7]);
     let stats = controller.replay.as_ref().unwrap().ingress.receive_stats;
     assert_eq!(stats.complete_frames, 6);
     assert_eq!((stats.parsed_frames, stats.parse_failures), (5, 1));
@@ -407,9 +550,9 @@ fn replay_preserves_packet_time_pacing_and_explicit_eof() {
     assert_eq!(
         frames
             .iter()
-            .map(|frame| frame.sequence)
+            .map(|frame| frame.frame_seq_u8)
             .collect::<Vec<_>>(),
-        [100, 101]
+        [7, 7]
     );
     assert_eq!(replay.progress.total_packets, 2);
     assert_eq!(replay.progress.target_udp_packets, 2);
@@ -450,9 +593,9 @@ fn replay_silence_expires_residuals_and_sequence_gaps_before_next_packet() {
     assert_eq!(
         frames
             .iter()
-            .map(|frame| frame.sequence)
+            .map(|frame| frame.frame_seq_u8)
             .collect::<Vec<_>>(),
-        [100, 102, 103]
+        [7, 7, 7]
     );
     assert!(replay.progress.finished);
 }
@@ -477,7 +620,7 @@ fn replay_counts_all_packets_and_filters_original_source_without_rewriting() {
     assert_eq!(replay.progress.total_packets, 3);
     assert_eq!(replay.progress.target_udp_packets, 1);
     assert_eq!(frames.len(), 1);
-    assert_eq!(frames[0].sequence, 10);
+    assert_eq!(frames[0].frame_seq_u8, 7);
     assert_eq!(replay.ingress.receive_stats.udp_packets, 1);
 }
 
@@ -522,7 +665,7 @@ fn replay_rejects_backward_timestamps_without_delivering_the_old_packet() {
     let mut frames = Vec::new();
     replay.drain_deliveries(started, &mut frames);
     assert_eq!(frames.len(), 1);
-    assert_eq!(frames[0].sequence, 100);
+    assert_eq!(frames[0].frame_seq_u8, 7);
     assert!(replay.progress.finished);
     assert!(
         replay

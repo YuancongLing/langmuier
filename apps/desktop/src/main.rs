@@ -11,6 +11,8 @@ use app::LangmuirDesktopApp;
 use backend::RealBackendBridge;
 use bridge::BackendBridge;
 
+const APP_NAME: &str = "Langmuier Probe Ground Control";
+
 fn main() -> eframe::Result<()> {
     let arguments: Vec<String> = std::env::args().collect();
     if let Some(index) = arguments.iter().position(|arg| arg == "--audit-pcap") {
@@ -66,7 +68,7 @@ fn main() -> eframe::Result<()> {
         ..eframe::NativeOptions::default()
     };
     eframe::run_native(
-        "航天设备集成控制中心",
+        APP_NAME,
         options,
         Box::new(move |context| {
             Ok(Box::new(LangmuirDesktopApp::new(

@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use langmuir_core::{LVDS_FRAME_LEN, LvdsStreamDecoder};
 use langmuir_storage::{
-    BatchWriter, BinaryConfig, BinarySink, StorageServiceConfig, WriterStopReason,
+    BatchWriter, BinaryConfig, BinaryV3Sink, StorageServiceConfig, WriterStopReason,
 };
 use langmuir_transport::mock::{MemoryFeedError, lvds_packet, memory_transport};
 use langmuir_transport::{BackpressurePolicy, ReaderConfig, ReaderEvent, ReaderWorker, StopReason};
@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let directory = tempdir()?;
     let path = directory.path().join("replay-benchmark.lpd");
-    let sink = BinarySink::create(BinaryConfig::new(&path))?;
+    let sink = BinaryV3Sink::create(BinaryConfig::new(&path))?;
     let writer = BatchWriter::start(
         sink,
         StorageServiceConfig {

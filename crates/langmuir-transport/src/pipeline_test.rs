@@ -1,29 +1,21 @@
 use std::fs::File;
 use std::io::Read;
+use std::path::Path;
 use std::time::Duration;
 
-use langmuir_core::{
-    LVDS_CRC_CALC_END, LVDS_CRC_CALC_START, LVDS_CRC_FIELD_OFFSET, LvdsStreamDecoder, SAMPLE_COUNT,
-    crc16_ccitt_false,
-};
+use langmuir_core::{LVDS_CRC_FIELD_OFFSET, LvdsStreamDecoder, SAMPLE_COUNT};
 use langmuir_storage::{
-    BINARY_FRAME_LEN, BINARY_HEADER_LEN, BINARY_MAGIC, BatchWriter, BinaryConfig, BinarySink,
-    StorageServiceConfig,
+    BatchWriter, BinaryConfig, BinaryV3Reader, BinaryV3Sink, StorageServiceConfig, V3_FRAME_LEN,
+    V3_HEADER_LEN, V3_MAGIC,
 };
 use tempfile::tempdir;
 
 use crate::mock::{lvds_packet, memory_transport};
 use crate::{BackpressurePolicy, ReaderConfig, ReaderEvent, ReaderWorker, StopReason};
 
-fn le_u32(bytes: &[u8], offset: usize) -> u32 {
-    u32::from_le_bytes(bytes[offset..offset + 4].try_into().expect("four bytes"))
-}
-
 fn packet_at_50ms_interval(frame_index: u32) -> Vec<u8> {
     let mut packet = lvds_packet(frame_index, 1_700_000_000);
     packet[11..15].copy_from_slice(&(frame_index * 50_000).to_be_bytes());
-    let checksum = crc16_ccitt_false(&packet[LVDS_CRC_CALC_START..LVDS_CRC_CALC_END]);
-    packet[LVDS_CRC_FIELD_OFFSET..].copy_from_slice(&checksum.to_be_bytes());
     packet
 }
 
@@ -54,7 +46,7 @@ fn fragmented_decodable_lvds_reaches_storage_with_unchecked_crc_and_rejects_bad_
 
     let directory = tempdir().unwrap();
     let capture_path = directory.path().join("pipeline.lpd");
-    let sink = BinarySink::create(BinaryConfig::new(&capture_path)).unwrap();
+    let sink = BinaryV3Sink::create(BinaryConfig::new(&capture_path)).unwrap();
     let writer = BatchWriter::start(
         sink,
         StorageServiceConfig {
@@ -68,7 +60,9 @@ fn fragmented_decodable_lvds_reaches_storage_with_unchecked_crc_and_rejects_bad_
         Box::new(transport),
         LvdsStreamDecoder::new(),
         ReaderConfig {
-            event_capacity: 4,
+            // Started, every frame, and Stopped must fit even if the test
+            // consumer has not been scheduled; auxiliary events use try_send.
+            event_capacity: usize::try_from(FRAME_COUNT).unwrap() + 2,
             read_buffer_bytes: 333,
             backpressure: BackpressurePolicy::Wait(Duration::from_secs(1)),
             ..ReaderConfig::default()
@@ -76,6 +70,16 @@ fn fragmented_decodable_lvds_reaches_storage_with_unchecked_crc_and_rejects_bad_
     )
     .unwrap();
 
+    assert!(matches!(
+        reader
+            .events()
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap(),
+        ReaderEvent::Started { .. }
+    ));
+    // Finish the finite producer before draining frames so this also exercises
+    // the slow-consumer schedule that previously lost the Stopped event.
+    let reader_exit = reader.join().unwrap();
     let mut received = 0_u32;
     loop {
         match reader
@@ -99,7 +103,6 @@ fn fragmented_decodable_lvds_reaches_storage_with_unchecked_crc_and_rejects_bad_
             ReaderEvent::Started { .. } | ReaderEvent::BytesWritten { .. } => {}
         }
     }
-    let reader_exit = reader.join().unwrap();
     let writer_exit = writer.shutdown().unwrap();
     assert_eq!(received, FRAME_COUNT);
     assert_eq!(reader_exit.metrics.frames_decoded, u64::from(FRAME_COUNT));
@@ -110,26 +113,35 @@ fn fragmented_decodable_lvds_reaches_storage_with_unchecked_crc_and_rejects_bad_
     assert_eq!(writer_exit.metrics.written_items, u64::from(FRAME_COUNT));
     assert_eq!(writer_exit.metrics.rejected_items, 0);
 
+    assert_v3_capture(&capture_path, FRAME_COUNT);
+}
+
+fn assert_v3_capture(capture_path: &Path, frame_count: u32) {
     let mut bytes = Vec::new();
     File::open(capture_path)
         .unwrap()
         .read_to_end(&mut bytes)
         .unwrap();
-    assert_eq!(&bytes[..8], &BINARY_MAGIC);
+    assert_eq!(&bytes[..8], &V3_MAGIC);
     assert_eq!(
         bytes.len(),
-        usize::from(BINARY_HEADER_LEN)
-            + usize::try_from(FRAME_COUNT).unwrap() * usize::try_from(BINARY_FRAME_LEN).unwrap()
+        usize::from(V3_HEADER_LEN)
+            + usize::try_from(frame_count).unwrap() * usize::try_from(V3_FRAME_LEN).unwrap()
     );
-    for frame_index in 0..FRAME_COUNT {
-        let frame_offset = usize::from(BINARY_HEADER_LEN)
-            + usize::try_from(frame_index).unwrap() * usize::try_from(BINARY_FRAME_LEN).unwrap();
-        assert_eq!(le_u32(&bytes, frame_offset), 1_700_000_000);
-        assert_eq!(le_u32(&bytes, frame_offset + 4), frame_index * 50_000);
-        assert_eq!(le_u32(&bytes, frame_offset + 10), 2_048 + frame_index % 100);
-        assert_eq!(
-            le_u32(&bytes, frame_offset + 10 + SAMPLE_COUNT * 4),
-            20_000 + (frame_index % 100) * 2
-        );
+    let mut stored = BinaryV3Reader::open(capture_path).unwrap();
+    for frame_index in 0..frame_count {
+        let frame = stored.next_frame().unwrap().unwrap();
+        assert_eq!(frame.timestamp.utc_seconds, 1_700_000_000);
+        assert_eq!(frame.timestamp.microseconds, frame_index * 50_000);
+        assert_eq!(frame.frame_seq_u8, u8::try_from(frame_index).unwrap());
+        assert_eq!(frame.channel_1.len(), 100);
+        assert_eq!(frame.channel_2.len(), 100);
+        let phase = u16::try_from(frame_index).unwrap();
+        for sample in 0..SAMPLE_COUNT {
+            let offset = u16::try_from(sample).unwrap();
+            assert_eq!(frame.channel_1[sample], 512 + phase + offset);
+            assert_eq!(frame.channel_2[sample], 1_023 - phase * 2 - offset);
+        }
     }
+    assert!(stored.next_frame().unwrap().is_none());
 }

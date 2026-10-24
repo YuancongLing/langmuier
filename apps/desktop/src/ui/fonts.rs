@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn platform_has_at_least_one_cjk_candidate() {
         let candidates = font_candidates(None, 0);
-        assert!(!candidates.is_empty());
+        assert_ne!(candidates, []);
         assert!(candidates.iter().all(|candidate| {
             matches!(
                 candidate.path.extension().and_then(|value| value.to_str()),

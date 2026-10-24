@@ -285,12 +285,47 @@ mod tests {
         let valid = valid_rs422();
         let mut decoder = Rs422StreamDecoder::new();
         let noise = vec![0x55; RS422_FRAME_LEN * 4];
-        assert!(decoder.feed(&noise).frames.is_empty());
+        assert_eq!(decoder.feed(&noise).frames, []);
         assert_eq!(decoder.buffered_len(), 0);
-        assert!(decoder.feed(&[0x01, 0xEB]).frames.is_empty());
+        assert_eq!(decoder.feed(&[0x01, 0xEB]).frames, []);
         assert_eq!(decoder.buffered_len(), 1);
         let batch = decoder.feed(&valid[1..]);
         assert_eq!(batch.frames.len(), 1);
+        assert_eq!(decoder.buffered_len(), 0);
+    }
+
+    #[test]
+    fn final_addresses_stream_rejects_04ff_and_recovers_literal_55aa() {
+        let mut wrong = [0_u8; 269];
+        wrong[..7].copy_from_slice(&[0xEB, 0x90, 0x04, 0xFF, 1, 7, 0xAA]);
+        let mut correct = [0_u8; 269];
+        correct[..7].copy_from_slice(&[0xEB, 0x90, 0x55, 0xAA, 1, 7, 0xAA]);
+        correct[265] = 7;
+        let mut input = wrong.to_vec();
+        input.extend_from_slice(&correct);
+        let mut decoder = LvdsStreamDecoder::new();
+        let mut frames = Vec::new();
+        let mut errors = Vec::new();
+        for chunk in input.chunks(7) {
+            decoder.push_with(
+                chunk,
+                |frame| frames.push(frame),
+                |error| errors.push(error),
+            );
+        }
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].frame_seq_u8, 7);
+        assert!(matches!(
+            errors.as_slice(),
+            [crate::FrameError::UnexpectedField {
+                field: "sender address",
+                expected: 0x55,
+                actual: 0x04,
+                ..
+            }]
+        ));
+        assert_eq!(decoder.metrics().frames_decoded, 1);
+        assert_eq!(decoder.metrics().frames_rejected, 1);
         assert_eq!(decoder.buffered_len(), 0);
     }
 
@@ -345,9 +380,10 @@ mod tests {
                 );
             }
             assert_eq!(frames.len(), 2, "chunk size {chunk_size}");
-            assert_eq!(frames[0].channel_1[0], 2048);
-            assert_eq!(frames[1].channel_1[0], 2048);
-            assert_ne!(frames[0].channel_2, frames[1].channel_2);
+            assert_eq!(frames[0].channel_1[0], 1023);
+            assert_eq!(frames[1].channel_1[0], 1023);
+            assert_ne!(frames[0].channel_1, frames[1].channel_1);
+            assert_eq!(frames[0].channel_2, frames[1].channel_2);
             assert_eq!(errors.len(), 0);
             assert_eq!(decoder.metrics().frames_rejected, 0);
             assert_eq!(decoder.metrics().frames_decoded, 2);

@@ -65,7 +65,7 @@ struct SequenceGap {
 /// Call `observe_at` only for frames accepted by the strict science and recent
 /// duplicate gate. One instance belongs to one filtered source endpoint and
 /// receiver session; construct a fresh monitor when that session is recreated.
-/// It never reads the scientific model's truncated `u16` sequence.
+/// It never reads the scientific model's independent inner `u8` sequence.
 ///
 /// A small modular forward advance establishes candidates for unobserved
 /// intermediate sequences. Late candidates are removed without moving the

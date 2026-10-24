@@ -1,0 +1,58 @@
+{
+  "result": "PASS",
+  "source": {
+    "path": "D:\\RUST\\langmuier\\target\\x86_64-pc-windows-msvc\\release\\langmuir-desktop.exe",
+    "bytes": 9261056,
+    "sha256": "97454c47f21cc997962e00b78353757df46657ae64af5c2da425b820a2c5bbea"
+  },
+  "delivered_exe": {
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\windows-x64\\LangmuirGroundControl.exe",
+    "bytes": 9261056,
+    "sha256": "97454c47f21cc997962e00b78353757df46657ae64af5c2da425b820a2c5bbea"
+  },
+  "archive": {
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\LangmuirGroundControl-windows-x64.zip",
+    "bytes": 3897240,
+    "sha256": "6f81f0d3880853f8ec9cdbf5e193625b763c315789e4122948ac3c9f6bc62500"
+  },
+  "readme": {
+    "path": "D:\\RUST\\langmuier\\docs\\WINDOWS_BUILD.md",
+    "bytes": 6064,
+    "sha256": "668789dc37c96402e9b0026a4a7f69410b7d1cdf34a8f8082b0a07073393cf0d"
+  },
+  "zip_entries": [
+    "LangmuirGroundControl.exe",
+    "README.md"
+  ],
+  "zip_crc_and_content_match": true,
+  "pe_machine": "0x8664",
+  "pe_format": "PE32+ Windows x64",
+  "imports": [
+    "ADVAPI32.dll",
+    "GDI32.dll",
+    "KERNEL32.dll",
+    "OPENGL32.dll",
+    "SHELL32.dll",
+    "USER32.dll",
+    "api-ms-win-core-synch-l1-2-0.dll",
+    "bcryptprimitives.dll",
+    "cfgmgr32.dll",
+    "dwmapi.dll",
+    "imm32.dll",
+    "kernel32.dll",
+    "ntdll.dll",
+    "ole32.dll",
+    "setupapi.dll",
+    "shell32.dll",
+    "shlwapi.dll",
+    "user32.dll",
+    "uxtheme.dll",
+    "ws2_32.dll"
+  ],
+  "no_dynamic_msvc_crt_imports": true,
+  "build_command": "cargo +stable-x86_64-pc-windows-msvc build --release -p langmuir-desktop --target x86_64-pc-windows-msvc --target-dir target --no-default-features --locked",
+  "rustflags": "-C target-feature=+crt-static",
+  "mock_feature": false,
+  "hdf5_feature": false,
+  "native_ui_evidence": "docs/qa/LVDS_10BIT_*_WINDOWS.png"
+}

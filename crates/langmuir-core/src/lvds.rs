@@ -1,13 +1,60 @@
 use crate::{FRAME_HEADER, FrameError, Protocol, crc16_ccitt_false};
 
+#[cfg(test)]
+mod migration_golden_tests {
+    use super::decode_scientific_frame;
+
+    #[test]
+    fn manufacturer_10bit_literal_groups_decode_distinct_channel_boundaries() {
+        let mut wire = [0_u8; 269];
+        wire[..15].copy_from_slice(&[
+            0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07, 0xAA, 0x65, 0, 0, 0, 0, 0x0F, 0x41, 0x78,
+        ]);
+        for group in wire[15..140].as_chunks_mut::<5>().0 {
+            group.copy_from_slice(&[0xFF, 0xC0, 0x08, 0, 1]);
+        }
+        for group in wire[140..265].as_chunks_mut::<5>().0 {
+            group.copy_from_slice(&[0, 0x3F, 0xF0, 3, 0xFF]);
+        }
+        wire[265] = 255;
+        wire[267..269].copy_from_slice(&[0x12, 0x34]);
+        let decoded = decode_scientific_frame(&wire).unwrap();
+        assert_eq!(decoded.channel_1.len(), 100);
+        assert_eq!(decoded.channel_2.len(), 100);
+        assert_eq!(&decoded.channel_1[..8], &[1023, 0, 512, 1, 1023, 0, 512, 1]);
+        assert_eq!(
+            &decoded.channel_2[..8],
+            &[0, 1023, 0, 1023, 0, 1023, 0, 1023]
+        );
+        assert_eq!((decoded.channel_1[99], decoded.channel_2[99]), (1, 1023));
+    }
+
+    #[test]
+    fn literal_unpack_vectors_and_signed_reconstruction_preserve_extremes() {
+        assert_eq!(
+            super::unpack_4x10(&[0xFF, 0xC0, 8, 0, 1]),
+            [1023, 0, 512, 1]
+        );
+        assert_eq!(
+            super::unpack_4x10(&[0, 0x3F, 0xF0, 3, 0xFF]),
+            [0, 1023, 0, 1023]
+        );
+        assert_eq!(super::unpack_4x10(&[0; 5]), [0; 4]);
+        assert_eq!(super::unpack_4x10(&[0xFF; 5]), [1023; 4]);
+        assert_eq!(super::reconstruct_adc16(0), -32768);
+        assert_eq!(super::reconstruct_adc16(512), 0);
+        assert_eq!(super::reconstruct_adc16(1023), 32704);
+    }
+}
+
 pub const LVDS_FRAME_LEN: usize = 269;
 pub const LVDS_PAYLOAD_LEN: usize = 263;
 pub const LVDS_DATA_TYPE: u8 = 0xAA;
 pub const LVDS_SENDER_ADDRESS: u8 = 0x55;
 pub const LVDS_RECEIVER_ADDRESS: u8 = 0xAA;
 pub const LVDS_DEVICE_ID: u8 = LVDS_SENDER_ADDRESS;
-pub const SAMPLE_COUNT: usize = 125;
-pub const SAMPLE_INTERVAL_MICROS: u32 = 400;
+pub const SAMPLE_COUNT: usize = 100;
+pub const SAMPLE_INTERVAL_MICROS: u32 = 500;
 /// Start of the CRC input: the UTC timestamp, excluding TYPE.
 ///
 /// This is the current interpretation of the updated table's "valid data".
@@ -25,7 +72,13 @@ const PAYLOAD_OFFSET: usize = 6;
 const TIMESTAMP_OFFSET: usize = 7;
 const MICROSECONDS_OFFSET: usize = 11;
 const SAMPLE_DATA_OFFSET: usize = 15;
+const CHANNEL_PACKED_BYTES: usize = 125;
+const FRAME_SEQUENCE_OFFSET: usize = 265;
+const RESERVED_OFFSET: usize = 266;
 const PAYLOAD_LENGTH_FIELD: u16 = 0x0107;
+
+const _: () = assert!(1 + 4 + 4 + 252 + 2 == LVDS_PAYLOAD_LEN);
+const _: () = assert!(CHANNEL_PACKED_BYTES / 5 * 4 == SAMPLE_COUNT);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Timestamp {
@@ -43,9 +96,10 @@ impl Timestamp {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScientificFrame {
     pub timestamp: Timestamp,
-    pub sequence: u16,
-    pub channel_1: Box<[u32; SAMPLE_COUNT]>,
-    pub channel_2: Box<[u32; SAMPLE_COUNT]>,
+    pub frame_seq_u8: u8,
+    /// Exact received 10bit codes; no physical-voltage calibration is implied.
+    pub channel_1: Box<[u16; SAMPLE_COUNT]>,
+    pub channel_2: Box<[u16; SAMPLE_COUNT]>,
 }
 
 impl ScientificFrame {
@@ -71,16 +125,21 @@ impl ScientificFrame {
         )
     }
 
+    /// Device time of an output sample, without assuming a calendar epoch.
+    /// The transmitted timestamp already belongs to the first averaged sample.
     #[must_use]
-    /// # Panics
-    ///
-    /// Panics only if a manually constructed [`ScientificFrame`] contains a
-    /// channel-1 first sample greater than `u16::MAX`. Frames decoded by this
-    /// crate always satisfy that bound.
-    pub fn raw_hex_prefix(&self) -> [u8; 2] {
-        u16::try_from(self.channel_1[0])
-            .expect("decoded LVDS sample always fits in 16 bits")
-            .to_be_bytes()
+    pub fn sample_time_us(&self, index: usize) -> Option<u64> {
+        if index >= SAMPLE_COUNT {
+            return None;
+        }
+        u64::from(self.timestamp.utc_seconds)
+            .checked_mul(1_000_000)?
+            .checked_add(u64::from(self.timestamp.microseconds))?
+            .checked_add(
+                u64::try_from(index)
+                    .ok()?
+                    .checked_mul(u64::from(SAMPLE_INTERVAL_MICROS))?,
+            )
     }
 }
 
@@ -126,7 +185,7 @@ pub struct ScientificFrameDiagnosis {
 /// checks pass. Invalid time or ADC data suppress the preview even when the
 /// strict error is the earlier CRC mismatch. No bytes are changed or repaired.
 #[must_use]
-pub fn diagnose_scientific_frame(frame: &[u8], sequence: u16) -> ScientificFrameDiagnosis {
+pub fn diagnose_scientific_frame(frame: &[u8]) -> ScientificFrameDiagnosis {
     let (received_crc, calculated_crc) = if frame.len() == LVDS_FRAME_LEN {
         (
             Some(u16::from_be_bytes([
@@ -142,12 +201,12 @@ pub fn diagnose_scientific_frame(frame: &[u8], sequence: u16) -> ScientificFrame
     };
     let error = validate_scientific_frame_structure(frame)
         .and_then(|()| validate_scientific_frame_crc16(frame))
-        .and_then(|()| decode_scientific_body(frame, sequence).map(|_| ()))
+        .and_then(|()| decode_scientific_body(frame).map(|_| ()))
         .err();
     let (preview, secondary_error) = if matches!(error, Some(FrameError::ChecksumMismatch { .. })) {
         // A strict CRC error is reached only after structure validation. The
         // same body decoder still enforces every timestamp and ADC invariant.
-        match decode_scientific_body(frame, sequence) {
+        match decode_scientific_body(frame) {
             Ok(frame) => (Some(UnverifiedScientificFrame { frame }), None),
             Err(error) => (None, Some(error)),
         }
@@ -174,36 +233,9 @@ pub fn diagnose_scientific_frame(frame: &[u8], sequence: u16) -> ScientificFrame
 /// Does not panic for arbitrary input. Fixed-offset reads are reached only
 /// after the frame length has been validated.
 pub fn decode_scientific_frame(frame: &[u8]) -> Result<ScientificFrame, FrameError> {
-    decode_scientific_frame_with_sequence(frame, 0)
-}
-
-/// Decodes one LVDS scientific frame and associates it with the UDP converter's
-/// frame sequence. The LVDS body itself does not carry a packet-sequence field.
-///
-/// Production acceptance validates structure, device time and ADC ranges only.
-/// The last two trailer bytes are retained without calculating or comparing a
-/// CRC. Successful decoding therefore makes no CRC integrity guarantee.
-///
-/// Signed differences retain the existing two's-complement `i8` interpretation;
-/// the manufacturer's negative-difference encoding still requires confirmation.
-///
-/// # Errors
-///
-/// Returns [`FrameError`] for malformed framing, unexpected fixed fields,
-/// invalid timestamp offsets, or an out-of-range sample.
-///
-/// # Panics
-///
-/// Does not panic for arbitrary input. Fixed-offset reads are reached only
-/// after the frame length has been validated.
-pub fn decode_scientific_frame_with_sequence(
-    frame: &[u8],
-    sequence: u16,
-) -> Result<ScientificFrame, FrameError> {
     validate_scientific_frame_structure(frame)?;
-    decode_scientific_body(frame, sequence)
+    decode_scientific_body(frame)
 }
-
 fn validate_scientific_frame_structure(frame: &[u8]) -> Result<(), FrameError> {
     if frame.len() != LVDS_FRAME_LEN {
         return Err(FrameError::UnexpectedLength {
@@ -251,11 +283,19 @@ fn validate_scientific_frame_structure(frame: &[u8]) -> Result<(), FrameError> {
             actual: frame[PAYLOAD_OFFSET],
         });
     }
+    if frame[RESERVED_OFFSET] != 0 {
+        return Err(FrameError::UnexpectedField {
+            protocol: Protocol::Lvds,
+            field: "DATA251 reserved byte",
+            expected: 0,
+            actual: frame[RESERVED_OFFSET],
+        });
+    }
 
     Ok(())
 }
 
-fn decode_scientific_body(frame: &[u8], sequence: u16) -> Result<ScientificFrame, FrameError> {
+fn decode_scientific_body(frame: &[u8]) -> Result<ScientificFrame, FrameError> {
     let timestamp = Timestamp {
         utc_seconds: u32::from_be_bytes([
             frame[TIMESTAMP_OFFSET],
@@ -272,30 +312,30 @@ fn decode_scientific_body(frame: &[u8], sequence: u16) -> Result<ScientificFrame
     };
     validate_microseconds(timestamp.microseconds)?;
 
-    let mut channel_1 = Box::new([0_u32; SAMPLE_COUNT]);
-    let mut channel_2 = Box::new([0_u32; SAMPLE_COUNT]);
-    channel_1[0] = u32::from(u16::from_be_bytes([
-        frame[SAMPLE_DATA_OFFSET],
-        frame[SAMPLE_DATA_OFFSET + 1],
-    ]));
-    channel_2[0] = u32::from(u16::from_be_bytes([
-        frame[SAMPLE_DATA_OFFSET + 2],
-        frame[SAMPLE_DATA_OFFSET + 3],
-    ]));
-    for index in 1..SAMPLE_COUNT {
-        let offset = SAMPLE_DATA_OFFSET + 4 + (index - 1) * 2;
-        channel_1[index] = reconstruct_sample(1, index, channel_1[index - 1], frame[offset])?;
-        channel_2[index] = reconstruct_sample(2, index, channel_2[index - 1], frame[offset + 1])?;
-    }
-
+    let channel_1 =
+        decode_channel(&frame[SAMPLE_DATA_OFFSET..SAMPLE_DATA_OFFSET + CHANNEL_PACKED_BYTES]);
+    let channel_2 =
+        decode_channel(&frame[SAMPLE_DATA_OFFSET + CHANNEL_PACKED_BYTES..FRAME_SEQUENCE_OFFSET]);
     Ok(ScientificFrame {
         timestamp,
-        sequence,
+        frame_seq_u8: frame[FRAME_SEQUENCE_OFFSET],
         channel_1,
         channel_2,
     })
 }
 
+fn decode_channel(packed: &[u8]) -> Box<[u16; SAMPLE_COUNT]> {
+    let mut samples = Box::new([0; SAMPLE_COUNT]);
+    for (group, values) in packed
+        .as_chunks::<5>()
+        .0
+        .iter()
+        .zip(samples.as_chunks_mut::<4>().0)
+    {
+        *values = unpack_4x10(group);
+    }
+    samples
+}
 /// Explicit offline reference check of the CRC16 field with `Calculate_CRC16`
 /// implementation: polynomial `0x1021`, initial value `0xFFFF`, no reflection,
 /// and no final xor.
@@ -334,31 +374,24 @@ pub fn validate_scientific_frame_crc16(frame: &[u8]) -> Result<(), FrameError> {
     Ok(())
 }
 
-fn reconstruct_sample(
-    channel: u8,
-    index: usize,
-    previous: u32,
-    encoded_delta: u8,
-) -> Result<u32, FrameError> {
-    let value = i64::from(previous) + i64::from(i8::from_be_bytes([encoded_delta]));
-    if !(0_i64..=i64::from(u16::MAX)).contains(&value) {
-        return Err(FrameError::SampleOutOfRange {
-            protocol: Protocol::Lvds,
-            channel,
-            index,
-            value,
-        });
-    }
-    // Convert through a checked path even though the range check above already
-    // establishes the invariant, keeping malformed input free of panic paths.
-    u32::try_from(value).map_err(|_| FrameError::SampleOutOfRange {
-        protocol: Protocol::Lvds,
-        channel,
-        index,
-        value,
-    })
+/// Unpacks four consecutive big-endian 10bit codes from a five-byte group.
+#[must_use]
+pub fn unpack_4x10(bytes: &[u8; 5]) -> [u16; 4] {
+    let [b0, b1, b2, b3, b4] = bytes.map(u16::from);
+    [
+        (b0 << 2) | (b1 >> 6),
+        ((b1 & 0x3F) << 4) | (b2 >> 4),
+        ((b2 & 0x0F) << 6) | (b3 >> 2),
+        ((b3 & 0x03) << 8) | b4,
+    ]
 }
 
+/// Reconstructs a signed, uncalibrated ADC estimate from a received code.
+/// Quantization discarded the lower bits; this does not recover lossless ADC16.
+#[must_use]
+pub fn reconstruct_adc16(code10: u16) -> i32 {
+    (i32::from(code10) << 6) - 32_768
+}
 fn validate_microseconds(value: u32) -> Result<(), FrameError> {
     if value >= 1_000_000 {
         return Err(FrameError::FieldOutOfRange {
@@ -372,474 +405,9 @@ fn validate_microseconds(value: u32) -> Result<(), FrameError> {
 }
 
 #[cfg(test)]
-pub(crate) mod test_support {
-    use super::{
-        LVDS_CRC_CALC_END, LVDS_CRC_CALC_START, LVDS_CRC_FIELD_OFFSET, LVDS_DATA_TYPE,
-        LVDS_FRAME_LEN, LVDS_RECEIVER_ADDRESS, LVDS_SENDER_ADDRESS, PAYLOAD_LENGTH_FIELD,
-        PAYLOAD_OFFSET, SAMPLE_COUNT, SAMPLE_DATA_OFFSET,
-    };
-    use crate::{FRAME_HEADER, checksum::test_support::manufacturer_crc16};
-
-    pub(crate) fn refresh_crc16(frame: &mut [u8; LVDS_FRAME_LEN]) {
-        let crc = manufacturer_crc16(&frame[LVDS_CRC_CALC_START..LVDS_CRC_CALC_END]);
-        frame[LVDS_CRC_FIELD_OFFSET..LVDS_CRC_FIELD_OFFSET + 2].copy_from_slice(&crc.to_be_bytes());
-    }
-
-    pub(crate) fn golden_frame() -> [u8; LVDS_FRAME_LEN] {
-        // Complete fixed wire vector: the following 19-byte prefix, 124 copies
-        // of 01 FF, then 44 C8. The CRC is a fixed result from the separately
-        // compiled manufacturer's C function, not generated by production code.
-        let mut frame = [0_u8; LVDS_FRAME_LEN];
-        frame[..19].copy_from_slice(&[
-            0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07, 0xAA, 0x65, 0x00, 0x00, 0x00, 0x00, 0x0F, 0x41,
-            0x78, 0x12, 0x34, 0xAB, 0xCD,
-        ]);
-        for offset in (19..267).step_by(2) {
-            frame[offset] = 0x01;
-            frame[offset + 1] = 0xFF;
-        }
-        frame[267..269].copy_from_slice(&[0x44, 0xC8]);
-        frame
-    }
-
-    pub(crate) fn valid_frame() -> Box<[u8; LVDS_FRAME_LEN]> {
-        let mut frame = Box::new([0_u8; LVDS_FRAME_LEN]);
-        frame[..2].copy_from_slice(&FRAME_HEADER);
-        frame[2] = LVDS_SENDER_ADDRESS;
-        frame[3] = LVDS_RECEIVER_ADDRESS;
-        frame[4..6].copy_from_slice(&PAYLOAD_LENGTH_FIELD.to_be_bytes());
-        frame[PAYLOAD_OFFSET] = LVDS_DATA_TYPE;
-        frame[7..11].copy_from_slice(&1_700_000_000_u32.to_be_bytes());
-        frame[11..15].copy_from_slice(&123_456_u32.to_be_bytes());
-        frame[SAMPLE_DATA_OFFSET..SAMPLE_DATA_OFFSET + 2].copy_from_slice(&2048_u16.to_be_bytes());
-        frame[SAMPLE_DATA_OFFSET + 2..SAMPLE_DATA_OFFSET + 4]
-            .copy_from_slice(&20_000_u16.to_be_bytes());
-        for index in 1..SAMPLE_COUNT {
-            let offset = SAMPLE_DATA_OFFSET + 4 + (index - 1) * 2;
-            frame[offset] = if index % 2 == 0 { 0xFF } else { 1 };
-            frame[offset + 1] = if index % 3 == 0 { 0xFE } else { 2 };
-        }
-        refresh_crc16(&mut frame);
-        frame
-    }
-}
+#[path = "lvds_test_support.rs"]
+pub(crate) mod test_support;
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        LVDS_CRC_CALC_END, LVDS_CRC_CALC_START, LVDS_CRC_FIELD_OFFSET, LVDS_CRC_INPUT_LEN,
-        LVDS_FRAME_LEN, SAMPLE_COUNT, decode_scientific_frame,
-        decode_scientific_frame_with_sequence, diagnose_scientific_frame,
-        test_support::{golden_frame, refresh_crc16, valid_frame},
-        validate_scientific_frame_crc16,
-    };
-    use crate::{FrameError, Protocol, checksum::test_support::manufacturer_crc16};
-
-    #[test]
-    fn fixed_golden_frame_has_independent_crc_and_expected_samples() {
-        let frame = golden_frame();
-        assert_eq!(frame.len(), 269);
-        assert_eq!(&frame[..7], &[0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07, 0xAA]);
-        assert_eq!(LVDS_CRC_CALC_START, 7);
-        assert_eq!(LVDS_CRC_CALC_END, 267);
-        assert_eq!(LVDS_CRC_FIELD_OFFSET, 267);
-        assert_eq!(LVDS_CRC_INPUT_LEN, 260);
-        assert_eq!(manufacturer_crc16(&frame[7..267]), 0x44C8);
-        assert_eq!(&frame[267..269], &[0x44, 0xC8]);
-        assert_eq!(validate_scientific_frame_crc16(&frame), Ok(()));
-
-        let decoded = decode_scientific_frame(&frame).unwrap();
-        assert_eq!(decoded.timestamp.utc_seconds, 1_694_498_816);
-        assert_eq!(decoded.timestamp.microseconds, 999_800);
-        assert_eq!(decoded.sequence, 0);
-        assert_eq!(decoded.channel_1.len(), 125);
-        assert_eq!(decoded.channel_2.len(), 125);
-        for index in 0..SAMPLE_COUNT {
-            let index_u32 = u32::try_from(index).unwrap();
-            assert_eq!(decoded.channel_1[index], 4660 + index_u32);
-            assert_eq!(decoded.channel_2[index], 43_981 - index_u32);
-        }
-        assert_eq!(decoded.channel_1[124], 4784);
-        assert_eq!(decoded.channel_2[124], 43_857);
-        assert_eq!(
-            decoded.channel_1_base_seconds(),
-            decoded.channel_2_base_seconds()
-        );
-        assert!((decoded.channel_1_sample_time(1).unwrap() - 1_694_498_817.000_2).abs() < 1e-6);
-        assert!((decoded.channel_1_sample_time(124).unwrap() - 1_694_498_817.049_4).abs() < 1e-6);
-    }
-
-    #[test]
-    fn accepts_trailer_and_decodable_body_changes_without_crc_recalculation() {
-        let valid = golden_frame();
-        let original = decode_scientific_frame(&valid).unwrap();
-        // Time, a bounded scientific delta, and both trailer bytes can change
-        // without recalculation. The wire bytes are never repaired in place.
-        for offset in [7, 14, 100, 267, 268] {
-            let mut corrupt = valid;
-            corrupt[offset] ^= 1;
-            let unchanged = corrupt;
-            let decoded = decode_scientific_frame(&corrupt).unwrap();
-            assert_eq!(corrupt, unchanged);
-            assert!(validate_scientific_frame_crc16(&corrupt).is_err());
-            if offset >= LVDS_CRC_FIELD_OFFSET {
-                assert_eq!(decoded, original, "trailer offset {offset}");
-            } else if offset == 100 {
-                assert_ne!(decoded.channel_2, original.channel_2);
-            }
-        }
-    }
-
-    #[test]
-    fn offline_crc_reference_keeps_declared_range_and_big_endian_field() {
-        let golden = golden_frame();
-        // Also fixed outputs from the separately compiled manufacturer C.
-        assert_eq!(manufacturer_crc16(&golden[6..267]), 0xDC4E);
-        assert_eq!(manufacturer_crc16(&golden[15..267]), 0x0A62);
-        for incorrect_crc in [0xDC4E_u16, 0x0A62, 0xC844] {
-            let mut frame = golden;
-            frame[267..269].copy_from_slice(&incorrect_crc.to_be_bytes());
-            assert_eq!(
-                validate_scientific_frame_crc16(&frame),
-                Err(FrameError::ChecksumMismatch {
-                    protocol: Protocol::Lvds,
-                    expected: 0x44C8,
-                    actual: incorrect_crc,
-                })
-            );
-        }
-    }
-
-    #[test]
-    fn consecutive_golden_frames_keep_independent_bases_and_device_time() {
-        let first_wire = golden_frame();
-        let mut second_wire = first_wire;
-        second_wire[7..11].copy_from_slice(&1_694_498_817_u32.to_be_bytes());
-        second_wire[11..15].copy_from_slice(&49_800_u32.to_be_bytes());
-        // Independently obtained from the manufacturer's compiled C function.
-        second_wire[267..269].copy_from_slice(&[0x5E, 0xF9]);
-        assert_eq!(manufacturer_crc16(&second_wire[7..267]), 0x5EF9);
-        let first = decode_scientific_frame_with_sequence(&first_wire, 12).unwrap();
-        let second = decode_scientific_frame_with_sequence(&second_wire, 13).unwrap();
-        assert_eq!(second.channel_1[0], 4660);
-        assert_eq!(second.channel_2[0], 43_981);
-        assert_eq!(second.channel_1, first.channel_1);
-        assert_eq!(second.channel_2, first.channel_2);
-        assert!(
-            (second.channel_1_base_seconds() - first.channel_1_base_seconds() - 0.05).abs() < 1e-6
-        );
-        assert_eq!(first.sequence, 12);
-        assert_eq!(second.sequence, 13);
-    }
-
-    #[test]
-    fn decodes_timestamp_sequence_and_signed_deltas() {
-        let decoded = decode_scientific_frame_with_sequence(valid_frame().as_slice(), 42).unwrap();
-        assert_eq!(decoded.timestamp.utc_seconds, 1_700_000_000);
-        assert_eq!(decoded.timestamp.microseconds, 123_456);
-        assert_eq!(decoded.sequence, 42);
-        assert_eq!(decoded.channel_1[0], 2048);
-        assert_eq!(decoded.channel_1[1], 2049);
-        assert_eq!(decoded.channel_1[2], 2048);
-        assert_eq!(decoded.channel_2[0], 20_000);
-        assert_eq!(decoded.channel_2[1], 20_002);
-        assert_eq!(decoded.channel_2[3], 20_002);
-        assert_eq!(decoded.channel_1.len(), SAMPLE_COUNT);
-        assert_eq!(decoded.raw_hex_prefix(), [0x08, 0x00]);
-        assert!((decoded.channel_1_base_seconds() - 1_700_000_000.123_456).abs() < 1e-9);
-        assert!((decoded.channel_1_sample_time(124).unwrap() - 1_700_000_000.173_056).abs() < 1e-9);
-        assert_eq!(decoded.channel_1_sample_time(SAMPLE_COUNT), None);
-    }
-
-    #[test]
-    fn rejects_length_and_structure_errors() {
-        let valid = valid_frame();
-        for length in 0..LVDS_FRAME_LEN {
-            assert!(matches!(
-                decode_scientific_frame(&valid[..length]),
-                Err(FrameError::UnexpectedLength { actual, .. }) if actual == length
-            ));
-        }
-        let mut oversized = valid.to_vec();
-        oversized.push(0);
-        assert!(matches!(
-            decode_scientific_frame(&oversized),
-            Err(FrameError::UnexpectedLength { actual: 270, .. })
-        ));
-        let mut frame = valid_frame();
-        frame[0] ^= 1;
-        assert!(matches!(
-            decode_scientific_frame(frame.as_slice()),
-            Err(FrameError::InvalidHeader { .. })
-        ));
-        let mut frame = valid_frame();
-        frame[4] = 0;
-        assert!(matches!(
-            decode_scientific_frame(frame.as_slice()),
-            Err(FrameError::InvalidDeclaredLength { .. })
-        ));
-        let decoded_without_transport_sequence = decode_scientific_frame(valid.as_slice()).unwrap();
-        assert_eq!(decoded_without_transport_sequence.sequence, 0);
-        for (offset, field) in [
-            (2, "sender address"),
-            (3, "receiver address"),
-            (6, "data type"),
-        ] {
-            let mut frame = valid_frame();
-            frame[offset] = 0;
-            assert!(matches!(
-                decode_scientific_frame(frame.as_slice()),
-                Err(FrameError::UnexpectedField { field: actual_field, .. }) if actual_field == field
-            ));
-        }
-    }
-
-    #[test]
-    fn validates_lower_computer_crc16_implementation() {
-        let mut frame = valid_frame();
-        assert_eq!(validate_scientific_frame_crc16(frame.as_slice()), Ok(()));
-        frame[100] ^= 1;
-        assert!(matches!(
-            validate_scientific_frame_crc16(frame.as_slice()),
-            Err(FrameError::ChecksumMismatch {
-                protocol: Protocol::Lvds,
-                ..
-            })
-        ));
-        refresh_crc16(&mut frame);
-        assert_eq!(validate_scientific_frame_crc16(frame.as_slice()), Ok(()));
-    }
-
-    #[test]
-    fn rejects_wrong_addresses_and_sample_underflow() {
-        let mut frame = valid_frame();
-        frame[2] = 0;
-        assert!(matches!(
-            decode_scientific_frame(frame.as_slice()),
-            Err(FrameError::UnexpectedField {
-                field: "sender address",
-                ..
-            })
-        ));
-
-        let mut frame = valid_frame();
-        frame[15..17].copy_from_slice(&0_u16.to_be_bytes());
-        frame[19] = 0x80;
-        assert!(matches!(
-            decode_scientific_frame(frame.as_slice()),
-            Err(FrameError::SampleOutOfRange {
-                channel: 1,
-                index: 1,
-                ..
-            })
-        ));
-
-        let mut frame = valid_frame();
-        frame[17..19].copy_from_slice(&u16::MAX.to_be_bytes());
-        frame[20] = 1;
-        refresh_crc16(&mut frame);
-        assert!(matches!(
-            decode_scientific_frame(frame.as_slice()),
-            Err(FrameError::SampleOutOfRange {
-                channel: 2,
-                index: 1,
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn rejects_invalid_microseconds() {
-        let mut frame = valid_frame();
-        frame[11..15].copy_from_slice(&1_000_000_u32.to_be_bytes());
-        assert!(matches!(
-            decode_scientific_frame(frame.as_slice()),
-            Err(FrameError::FieldOutOfRange {
-                field: "microseconds",
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn arbitrary_wire_input_returns_errors_without_panicking() {
-        for length in 0..=LVDS_FRAME_LEN + 8 {
-            let _ = decode_scientific_frame(&vec![0xEB; length]);
-        }
-        let mut state = 0x1357_9BDF_u32;
-        for _ in 0..128 {
-            let mut frame = golden_frame();
-            for byte in &mut frame[7..267] {
-                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-                *byte = state.to_be_bytes()[0];
-            }
-            refresh_crc16(&mut frame);
-            let _ = decode_scientific_frame(&frame);
-        }
-    }
-
-    #[test]
-    fn diagnostic_valid_frame_reports_crc_without_creating_unverified_preview() {
-        let frame = golden_frame();
-        let result = diagnose_scientific_frame(&frame, 42);
-        assert_eq!(result.received_crc, Some(0x44C8));
-        assert_eq!(result.calculated_crc, Some(0x44C8));
-        assert_eq!(result.error, None);
-        assert_eq!(result.secondary_error, None);
-        assert_eq!(result.preview, None);
-    }
-
-    #[test]
-    fn diagnostic_crc_preview_preserves_samples_and_never_repairs_wire() {
-        let valid = golden_frame();
-        let decoded = decode_scientific_frame_with_sequence(&valid, 42).unwrap();
-        for invalid_crc in [0x44C9_u16, 0xDC4E, 0x0A62, 0xC844] {
-            let mut frame = valid;
-            frame[267..269].copy_from_slice(&invalid_crc.to_be_bytes());
-            let unchanged = frame;
-            let result = diagnose_scientific_frame(&frame, 42);
-            assert_eq!(result.received_crc, Some(invalid_crc));
-            assert_eq!(result.calculated_crc, Some(0x44C8));
-            assert_eq!(
-                result.error,
-                Some(FrameError::ChecksumMismatch {
-                    protocol: Protocol::Lvds,
-                    expected: 0x44C8,
-                    actual: invalid_crc,
-                })
-            );
-            assert_eq!(result.preview.unwrap().frame(), &decoded);
-            assert_eq!(result.secondary_error, None);
-            assert_eq!(frame, unchanged);
-            assert_eq!(
-                decode_scientific_frame_with_sequence(&frame, 42),
-                Ok(decoded.clone())
-            );
-        }
-    }
-
-    #[test]
-    fn diagnostic_structure_failures_never_produce_preview() {
-        let valid = golden_frame();
-        for length in 0..LVDS_FRAME_LEN {
-            let result = diagnose_scientific_frame(&valid[..length], 0);
-            assert_eq!(result.received_crc, None);
-            assert_eq!(result.calculated_crc, None);
-            assert_eq!(
-                result.error,
-                decode_scientific_frame(&valid[..length]).err()
-            );
-            assert_eq!(result.preview, None);
-            assert_eq!(result.secondary_error, None);
-        }
-        let mut oversized = valid.to_vec();
-        oversized.push(0);
-        let result = diagnose_scientific_frame(&oversized, 0);
-        assert_eq!(result.received_crc, None);
-        assert_eq!(result.calculated_crc, None);
-        assert_eq!(result.error, decode_scientific_frame(&oversized).err());
-        assert_eq!(result.preview, None);
-
-        for offset in [0, 1, 2, 3, 4, 5, 6] {
-            let mut malformed = valid;
-            malformed[offset] ^= 1;
-            // Also corrupt CRC, so it cannot accidentally permit inspection
-            // before the framing and fixed fields have been checked.
-            malformed[267] ^= 1;
-            let result = diagnose_scientific_frame(&malformed, 0);
-            assert_eq!(result.error, decode_scientific_frame(&malformed).err());
-            assert_eq!(result.preview, None, "offset {offset}");
-            assert_eq!(result.secondary_error, None);
-            assert_eq!(result.calculated_crc, Some(0x44C8));
-        }
-    }
-
-    #[test]
-    fn diagnostic_bad_microseconds_suppress_preview_with_valid_or_bad_crc() {
-        for microseconds in [1_000_000_u32, u32::MAX] {
-            let mut frame = golden_frame();
-            frame[11..15].copy_from_slice(&microseconds.to_be_bytes());
-            let result = diagnose_scientific_frame(&frame, 3);
-            assert!(matches!(
-                result.error,
-                Some(FrameError::ChecksumMismatch { .. })
-            ));
-            assert!(matches!(
-                result.secondary_error,
-                Some(FrameError::FieldOutOfRange {
-                    field: "microseconds",
-                    ..
-                })
-            ));
-            assert_eq!(result.preview, None);
-            refresh_crc16(&mut frame);
-            let result = diagnose_scientific_frame(&frame, 3);
-            assert!(matches!(
-                result.error,
-                Some(FrameError::FieldOutOfRange {
-                    field: "microseconds",
-                    ..
-                })
-            ));
-            assert_eq!(result.preview, None);
-        }
-    }
-
-    #[test]
-    fn diagnostic_checks_entire_both_channels_before_allowing_crc_preview() {
-        for channel in [1_u8, 2] {
-            for index in [1_usize, SAMPLE_COUNT - 1] {
-                for (base, delta) in [(0_u16, 0xFF_u8), (u16::MAX, 1)] {
-                    let mut frame = golden_frame();
-                    frame[19..267].fill(0);
-                    let base_offset = 15 + usize::from(channel - 1) * 2;
-                    frame[base_offset..base_offset + 2].copy_from_slice(&base.to_be_bytes());
-                    let delta_offset = 19 + (index - 1) * 2 + usize::from(channel - 1);
-                    frame[delta_offset] = delta;
-                    let result = diagnose_scientific_frame(&frame, 9);
-                    assert!(matches!(
-                        result.error,
-                        Some(FrameError::ChecksumMismatch { .. })
-                    ));
-                    assert!(matches!(
-                        result.secondary_error,
-                        Some(FrameError::SampleOutOfRange { channel: actual_channel, index: actual_index, .. })
-                        if actual_channel == channel && actual_index == index
-                    ));
-                    assert_eq!(result.preview, None);
-                    refresh_crc16(&mut frame);
-                    let result = diagnose_scientific_frame(&frame, 9);
-                    assert!(matches!(
-                        result.error,
-                        Some(FrameError::SampleOutOfRange { channel: actual_channel, index: actual_index, .. })
-                        if actual_channel == channel && actual_index == index
-                    ));
-                    assert_eq!(result.preview, None);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn diagnostic_arbitrary_candidates_return_without_panicking() {
-        for length in 0..=LVDS_FRAME_LEN + 8 {
-            let _ = diagnose_scientific_frame(&vec![0xEB; length], 0);
-        }
-        let mut state = 0x2468_ACE0_u32;
-        for _ in 0..128 {
-            let mut frame = golden_frame();
-            for byte in &mut frame[7..267] {
-                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-                *byte = state.to_be_bytes()[0];
-            }
-            let result = diagnose_scientific_frame(&frame, u16::MAX);
-            let crc_error = validate_scientific_frame_crc16(&frame).err();
-            let body_error = decode_scientific_frame_with_sequence(&frame, u16::MAX).err();
-            assert_eq!(
-                result.error,
-                crc_error.clone().or_else(|| body_error.clone())
-            );
-            assert_eq!(result.secondary_error, crc_error.and(body_error));
-        }
-    }
-}
+#[path = "lvds_protocol_tests.rs"]
+mod tests;

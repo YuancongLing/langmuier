@@ -1,4 +1,4 @@
-# Langmuir Probe Control Center (Rust)
+# Langmuier Probe Ground Control
 
 This workspace is a Rust rewrite of the application in `../python`. It keeps the wire
 formats and the operator workflow while separating protocol processing, hardware I/O,
@@ -46,7 +46,7 @@ Failure to open a real port never enables simulation automatically.
 
 LVDS admission checks structure, device time, ADC bounds, and recent duplicates.
 CRC16 is not checked for receiving, plotting, or scientific storage: **科学数据未经
-CRC 完整性验证**. See [the current acceptance report](docs/LVDS_NO_CRC_END_TO_END_REPORT.md)
+CRC 完整性验证**. See [the current acceptance report](docs/LVDS_55AA_FINAL_ACCEPTANCE.md)
 for the revised behavior; earlier CRC QA reports describe historical versions.
 
 For Windows x64 prerequisites, clone/update commands, a non-Mock Release build,

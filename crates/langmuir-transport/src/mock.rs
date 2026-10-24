@@ -6,10 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TrySendError, bounded};
-use langmuir_core::{
-    LVDS_CRC_CALC_END, LVDS_CRC_CALC_START, LVDS_CRC_FIELD_OFFSET, LVDS_FRAME_LEN,
-    crc16_ccitt_false,
-};
+use langmuir_core::LVDS_FRAME_LEN;
 use parking_lot::Mutex;
 
 use crate::{Transport, TransportError};
@@ -177,17 +174,30 @@ pub fn lvds_packet(frame_index: u32, timestamp_seconds: u32) -> Vec<u8> {
     frame[7..11].copy_from_slice(&timestamp_seconds.to_be_bytes());
     frame[11..15].copy_from_slice(&(frame_index % 1_000_000).to_be_bytes());
 
-    let channel_1 = 2_048 + (frame_index % 100) as u16;
-    let channel_2 = 20_000 + (frame_index % 100) as u16 * 2;
-    frame[15..17].copy_from_slice(&channel_1.to_be_bytes());
-    frame[17..19].copy_from_slice(&channel_2.to_be_bytes());
-    for sample in 1..125_u16 {
-        let offset = 15 + 4 + usize::from(sample - 1) * 2;
-        frame[offset] = 1;
-        frame[offset + 1] = 3;
+    let phase = frame_index % 100;
+    for (channel, block) in frame[15..265]
+        .as_chunks_mut::<125>()
+        .0
+        .iter_mut()
+        .enumerate()
+    {
+        let mut sample = 0_u32;
+        for bytes in block.as_chunks_mut::<5>().0 {
+            let mut packed = 0_u64;
+            for _ in 0..4 {
+                let code10 = if channel == 0 {
+                    512 + phase + sample
+                } else {
+                    1_023 - phase * 2 - sample
+                };
+                packed = (packed << 10) | u64::from(code10);
+                sample += 1;
+            }
+            bytes.copy_from_slice(&packed.to_be_bytes()[3..]);
+        }
     }
-    let checksum = crc16_ccitt_false(&frame[LVDS_CRC_CALC_START..LVDS_CRC_CALC_END]);
-    frame[LVDS_CRC_FIELD_OFFSET..].copy_from_slice(&checksum.to_be_bytes());
+    frame[265] = frame_index.to_be_bytes()[3];
+    // DATA251 and the unchecked CRC trailer remain zero in this fixture.
     frame
 }
 
@@ -200,13 +210,13 @@ pub fn checksum8(bytes: &[u8]) -> u8 {
 mod tests {
     use langmuir_core::{
         SAMPLE_COUNT, SAMPLE_INTERVAL_MICROS, UDP_LVDS_HEADER_LEN, UdpLvdsReassembler,
-        decode_scientific_frame, decode_scientific_frame_with_sequence, parse_udp_lvds_datagram,
+        UdpLvdsScienceGate, decode_scientific_frame, parse_udp_lvds_datagram,
     };
 
     use super::*;
 
     #[test]
-    fn deterministic_packets_match_python_layout() {
+    fn deterministic_packets_match_protocol_layout() {
         let telemetry = rs422_packet(7, 1_700_000_000);
         assert_eq!(telemetry.len(), 34);
         assert_eq!(&telemetry[..6], &[0xEB, 0x90, 0x55, 0xF0, 0x00, 0x1C]);
@@ -215,22 +225,32 @@ mod tests {
         let scientific = lvds_packet(9, 1_700_000_000);
         assert_eq!(scientific.len(), 269);
         assert_eq!(&scientific[..6], &[0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07]);
+        assert_eq!(&lvds_packet(0, 0)[15..20], &[0x80, 0x20, 0x18, 0x0A, 0x03]);
+        assert_eq!(
+            &lvds_packet(0, 0)[140..145],
+            &[0xFF, 0xFF, 0xEF, 0xF7, 0xFC]
+        );
+        assert_eq!(&scientific[265..267], &[9, 0]);
         let decoded = decode_scientific_frame(&scientific).unwrap();
-        assert_eq!(decoded.channel_1[0], 2_057);
-        assert_eq!(decoded.channel_2[124], 20_390);
+        assert_eq!(decoded.channel_1[0], 521);
+        assert_eq!(decoded.channel_1[99], 620);
+        assert_eq!(decoded.channel_2[0], 1_005);
+        assert_eq!(decoded.channel_2[99], 906);
     }
 
-    fn golden_frame(seconds: u32, microseconds: u32, checksum: u16) -> Vec<u8> {
+    fn golden_frame(seconds: u32, microseconds: u32, frame_seq_u8: u8) -> Vec<u8> {
         let mut frame = vec![0_u8; LVDS_FRAME_LEN];
         frame[..7].copy_from_slice(&[0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07, 0xAA]);
         frame[7..11].copy_from_slice(&seconds.to_be_bytes());
         frame[11..15].copy_from_slice(&microseconds.to_be_bytes());
-        frame[15..19].copy_from_slice(&[0x12, 0x34, 0xAB, 0xCD]);
-        for offset in (19..267).step_by(2) {
-            frame[offset] = 0x01;
-            frame[offset + 1] = 0xFF;
+        for group in frame[15..140].as_chunks_mut::<5>().0 {
+            group.copy_from_slice(&[0xFF, 0xC0, 0x08, 0x00, 0x01]);
         }
-        frame[267..].copy_from_slice(&checksum.to_be_bytes());
+        for group in frame[140..265].as_chunks_mut::<5>().0 {
+            group.copy_from_slice(&[0x00, 0x3F, 0xF0, 0x03, 0xFF]);
+        }
+        frame[265] = frame_seq_u8;
+        frame[267..].copy_from_slice(&[0x12, 0x34]);
         frame
     }
 
@@ -247,48 +267,49 @@ mod tests {
 
     #[test]
     fn protocol_mock_delivers_both_channels_without_crc_acceptance_gate() {
-        // CRC values independently calculated with the manufacturer's C function.
-        let first = golden_frame(1_694_498_816, 999_800, 0x44C8);
-        let second = golden_frame(1_694_498_817, 49_800, 0x5EF9);
+        let first = golden_frame(1_694_498_816, 999_800, 255);
+        let second = golden_frame(1_694_498_817, 49_800, 0);
         let mut corrupt = first.clone();
         corrupt[267] ^= 0x01;
         let datagrams = [
-            udp_datagram(41, &first),
-            udp_datagram(42, &corrupt),
-            udp_datagram(43, &second),
+            udp_datagram(65_535, &first),
+            udp_datagram(65_536, &corrupt),
+            udp_datagram(65_537, &second),
         ];
         let mut reassembler = UdpLvdsReassembler::default();
+        let mut science_gate = UdpLvdsScienceGate::default();
         let mut normal_frames = Vec::new();
+        let mut outer_sequences = Vec::new();
         let mut errors = Vec::new();
         for datagram in &datagrams {
             let parsed = parse_udp_lvds_datagram(datagram).unwrap();
             assert_eq!(parsed.payload.len(), LVDS_FRAME_LEN);
             let packet = reassembler.push(datagram).unwrap().unwrap();
-            match decode_scientific_frame_with_sequence(
-                &packet.bytes,
-                u16::try_from(packet.frame_sequence).unwrap(),
-            ) {
-                Ok(frame) => normal_frames.push(frame),
+            outer_sequences.push(packet.frame_sequence);
+            match science_gate.accept_at(&packet, std::time::Instant::now()) {
+                Ok(result) => normal_frames.push(result.into_frame().unwrap()),
                 Err(error) => errors.push(error),
             }
         }
         assert_eq!(normal_frames.len(), 3);
         assert_eq!(errors.len(), 0);
         for frame in &normal_frames {
-            assert_eq!(frame.channel_1.len(), SAMPLE_COUNT);
-            assert_eq!(frame.channel_2.len(), SAMPLE_COUNT);
-            for index in 0..SAMPLE_COUNT {
-                let offset = u32::try_from(index).unwrap();
-                assert_eq!(frame.channel_1[index], 4_660 + offset);
-                assert_eq!(frame.channel_2[index], 43_981 - offset);
+            assert_eq!(frame.channel_1.len(), 100);
+            assert_eq!(frame.channel_2.len(), 100);
+            for index in (0..SAMPLE_COUNT).step_by(4) {
+                assert_eq!(&frame.channel_1[index..index + 4], &[1023, 0, 512, 1]);
+                assert_eq!(&frame.channel_2[index..index + 4], &[0, 1023, 0, 1023]);
             }
         }
-        assert_eq!(normal_frames[0].sequence, 41);
-        assert_eq!(normal_frames[1].sequence, 42);
-        assert_eq!(normal_frames[2].sequence, 43);
-        let elapsed = normal_frames[2].timestamp.as_seconds_f64()
-            - normal_frames[0].timestamp.as_seconds_f64();
-        assert!((elapsed - 0.05).abs() < 0.000_001);
-        assert_eq!(SAMPLE_INTERVAL_MICROS, 400);
+        assert_eq!(outer_sequences, [65_535, 65_536, 65_537]);
+        assert_eq!(normal_frames[0].frame_seq_u8, 255);
+        assert_eq!(normal_frames[1].frame_seq_u8, 255);
+        assert_eq!(normal_frames[2].frame_seq_u8, 0);
+        assert_eq!(science_gate.metrics().duplicate_frames, 0);
+        assert_eq!(science_gate.metrics().sequence_conflicts, 0);
+        let first = normal_frames[0].sample_time_us(0).unwrap();
+        let last = normal_frames[2].sample_time_us(0).unwrap();
+        assert_eq!(last - first, 50_000);
+        assert_eq!(SAMPLE_INTERVAL_MICROS, 500);
     }
 }

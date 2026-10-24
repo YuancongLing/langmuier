@@ -2,15 +2,15 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-use langmuir_core::{SAMPLE_COUNT, SAMPLE_INTERVAL_MICROS, ScientificFrame};
+use langmuir_core::{SAMPLE_COUNT, SAMPLE_INTERVAL_MICROS, ScientificFrame, reconstruct_adc16};
 use thiserror::Error;
 
 use crate::BatchSink;
 
-/// UTF-8 header for raw, paired LVDS scientific samples.
-pub const SCIENTIFIC_CSV_HEADER: &str = "frame_index,sequence_u16,frame_seconds,frame_microseconds,sample_index,sample_time_us,ch1_adc,ch2_adc,integrity\n";
+/// UTF-8 header for paired LVDS code10 and signed reconstructed ADC samples.
+pub const SCIENTIFIC_CSV_HEADER: &str = "frame_index,frame_seconds,frame_microseconds,frame_seq_u8,sample_index,sample_time_us,ch1_code10,ch2_code10,ch1_adc16_reconstructed,ch2_adc16_reconstructed,integrity\n";
 
-const _: () = assert!(SAMPLE_COUNT == 125);
+const _: () = assert!(SAMPLE_COUNT == 100);
 
 #[derive(Clone, Debug)]
 pub struct ScientificCsvConfig {
@@ -60,7 +60,9 @@ pub enum ScientificCsvError {
 
 /// Buffered scientific CSV output fed directly by accepted scientific frames.
 ///
-/// Each frame produces 125 paired raw-ADC rows, in supplied frame order. The
+/// Each frame produces 100 paired code10 rows, in supplied frame order. Signed
+/// reconstructed ADC values are derived from the preserved 10bit codes; they
+/// are not a lossless recovery of the original 16bit ADC samples. The
 /// device seconds field is preserved without assuming a calendar epoch. CRC is
 /// explicitly marked as unchecked. Sorting and deduplication belong upstream.
 /// A batch is counted only after its buffered bytes have successfully reached
@@ -183,8 +185,10 @@ impl<W: Write> CsvWriter<W> {
             .frames_written
             .checked_add(count)
             .ok_or(ScientificCsvError::CounterOverflow)?;
+        let samples_per_frame =
+            u64::try_from(SAMPLE_COUNT).map_err(|_| ScientificCsvError::CounterOverflow)?;
         let rows_written = frames_written
-            .checked_mul(125)
+            .checked_mul(samples_per_frame)
             .ok_or(ScientificCsvError::CounterOverflow)?;
         let result = write_frames(writer, frames, self.frames_written);
         if let Err(error) = result {
@@ -240,13 +244,15 @@ fn write_frames<W: Write>(
         for (sample_index, (ch1, ch2)) in
             (0_u64..).zip(frame.channel_1.iter().zip(frame.channel_2.iter()))
         {
-            // Both timestamp fields are u32; all 125 samples fit comfortably
+            // Both timestamp fields are u32; all 100 samples fit comfortably
             // within u64, including the maximum u32 seconds and a second carry.
             let sample_time = base + sample_index * u64::from(SAMPLE_INTERVAL_MICROS);
+            let adc1 = reconstruct_adc16(*ch1);
+            let adc2 = reconstruct_adc16(*ch2);
             writeln!(
                 encoded,
-                "{frame_index},{},{},{},{sample_index},{sample_time},{ch1},{ch2},CRC_NOT_CHECKED",
-                frame.sequence, frame.timestamp.utc_seconds, frame.timestamp.microseconds
+                "{frame_index},{},{},{},{sample_index},{sample_time},{ch1},{ch2},{adc1},{adc2},CRC_NOT_CHECKED",
+                frame.timestamp.utc_seconds, frame.timestamp.microseconds, frame.frame_seq_u8
             )?;
         }
         writer.write_all(&encoded)?;
@@ -265,27 +271,31 @@ mod tests {
 
     use super::*;
 
-    fn frame(sequence: u16, seconds: u32, microseconds: u32) -> ScientificFrame {
+    fn frame(frame_seq_u8: u8, seconds: u32, microseconds: u32) -> ScientificFrame {
         let mut channel_1 = Box::new([0; SAMPLE_COUNT]);
         let mut channel_2 = Box::new([0; SAMPLE_COUNT]);
-        for (index, (first, second)) in channel_1.iter_mut().zip(channel_2.iter_mut()).enumerate() {
-            let index = u32::try_from(index).unwrap();
-            *first = 4660 + index;
-            *second = 43_981 - index;
+        for (first, second) in channel_1
+            .as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .zip(channel_2.as_chunks_mut::<4>().0.iter_mut())
+        {
+            first.copy_from_slice(&[1023, 0, 512, 1]);
+            second.copy_from_slice(&[0, 1023, 0, 1023]);
         }
         ScientificFrame {
             timestamp: Timestamp {
                 utc_seconds: seconds,
                 microseconds,
             },
-            sequence,
+            frame_seq_u8,
             channel_1,
             channel_2,
         }
     }
 
     #[test]
-    fn single_frame_saves_125_paired_raw_samples_and_integer_device_times() {
+    fn single_frame_saves_100_code10_pairs_signed_reconstruction_and_integer_device_times() {
         // Catches omitted samples, swapped/normalized channels, float times,
         // a missing integrity marker, or using arrival time instead of device time.
         let directory = tempdir().unwrap();
@@ -295,34 +305,38 @@ mod tests {
             .unwrap();
         assert_eq!(sink.path(), path);
         assert_eq!(sink.frames_written(), 1);
-        assert_eq!(sink.rows_written(), 125);
+        assert_eq!(sink.rows_written(), 100);
         // Successful batches have reached the file, independently of close.
         let before_close = std::fs::read_to_string(&path).unwrap();
         sink.close().unwrap();
         let csv = std::fs::read_to_string(path).unwrap();
         assert_eq!(before_close, csv);
         let lines: Vec<_> = csv.lines().collect();
-        assert_eq!(lines.len(), 126);
+        assert_eq!(lines.len(), 101);
         assert_eq!(
             lines[0],
-            "frame_index,sequence_u16,frame_seconds,frame_microseconds,sample_index,sample_time_us,ch1_adc,ch2_adc,integrity"
+            "frame_index,frame_seconds,frame_microseconds,frame_seq_u8,sample_index,sample_time_us,ch1_code10,ch2_code10,ch1_adc16_reconstructed,ch2_adc16_reconstructed,integrity"
         );
         assert_eq!(
             lines[1],
-            "0,42,1694498816,999800,0,1694498816999800,4660,43981,CRC_NOT_CHECKED"
+            "0,1694498816,999800,42,0,1694498816999800,1023,0,32704,-32768,CRC_NOT_CHECKED"
         );
         assert_eq!(
             lines[2],
-            "0,42,1694498816,999800,1,1694498817000200,4661,43980,CRC_NOT_CHECKED"
+            "0,1694498816,999800,42,1,1694498817000300,0,1023,-32768,32704,CRC_NOT_CHECKED"
         );
         assert_eq!(
-            lines[125],
-            "0,42,1694498816,999800,124,1694498817049400,4784,43857,CRC_NOT_CHECKED"
+            lines[3],
+            "0,1694498816,999800,42,2,1694498817000800,512,0,0,-32768,CRC_NOT_CHECKED"
+        );
+        assert_eq!(
+            lines[100],
+            "0,1694498816,999800,42,99,1694498817049300,1,1023,-32704,32704,CRC_NOT_CHECKED"
         );
     }
 
     #[test]
-    fn hundred_frames_stream_12500_rows_with_continuous_indices_across_batches() {
+    fn hundred_frames_stream_10000_rows_with_continuous_indices_across_batches() {
         // Catches counters or indices reset at each batch and accumulation
         // that is only written at capture close.
         let directory = tempdir().unwrap();
@@ -330,19 +344,22 @@ mod tests {
         let mut config = ScientificCsvConfig::new(&path);
         config.buffer_capacity = 64;
         let mut sink = ScientificCsvSink::create(config).unwrap();
-        for index in 0..100_u16 {
+        for index in 0..100_u8 {
             sink.write_batch(&[frame(index, 10, 0)]).unwrap();
         }
         assert_eq!(sink.frames_written(), 100);
-        assert_eq!(sink.rows_written(), 12_500);
+        assert_eq!(sink.rows_written(), 10_000);
         sink.close().unwrap();
         let csv = std::fs::read_to_string(path).unwrap();
         let lines: Vec<_> = csv.lines().collect();
-        assert_eq!(lines.len(), 12_501);
-        assert_eq!(lines[126], "1,1,10,0,0,10000000,4660,43981,CRC_NOT_CHECKED");
+        assert_eq!(lines.len(), 10_001);
         assert_eq!(
-            lines[12_500],
-            "99,99,10,0,124,10049600,4784,43857,CRC_NOT_CHECKED"
+            lines[101],
+            "1,10,0,1,0,10000000,1023,0,32704,-32768,CRC_NOT_CHECKED"
+        );
+        assert_eq!(
+            lines[10_000],
+            "99,10,0,99,99,10049500,1,1023,-32704,32704,CRC_NOT_CHECKED"
         );
     }
 
@@ -358,7 +375,7 @@ mod tests {
         let mut previous_bytes = std::fs::metadata(&path).unwrap().len();
         for first in (0..10_000_u16).step_by(100) {
             let batch: Vec<_> = (first..first + 100)
-                .map(|index| frame(index, 10, 0))
+                .map(|index| frame(u8::try_from(index & 0xFF).unwrap(), 10, 0))
                 .collect();
             sink.write_batch(&batch).unwrap();
             let bytes = std::fs::metadata(&path).unwrap().len();
@@ -369,7 +386,7 @@ mod tests {
             previous_bytes = bytes;
         }
         assert_eq!(sink.frames_written(), 10_000);
-        assert_eq!(sink.rows_written(), 1_250_000);
+        assert_eq!(sink.rows_written(), 1_000_000);
         let reader = io::BufReader::new(File::open(&path).unwrap());
         let mut count = 0_u64;
         let mut last = String::new();
@@ -377,10 +394,10 @@ mod tests {
             last = line.unwrap();
             count += 1;
         }
-        assert_eq!(count, 1_250_001);
+        assert_eq!(count, 1_000_001);
         assert_eq!(
             last,
-            "9999,9999,10,0,124,10049600,4784,43857,CRC_NOT_CHECKED"
+            "9999,10,0,15,99,10049500,1,1023,-32704,32704,CRC_NOT_CHECKED"
         );
         sink.close().unwrap();
         assert_eq!(std::fs::metadata(path).unwrap().len(), previous_bytes);
@@ -393,18 +410,24 @@ mod tests {
         let path = directory.path().join("science.csv");
         let mut sink = ScientificCsvSink::create(ScientificCsvConfig::new(&path)).unwrap();
         let last = frame(0, 1, 7);
-        sink.write_batch(&[frame(u16::MAX, u32::MAX, 999_999), last.clone(), last])
+        sink.write_batch(&[frame(u8::MAX, u32::MAX, 999_999), last.clone(), last])
             .unwrap();
         sink.close().unwrap();
         let csv = std::fs::read_to_string(path).unwrap();
         let lines: Vec<_> = csv.lines().collect();
-        assert_eq!(lines.len(), 376);
+        assert_eq!(lines.len(), 301);
         assert_eq!(
-            lines[125],
-            "0,65535,4294967295,999999,124,4294967296049599,4784,43857,CRC_NOT_CHECKED"
+            lines[100],
+            "0,4294967295,999999,255,99,4294967296049499,1,1023,-32704,32704,CRC_NOT_CHECKED"
         );
-        assert_eq!(lines[126], "1,0,1,7,0,1000007,4660,43981,CRC_NOT_CHECKED");
-        assert_eq!(lines[251], "2,0,1,7,0,1000007,4660,43981,CRC_NOT_CHECKED");
+        assert_eq!(
+            lines[101],
+            "1,1,7,0,0,1000007,1023,0,32704,-32768,CRC_NOT_CHECKED"
+        );
+        assert_eq!(
+            lines[201],
+            "2,1,7,0,0,1000007,1023,0,32704,-32768,CRC_NOT_CHECKED"
+        );
     }
 
     #[test]

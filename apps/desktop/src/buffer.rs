@@ -79,7 +79,7 @@ impl TimeSeriesBuffer {
             .then(|| DisplayEnvelopeCache::new(display_points.min(capacity), window_seconds));
         Self {
             // Reserve the explicit history bound. Grow-before-trim would otherwise
-            // round the 150125 sample bound up to 262144 samples per channel.
+            // round the 120100 sample bound up to 131072 samples per channel.
             points: VecDeque::with_capacity(capacity),
             sample_offset: 0,
             capacity,
@@ -287,60 +287,7 @@ impl TimeSeriesBuffer {
             }
             add(self.points[end - 1]);
         }
-        let candidates = &cache.candidates;
-        let output = &mut cache.points;
-        if candidates.len() <= budget {
-            output.extend(candidates.iter().copied().map(PlotPoint::from));
-        } else {
-            output.push(candidates[0].into());
-            let interior = candidates.len() - 2;
-            let bins = (budget - 2) / 2;
-            for bin in 0..bins {
-                let begin = 1 + bin * interior / bins;
-                let end = 1 + (bin + 1) * interior / bins;
-                let mut min = begin;
-                let mut max = begin;
-                for index in begin + 1..end {
-                    if candidates[index][1] < candidates[min][1] {
-                        min = index;
-                    }
-                    if candidates[index][1] > candidates[max][1] {
-                        max = index;
-                    }
-                }
-                for index in [min.min(max), min.max(max)] {
-                    if output
-                        .last()
-                        .is_none_or(|last| last.x.to_bits() != candidates[index][0].to_bits())
-                    {
-                        output.push(candidates[index].into());
-                    }
-                }
-            }
-            output.push(
-                candidates
-                    .last()
-                    .copied()
-                    .expect("visible samples exist")
-                    .into(),
-            );
-        }
-        if let Some(first) = output.first() {
-            let (min, max) = output.iter().fold((first.y, first.y), |(min, max), p| {
-                (min.min(p.y), max.max(p.y))
-            });
-            cache.value_range = Some((min, max));
-            if normalized {
-                let span = max - min;
-                for point in output {
-                    point.y = if span > f64::EPSILON {
-                        (point.y - min) / span
-                    } else {
-                        0.5
-                    };
-                }
-            }
-        }
+        cache.render_candidates(budget, normalized);
     }
 
     #[must_use]
@@ -386,6 +333,65 @@ impl TimeSeriesBuffer {
             return cache.render(&self.points).to_vec();
         }
         decimate_points(&self.points, max_points)
+    }
+}
+
+impl ViewportCache {
+    fn render_candidates(&mut self, budget: usize, normalized: bool) {
+        let candidates = &self.candidates;
+        let output = &mut self.points;
+        if candidates.len() <= budget {
+            output.extend(candidates.iter().copied().map(PlotPoint::from));
+        } else {
+            output.push(candidates[0].into());
+            let interior = candidates.len() - 2;
+            let bins = (budget - 2) / 2;
+            for bin in 0..bins {
+                let begin = 1 + bin * interior / bins;
+                let end = 1 + (bin + 1) * interior / bins;
+                let mut min = begin;
+                let mut max = begin;
+                for index in begin + 1..end {
+                    if candidates[index][1] < candidates[min][1] {
+                        min = index;
+                    }
+                    if candidates[index][1] > candidates[max][1] {
+                        max = index;
+                    }
+                }
+                for index in [min.min(max), min.max(max)] {
+                    if output
+                        .last()
+                        .is_none_or(|last| last.x.to_bits() != candidates[index][0].to_bits())
+                    {
+                        output.push(candidates[index].into());
+                    }
+                }
+            }
+            output.push(
+                candidates
+                    .last()
+                    .copied()
+                    .expect("visible samples exist")
+                    .into(),
+            );
+        }
+        if let Some(first) = output.first() {
+            let (min, max) = output.iter().fold((first.y, first.y), |(min, max), p| {
+                (min.min(p.y), max.max(p.y))
+            });
+            self.value_range = Some((min, max));
+            if normalized {
+                let span = max - min;
+                for point in output {
+                    point.y = if span > f64::EPSILON {
+                        (point.y - min) / span
+                    } else {
+                        0.5
+                    };
+                }
+            }
+        }
     }
 }
 
@@ -676,7 +682,7 @@ mod tests {
     fn zero_budget_returns_no_points() {
         let mut buffer = TimeSeriesBuffer::new(10, 10.0);
         buffer.extend([point(1.0, 2.0)]);
-        assert!(buffer.decimated(0).is_empty());
+        assert_eq!(buffer.decimated(0), [] as [[f64; 2]; 0]);
     }
 
     #[test]
@@ -756,7 +762,8 @@ mod tests {
     fn viewport_keeps_extrema_raw_hover_values_and_visible_window() {
         let mut buffer = TimeSeriesBuffer::with_history(200_000, 60.0, 10.0, 2_000);
         buffer.extend((0..100_000).map(|i| SamplePoint {
-            time_seconds: f64::from(i) / 2_500.0,
+            time_seconds: f64::from(i) * f64::from(langmuir_core::SAMPLE_INTERVAL_MICROS)
+                / 1_000_000.0,
             value: if i == 77_777 {
                 90_000.0
             } else if i == 77_778 {
@@ -779,9 +786,14 @@ mod tests {
                 .iter()
                 .any(|p| p.y.to_bits() == (-80_000.0_f64).to_bits())
         );
-        assert_eq!(buffer.nearest_value(77_777.0 / 2_500.0), Some(90_000.0));
+        assert_eq!(
+            buffer.nearest_value(
+                77_777.0 * f64::from(langmuir_core::SAMPLE_INTERVAL_MICROS) / 1_000_000.0
+            ),
+            Some(90_000.0)
+        );
         buffer.prepare_visible([0.0, 2.0], 128, false);
-        buffer.prepare_visible([31.1, 31.12], 600, true);
+        buffer.prepare_visible([38.88, 38.90], 600, true);
         assert!(
             buffer.visible_points().len() < 100,
             "zooming in recovers the original raw samples"
@@ -797,10 +809,17 @@ mod tests {
 
     #[test]
     fn sixty_second_history_and_frozen_copy_have_explicit_memory_bounds() {
-        let mut buffer = TimeSeriesBuffer::with_history(150_125, 60.0, 10.0, 2_000);
-        buffer.extend((0..300_000).map(|i| point(f64::from(i) / 2_500.0, f64::from(i))));
-        assert!((149_999..=150_001).contains(&buffer.len()));
-        assert_eq!(buffer.points.capacity(), 150_125);
+        let capacity = 60 * 1_000_000 / langmuir_core::SAMPLE_INTERVAL_MICROS as usize
+            + langmuir_core::SAMPLE_COUNT;
+        let mut buffer = TimeSeriesBuffer::with_history(capacity, 60.0, 10.0, 2_000);
+        buffer.extend((0..240_000).map(|i| {
+            point(
+                f64::from(i) * f64::from(langmuir_core::SAMPLE_INTERVAL_MICROS) / 1_000_000.0,
+                f64::from(i),
+            )
+        }));
+        assert!((119_999..=120_001).contains(&buffer.len()));
+        assert_eq!(buffer.points.capacity(), 120_100);
         assert_eq!(std::mem::size_of::<SamplePoint>(), 16);
         let snapshot = buffer.clone();
         let last = snapshot.latest_time();
