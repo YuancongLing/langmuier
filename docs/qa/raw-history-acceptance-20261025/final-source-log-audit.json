@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "frozen_source_files_checked": 70,
+  "checks_exit_zero": 5,
+  "workspace_test_counts": {
+    "passed": 351,
+    "failed": 0,
+    "ignored": 7
+  },
+  "no_source_changes_since_acceptance": true
+}

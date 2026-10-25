@@ -1,0 +1,37 @@
+﻿[
+    {
+        "name":  "fmt-acceptance",
+        "command":  "cargo fmt --all -- --check",
+        "exit_code":  0,
+        "seconds":  1.5719024,
+        "log":  "D:\\RUST\\langmuier\\target\\qa\\raw-history-20261025\\fmt-acceptance.log"
+    },
+    {
+        "name":  "check-acceptance",
+        "command":  "cargo check --workspace --locked",
+        "exit_code":  0,
+        "seconds":  2.6662977999999997,
+        "log":  "D:\\RUST\\langmuier\\target\\qa\\raw-history-20261025\\check-acceptance.log"
+    },
+    {
+        "name":  "test-workspace-acceptance",
+        "command":  "cargo test --workspace --features langmuir-desktop/mock --locked",
+        "exit_code":  0,
+        "seconds":  28.8627245,
+        "log":  "D:\\RUST\\langmuier\\target\\qa\\raw-history-20261025\\test-workspace-acceptance.log"
+    },
+    {
+        "name":  "build-release-acceptance",
+        "command":  "cargo build --release -p langmuir-desktop --locked",
+        "exit_code":  0,
+        "seconds":  26.6935273,
+        "log":  "D:\\RUST\\langmuier\\target\\qa\\raw-history-20261025\\build-release-acceptance.log"
+    },
+    {
+        "name":  "clippy-workspace-acceptance",
+        "command":  "cargo clippy --workspace --all-targets --locked -- -D warnings",
+        "exit_code":  0,
+        "seconds":  6.9065179999999993,
+        "log":  "D:\\RUST\\langmuier\\target\\qa\\raw-history-20261025\\clippy-workspace-acceptance.log"
+    }
+]

@@ -1,0 +1,69 @@
+{
+  "status": "PASS",
+  "scope": "independent actual-PCAP sample lookup for final non-Mock EXE screenshot text",
+  "screenshot": {
+    "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_FINAL_ACTUAL_PCAP_CURSOR.jpg",
+    "bytes": 266638,
+    "sha256": "334cb426e66a6e5063f9a000961273758f59268c1c4f470e77ab29c4707370a7"
+  },
+  "final_exe_process": {
+    "pid": 14844,
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\windows-x64\\LangmuierProbeGroundControl.exe",
+    "working_directory": "D:/RUST/langmuier",
+    "exe_sha256": "f2805c059a699b02164d00da77f9b335a371954474481180fe35e3426cc9269a",
+    "purpose": "Final post-fixture-correction non-Mock GUI acceptance"
+  },
+  "top_cursor_time_us": 366892665,
+  "nearest_sample": {
+    "time_us": 366892465,
+    "frame_index": 127,
+    "seq8": 169,
+    "sample_index": 85,
+    "code10": [
+      194,
+      193
+    ],
+    "adc16": [
+      -20352,
+      -20416
+    ],
+    "volts": [
+      -3.18,
+      -3.19
+    ],
+    "display": [
+      "-3.18 V",
+      "-3.19 V"
+    ]
+  },
+  "top_cursor_to_nearest_sample_delta_us": 200,
+  "tooltip_sample": {
+    "time_us": 366923464,
+    "frame_index": 128,
+    "seq8": 170,
+    "sample_index": 47,
+    "code10": [
+      288,
+      289
+    ],
+    "adc16": [
+      -14336,
+      -14272
+    ],
+    "volts": [
+      -2.24,
+      -2.23
+    ],
+    "display": [
+      "-2.24 V",
+      "-2.23 V"
+    ]
+  },
+  "tooltip_channel": 2,
+  "all_native_samples": 23700,
+  "reference": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\actual-pcap-reference-frames.jsonl",
+    "bytes": 2837628,
+    "sha256": "f6c22ae9eb8849b967ba26d85df85d22546f236875fc937a22d2591e137797b9"
+  }
+}

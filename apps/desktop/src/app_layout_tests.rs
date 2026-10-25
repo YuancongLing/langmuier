@@ -21,6 +21,47 @@ const VIEWPORTS: [(Vec2, f32); 3] = [
     (vec2(1_280.0, 720.0), 1.25),
 ];
 
+#[test]
+fn historical_controls_keep_the_fixed_docks_inside_the_requested_viewports() {
+    for (physical, scale) in VIEWPORTS {
+        let (mut app, _endpoint) = test_app();
+        app.handle_backend_event(crate::bridge::BackendEvent::HistoryStatus(Box::new(
+            crate::bridge::HistoryStatus {
+                generation: 1,
+                active: true,
+                playing: true,
+                path: "D:/long-path/actual-user-file.pcapng".to_owned(),
+                format: Some(crate::bridge::HistoryFileKind::PcapNg),
+                total_records: Some(100_000_000),
+                native: 80_000_000,
+                candidates: 19_999_999,
+                rejected: 1,
+                ..crate::bridge::HistoryStatus::default()
+            },
+        )));
+        let logical = physical / scale;
+        let context = context_at_scale(scale);
+        let (_output, measured) = render_central(&mut app, &context, logical);
+        let regions = central_layout_rects(central_root(logical));
+        for ((name, actual), assigned) in [
+            "history operations",
+            "history toolbar",
+            "history plot",
+            "history logs",
+        ]
+        .into_iter()
+        .zip(measured)
+        .zip([
+            regions.operations,
+            regions.plot_toolbar,
+            regions.plot_body,
+            regions.logs,
+        ]) {
+            assert_inside(name, actual, assigned, physical, scale);
+        }
+    }
+}
+
 fn test_app() -> (LangmuirDesktopApp, BackendEndpoint) {
     let (bridge, endpoint) = channel_bridge(32);
     let app = LangmuirDesktopApp::with_bridge(

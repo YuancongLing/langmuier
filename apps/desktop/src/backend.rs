@@ -16,12 +16,13 @@ use std::{
 use chrono::Local;
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TrySendError, bounded};
 use langmuir_core::{
-    Command, DEPLOYED_LVDS_RAW_FRAME_LEN, FrameError, LvdsStreamDecoder, Rs422StreamDecoder,
-    Rs422Telemetry, SAMPLE_INTERVAL_MICROS, ScientificFrame, UdpLvdsDisposition, UdpLvdsError,
-    UdpLvdsReassembler, UdpLvdsScienceGate, UdpLvdsSequenceMetrics, UdpLvdsSequenceMonitor,
-    parse_udp_lvds_datagram, reconstruct_adc16,
+    Command, DEPLOYED_LVDS_RAW_FRAME_LEN, FrameError, FrameQuality, LvdsBitAlignmentRecoverer,
+    LvdsStreamDecoder, ReassembledLvdsFrame, RecoveryAnchor, RecoveryContext, RecoveryResult,
+    Rs422StreamDecoder, Rs422Telemetry, SAMPLE_INTERVAL_MICROS, ScientificFrame,
+    UdpLvdsDisposition, UdpLvdsError, UdpLvdsReassembler, UdpLvdsScienceGate,
+    UdpLvdsSequenceMetrics, UdpLvdsSequenceMonitor, parse_udp_lvds_datagram, reconstruct_adc16,
 };
-use langmuir_storage::{BatchWriter, StorageEvent, StorageServiceConfig};
+use langmuir_storage::{BatchWriter, RawDestination, StorageEvent, StorageServiceConfig};
 use langmuir_transport::ReaderMetricsSnapshot;
 use langmuir_transport::{
     BackpressurePolicy, Connector, ReaderConfig, ReaderEvent, ReaderWorker, SerialConfig,
@@ -54,6 +55,21 @@ static NEXT_LVDS_SOURCE: AtomicU64 = AtomicU64::new(1);
 #[path = "backend_scientific_storage.rs"]
 mod scientific_storage;
 use scientific_storage::{CaptureProgress, ScientificCaptureSink};
+
+#[path = "backend_history.rs"]
+mod history;
+#[path = "backend_raw_storage.rs"]
+mod raw_storage;
+#[path = "backend_recovery_audit.rs"]
+mod recovery_audit;
+
+fn hex_bytes(bytes: &[u8]) -> String {
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        let _ = write!(output, "{byte:02X}");
+    }
+    output
+}
 
 fn source_identity(label: &str) -> String {
     let mut id = NEXT_LVDS_SOURCE.load(Ordering::Relaxed);
@@ -130,11 +146,12 @@ impl PcapReplay {
                     }
                 }
             })?;
-        let ingress = UdpLvdsIngress::new(
+        let mut ingress = UdpLvdsIngress::new(
             DEPLOYED_LVDS_UDP_SOURCE
                 .parse()
                 .expect("fixed source endpoint"),
         );
+        ingress.audit_context["source_file"] = serde_json::json!(path);
         Ok(Self {
             packets,
             cancel,
@@ -154,7 +171,17 @@ impl PcapReplay {
         })
     }
 
+    #[cfg(test)]
     fn drain_deliveries(&mut self, now: Instant, deliveries: &mut Vec<ScientificFrame>) {
+        self.drain_recorded(now, deliveries, None);
+    }
+
+    fn drain_recorded(
+        &mut self,
+        now: Instant,
+        deliveries: &mut Vec<ScientificFrame>,
+        mut raw: Option<&mut raw_storage::RawRecording>,
+    ) {
         if self.progress.finished {
             return;
         }
@@ -197,22 +224,45 @@ impl PcapReplay {
             }
             let packet = self.pending.take().expect("pending replay packet");
             self.last_timestamp = Some(packet.timestamp);
-            self.progress.total_packets = self.progress.total_packets.saturating_add(1);
-            if let Some(udp) = packet.udp
-                && udp.source == self.ingress.expected_source
+            let mut raw_id = self.ingress.record_id.saturating_add(1);
+            if packet.udp.is_some() {
+                self.ingress.record_id = raw_id;
+            }
+            if let Some(udp) = &packet.udp
+                && let Some(raw) = raw.as_deref_mut()
+                && let Some(receipt) = raw.record(
+                    packet.timestamp,
+                    udp.source,
+                    langmuir_storage::RawDestination::Captured(udp.destination),
+                    udp.source == self.ingress.expected_source,
+                    Some(self.progress.total_packets),
+                    &udp.payload,
+                )
             {
-                self.progress.target_udp_packets =
-                    self.progress.target_udp_packets.saturating_add(1);
+                raw_id = receipt.id;
+            }
+            self.progress.total_packets = self.progress.total_packets.saturating_add(1);
+            if let Some(udp) = packet.udp {
+                if udp.source == self.ingress.expected_source {
+                    self.progress.target_udp_packets =
+                        self.progress.target_udp_packets.saturating_add(1);
+                }
                 // Protocol TTL/dedup use capture-relative time, not file read speed.
                 let Some(protocol_now) = self.started.checked_add(offset) else {
                     self.progress.error = Some("抓包时间超出可表示范围".to_owned());
                     self.progress.finished = true;
                     break;
                 };
-                self.ingress
-                    .push_at(udp.source, &udp.payload, protocol_now, |delivery| {
+                self.ingress.push_observed_at(
+                    udp.source,
+                    RawDestination::Captured(udp.destination),
+                    &udp.payload,
+                    protocol_now,
+                    raw_id,
+                    |delivery| {
                         deliveries.push(delivery);
-                    });
+                    },
+                );
             }
         }
         if let Some(first) = self.first_timestamp {
@@ -290,9 +340,17 @@ pub fn audit_pcap(path: &str) -> Result<String, String> {
             && udp.source == source
         {
             target = target.saturating_add(1);
-            ingress.push_at(udp.source, &udp.payload, at, |_| {
-                formal = formal.saturating_add(1);
-            });
+            ingress.record_id = ingress.record_id.saturating_add(1);
+            ingress.push_observed_at(
+                udp.source,
+                RawDestination::Captured(udp.destination),
+                &udp.payload,
+                at,
+                ingress.record_id,
+                |_| {
+                    formal = formal.saturating_add(1);
+                },
+            );
         }
         ingress.expire_at(at);
     }
@@ -313,6 +371,14 @@ mod protocol_10bit_tests;
 #[cfg(test)]
 #[path = "backend_replay_tests.rs"]
 mod replay_tests;
+
+#[cfg(test)]
+#[path = "backend_raw_history_real_tests.rs"]
+mod raw_history_real_tests;
+
+#[cfg(test)]
+#[path = "backend_capture_history_tests.rs"]
+mod capture_history_tests;
 
 #[derive(Debug, Clone, Copy)]
 struct TelemetryPolling {
@@ -358,6 +424,9 @@ struct UdpLvdsIngress {
     expected_source: SocketAddr,
     reassembler: UdpLvdsReassembler,
     science_gate: UdpLvdsScienceGate,
+    recovery_gate: UdpLvdsScienceGate,
+    flow: Option<(SocketAddr, RawDestination)>,
+    reassembly_prior: langmuir_core::UdpLvdsReassemblyMetrics,
     sequence_monitor: UdpLvdsSequenceMonitor,
     metrics: ReaderMetricsSnapshot,
     receive_stats: LvdsReceiveStats,
@@ -366,6 +435,24 @@ struct UdpLvdsIngress {
     wrong_address_frames: u64,
     last_datagram: Option<Instant>,
     last_science: Option<Instant>,
+    recovery_enabled: bool,
+    previous_anchor: Option<RecoveryAnchor>,
+    previous_anchor_at: Option<Instant>,
+    anchor_bytes: Vec<u8>,
+    recovery_high_water: Option<RecoveryAnchor>,
+    observations: VecDeque<ScienceObservation>,
+    audit_rows: VecDeque<serde_json::Value>,
+    record_id: u64,
+    dependencies: BTreeMap<u32, (Instant, Vec<u64>)>,
+    audit_context: serde_json::Value,
+}
+
+#[derive(Clone)]
+struct ScienceObservation {
+    record_id: u64,
+    outer_sequence: Option<u32>,
+    result: RecoveryResult,
+    delivered: bool,
 }
 
 impl UdpLvdsReceiver {
@@ -379,9 +466,10 @@ impl UdpLvdsReceiver {
         })
     }
 
-    fn drain(
+    fn drain_recorded(
         &mut self,
         limit: usize,
+        mut raw: Option<&mut raw_storage::RawRecording>,
         mut on_delivery: impl FnMut(ScientificFrame),
     ) -> std::io::Result<()> {
         // The controller drains on every tick, including quiet sockets. Keep
@@ -397,10 +485,29 @@ impl UdpLvdsReceiver {
                     return Err(error);
                 }
             };
-            self.ingress.push_at(
+            self.ingress.record_id = self.ingress.record_id.saturating_add(1);
+            let mut id = self.ingress.record_id;
+            if let Some(raw) = raw.as_deref_mut() {
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default();
+                if let Some(receipt) = raw.record(
+                    timestamp,
+                    source,
+                    langmuir_storage::RawDestination::SocketBinding(self.socket.local_addr()?),
+                    source == self.ingress.expected_source,
+                    None,
+                    &self.buffer[..bytes],
+                ) {
+                    id = receipt.id;
+                }
+            }
+            self.ingress.push_observed_at(
                 source,
+                RawDestination::SocketBinding(self.socket.local_addr()?),
                 &self.buffer[..bytes],
                 Instant::now(),
+                id,
                 &mut on_delivery,
             );
         }
@@ -419,6 +526,9 @@ impl UdpLvdsIngress {
             expected_source,
             reassembler: UdpLvdsReassembler::default(),
             science_gate: UdpLvdsScienceGate::default(),
+            recovery_gate: UdpLvdsScienceGate::default(),
+            flow: None,
+            reassembly_prior: langmuir_core::UdpLvdsReassemblyMetrics::default(),
             sequence_monitor: UdpLvdsSequenceMonitor::default(),
             metrics: ReaderMetricsSnapshot::default(),
             receive_stats: LvdsReceiveStats::default(),
@@ -426,6 +536,18 @@ impl UdpLvdsIngress {
             wrong_address_frames: 0,
             last_datagram: None,
             last_science: None,
+            recovery_enabled: false,
+            previous_anchor: None,
+            previous_anchor_at: None,
+            anchor_bytes: Vec::new(),
+            recovery_high_water: None,
+            observations: VecDeque::new(),
+            audit_rows: VecDeque::new(),
+            record_id: 0,
+            dependencies: BTreeMap::new(),
+            audit_context: serde_json::json!({"protocol_session":format!("{}-{}",std::process::id(),
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos()),
+                "source_file":null,"raw_archive":null}),
         }
     }
 
@@ -434,6 +556,7 @@ impl UdpLvdsIngress {
         self.push_at(source, bytes, Instant::now(), on_frame);
     }
 
+    #[cfg(test)]
     fn push_at(
         &mut self,
         source: SocketAddr,
@@ -441,10 +564,64 @@ impl UdpLvdsIngress {
         now: Instant,
         mut on_frame: impl FnMut(ScientificFrame),
     ) {
+        self.record_id = self.record_id.saturating_add(1);
+        self.push_observed_at(
+            source,
+            RawDestination::SocketBinding("0.0.0.0:1534".parse().expect("synthetic binding")),
+            bytes,
+            now,
+            self.record_id,
+            &mut on_frame,
+        );
+    }
+
+    // Admission, deduplication and its provenance must describe one observation.
+    #[allow(clippy::too_many_lines)]
+    fn push_observed_at(
+        &mut self,
+        source: SocketAddr,
+        destination: RawDestination,
+        bytes: &[u8],
+        now: Instant,
+        record_id: u64,
+        mut on_frame: impl FnMut(ScientificFrame),
+    ) {
         self.expire_at(now);
+        if self.observations.len() >= 2048 {
+            self.observations.pop_front();
+        }
+        if self.audit_rows.len() < 2048 {
+            self.audit_rows.push_back(
+                serde_json::json!({"kind":"RAW_INPUT","raw_record_id":record_id,
+                "source":source.to_string(),"source_matches":source == self.expected_source,"destination":format!("{destination:?}"),
+                "payload_hex":hex_bytes(bytes),"payload_sha256":langmuir_core::sha256_hex(bytes),"context":self.audit_context}),
+            );
+        }
         if source != self.expected_source {
             return;
         }
+        if self.flow.is_some_and(|flow| flow != (source, destination)) {
+            let prior = self.reassembler.metrics();
+            self.reassembly_prior.completed_frames = self
+                .reassembly_prior
+                .completed_frames
+                .saturating_add(prior.completed_frames);
+            self.reassembly_prior.expired_frames = self
+                .reassembly_prior
+                .expired_frames
+                .saturating_add(prior.expired_frames);
+            self.reassembly_prior.capacity_rejections = self
+                .reassembly_prior
+                .capacity_rejections
+                .saturating_add(prior.capacity_rejections);
+            self.reassembler = UdpLvdsReassembler::default();
+            self.dependencies.clear();
+            self.clear_recovery_anchor();
+            self.recovery_high_water = None;
+            // Keep the existing bounded native and recovery dedup caches. A
+            // destination switch must not make an old native record save again.
+        }
+        self.flow = Some((source, destination));
         self.last_datagram = Some(now);
         self.receive_stats.udp_packets = self.receive_stats.udp_packets.saturating_add(1);
         self.metrics.read_calls = self.metrics.read_calls.saturating_add(1);
@@ -453,9 +630,26 @@ impl UdpLvdsIngress {
             .bytes_read
             .saturating_add(u64::try_from(bytes.len()).expect("UDP datagram length fits in u64"));
 
-        let Ok(datagram) = parse_udp_lvds_datagram(bytes) else {
-            self.record_udp_fragment_error();
-            return;
+        let datagram = match parse_udp_lvds_datagram(bytes) {
+            Ok(datagram) => datagram,
+            Err(error) => {
+                self.clear_recovery_anchor();
+                self.record_udp_fragment_error();
+                let sequence = if bytes.len() >= 8 && bytes.starts_with(&[0x55, 0xAA, 1, 0xA5]) {
+                    Some(u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]))
+                } else {
+                    None
+                };
+                self.observe_udp_rejection(
+                    record_id,
+                    source,
+                    destination,
+                    bytes,
+                    sequence,
+                    error.to_string(),
+                );
+                return;
+            }
         };
         self.receive_stats.outer_valid = self.receive_stats.outer_valid.saturating_add(1);
         let frame_length = usize::try_from(datagram.header.frame_length).unwrap_or(usize::MAX);
@@ -463,7 +657,35 @@ impl UdpLvdsIngress {
             // This length is declared by the UDP envelope, before an inner
             // scientific-frame candidate exists; keep its category separate.
             self.record_udp_fragment_error();
-            return;
+            if frame_length > langmuir_core::MAX_RECOVERY_PAYLOAD_BYTES {
+                self.observe_udp_rejection(
+                    record_id,
+                    source,
+                    destination,
+                    bytes,
+                    Some(datagram.header.frame_sequence),
+                    format!(
+                        "UDP LVDS declared frame length {frame_length} exceeds the {}-byte synchronization bound",
+                        langmuir_core::MAX_RECOVERY_PAYLOAD_BYTES
+                    ),
+                );
+                return;
+            }
+        }
+        self.dependencies
+            .retain(|_, (first, _)| now.saturating_duration_since(*first) < Duration::from_secs(2));
+        if self.dependencies.len() < 64
+            || self
+                .dependencies
+                .contains_key(&datagram.header.frame_sequence)
+        {
+            let entry = self
+                .dependencies
+                .entry(datagram.header.frame_sequence)
+                .or_insert_with(|| (now, Vec::new()));
+            if entry.1.len() < 1024 {
+                entry.1.push(record_id);
+            }
         }
         let result = self.reassembler.push_at(bytes, now);
         self.sync_reassembly_metrics();
@@ -476,7 +698,102 @@ impl UdpLvdsIngress {
                 {
                     self.wrong_address_frames = self.wrong_address_frames.saturating_add(1);
                 }
-                let result = self.science_gate.accept_at(&frame, now);
+                let recovery = LvdsBitAlignmentRecoverer::inspect(
+                    &frame.bytes,
+                    self.recovery_enabled,
+                    RecoveryContext {
+                        udp_sequence: frame.frame_sequence,
+                        previous: if destination == RawDestination::Unknown {
+                            None
+                        } else {
+                            self.previous_anchor
+                        },
+                    },
+                );
+                let ids = self
+                    .dependencies
+                    .remove(&frame.frame_sequence)
+                    .map_or_else(|| vec![record_id], |(_, ids)| ids);
+                if self.audit_rows.len() < 2048 {
+                    self.audit_rows.push_back(serde_json::json!({"kind":"SCIENCE_ALIGNMENT","raw_record_id":record_id,
+                        "raw_record_dependencies":ids,"outer_sequence":frame.frame_sequence,"quality":recovery.quality,
+                        "reassembled_payload_hex":hex_bytes(&frame.bytes),"normalized_prefix_hex":hex_bytes(&recovery.bytes),
+                        "normalized_prefix_sha256":langmuir_core::sha256_hex(&recovery.bytes),"available_bits":recovery.available_bits,
+                        "normalized_bytes":recovery.bytes.len(),"bit_offset":recovery.bit_offset,"shift":recovery.shift,
+                        "candidate_count":recovery.candidate_count,"validation":recovery.validation,
+                        "crc_reference":recovery.crc_reference,"reason":recovery.reason,"context":self.audit_context}));
+                }
+                if matches!(
+                    recovery.quality,
+                    FrameQuality::RecoveryCandidate | FrameQuality::Rejected
+                ) {
+                    let is_same_accepted_frame = self
+                        .previous_anchor
+                        .is_some_and(|previous| previous.udp_sequence == frame.frame_sequence)
+                        && self.anchor_bytes == recovery.bytes;
+                    if !is_same_accepted_frame {
+                        self.clear_recovery_anchor();
+                    }
+                    let error = langmuir_core::decode_scientific_frame(&frame.bytes).err();
+                    if frame_length == DEPLOYED_LVDS_RAW_FRAME_LEN {
+                        self.record_complete_result(error.as_ref());
+                        if let Some(error) = error {
+                            self.metrics.record_frame_error(&error);
+                        }
+                    }
+                    self.observations.push_back(ScienceObservation {
+                        record_id,
+                        outer_sequence: Some(frame.frame_sequence),
+                        result: recovery,
+                        delivered: false,
+                    });
+                    return;
+                }
+                let normalized = ReassembledLvdsFrame {
+                    frame_sequence: frame.frame_sequence,
+                    bytes: recovery.bytes.clone(),
+                };
+                let result = if recovery.quality == FrameQuality::Native {
+                    self.science_gate.accept_at(&normalized, now)
+                } else {
+                    self.recovery_gate.accept_at(&normalized, now)
+                };
+                let delivered = result
+                    .as_ref()
+                    .is_ok_and(|outcome| outcome.disposition() == UdpLvdsDisposition::Accepted);
+                if let Some(row) = self.audit_rows.back_mut() {
+                    row["dedup_disposition"] = serde_json::json!(result.as_ref().map_or_else(
+                        ToString::to_string,
+                        |outcome| format!("{:?}", outcome.disposition())
+                    ));
+                    row["delivered"] = serde_json::json!(delivered);
+                    row["normal_capture_eligible"] =
+                        serde_json::json!(delivered && recovery.quality == FrameQuality::Native);
+                }
+                if delivered && let Some(scientific) = recovery.frame.as_ref() {
+                    if let Some(sample_time_us) = scientific.sample_time_us(0) {
+                        self.update_recovery_anchor(
+                            RecoveryAnchor {
+                                udp_sequence: frame.frame_sequence,
+                                frame_seq_u8: scientific.frame_seq_u8,
+                                sample_time_us,
+                            },
+                            &recovery.bytes,
+                            now,
+                        );
+                    }
+                } else if !result
+                    .as_ref()
+                    .is_ok_and(|outcome| outcome.disposition() == UdpLvdsDisposition::Duplicate)
+                {
+                    self.clear_recovery_anchor();
+                }
+                self.observations.push_back(ScienceObservation {
+                    record_id,
+                    outer_sequence: Some(frame.frame_sequence),
+                    result: recovery.clone(),
+                    delivered,
+                });
                 self.record_complete_result(result.as_ref().err());
                 self.sync_dedup_metrics();
                 match result {
@@ -493,18 +810,96 @@ impl UdpLvdsIngress {
                             self.metrics.scientific_frames_delivered =
                                 self.metrics.scientific_frames_delivered.saturating_add(1);
                             self.last_science = Some(now);
-                            on_frame(scientific);
+                            if recovery.quality == FrameQuality::Native {
+                                on_frame(scientific);
+                            }
                         }
                     }
                     Err(error) => self.metrics.record_frame_error(&error),
                 }
             }
             Ok(None) => {}
-            Err(UdpLvdsError::TooManyInFlightFrames { .. }) => {
-                self.metrics.rejected_frames = self.metrics.rejected_frames.saturating_add(1);
+            Err(error) => {
+                self.clear_recovery_anchor();
+                if matches!(error, UdpLvdsError::TooManyInFlightFrames { .. }) {
+                    self.metrics.rejected_frames = self.metrics.rejected_frames.saturating_add(1);
+                } else {
+                    self.record_udp_fragment_error();
+                }
+                self.observe_udp_rejection(
+                    record_id,
+                    source,
+                    destination,
+                    bytes,
+                    Some(datagram.header.frame_sequence),
+                    error.to_string(),
+                );
             }
-            Err(_) => self.record_udp_fragment_error(),
         }
+    }
+
+    fn observe_udp_rejection(
+        &mut self,
+        record_id: u64,
+        source: SocketAddr,
+        destination: RawDestination,
+        bytes: &[u8],
+        sequence: Option<u32>,
+        reason: String,
+    ) {
+        let dependencies = sequence
+            .and_then(|sequence| self.dependencies.get(&sequence))
+            .filter(|(_, ids)| ids.last() == Some(&record_id))
+            .map_or_else(|| vec![record_id], |(_, ids)| ids.clone());
+        if self.audit_rows.len() < 2048 {
+            self.audit_rows.push_back(serde_json::json!({
+                "kind":"UDP_REJECTED", "raw_record_id":record_id,
+                "raw_record_dependencies":dependencies, "outer_sequence":sequence,
+                "source":source.to_string(), "destination":format!("{destination:?}"),
+                "payload_hex":hex_bytes(bytes), "payload_sha256":langmuir_core::sha256_hex(bytes),
+                "quality":FrameQuality::Rejected, "reason":reason, "context":self.audit_context,
+            }));
+        }
+        self.observations.push_back(ScienceObservation {
+            record_id,
+            outer_sequence: sequence,
+            result: RecoveryResult {
+                quality: FrameQuality::Rejected,
+                frame: None,
+                bytes: Vec::new(),
+                bit_offset: None,
+                available_bits: 0,
+                shift: 0,
+                candidate_count: 0,
+                validation: langmuir_core::RecoveryValidation::default(),
+                crc_reference: langmuir_core::ReferenceCrc::default(),
+                reason,
+            },
+            delivered: false,
+        });
+    }
+
+    fn clear_recovery_anchor(&mut self) {
+        self.previous_anchor = None;
+        self.previous_anchor_at = None;
+        self.anchor_bytes.clear();
+    }
+
+    fn update_recovery_anchor(&mut self, anchor: RecoveryAnchor, bytes: &[u8], now: Instant) {
+        if self.recovery_high_water == Some(anchor) {
+            return;
+        }
+        if self.recovery_high_water.is_some_and(|high| {
+            let delta = anchor.udp_sequence.wrapping_sub(high.udp_sequence);
+            delta == 0 || delta >= (1_u32 << 31) || anchor.sample_time_us <= high.sample_time_us
+        }) {
+            self.clear_recovery_anchor();
+            return;
+        }
+        self.recovery_high_water = Some(anchor);
+        self.previous_anchor = Some(anchor);
+        self.previous_anchor_at = Some(now);
+        self.anchor_bytes = bytes.to_vec();
     }
 
     fn expire(&mut self) -> usize {
@@ -514,6 +909,15 @@ impl UdpLvdsIngress {
     fn expire_at(&mut self, now: Instant) -> usize {
         let expired = self.reassembler.expire_at(now);
         self.science_gate.expire_at(now);
+        self.recovery_gate.expire_at(now);
+        if expired > 0
+            || self.previous_anchor_at.is_some_and(|accepted| {
+                now.checked_duration_since(accepted)
+                    .is_some_and(|age| age >= langmuir_core::DEFAULT_UDP_LVDS_REASSEMBLY_TTL)
+            })
+        {
+            self.clear_recovery_anchor();
+        }
         self.sequence_monitor.expire_at(now);
         self.sync_reassembly_metrics();
         self.sync_dedup_metrics();
@@ -523,9 +927,18 @@ impl UdpLvdsIngress {
 
     fn sync_reassembly_metrics(&mut self) {
         let metrics = self.reassembler.metrics();
-        self.metrics.reassembly_timeouts = metrics.expired_frames;
-        self.metrics.reassembly_capacity_rejections = metrics.capacity_rejections;
-        self.metrics.reassembled_frames = metrics.completed_frames;
+        self.metrics.reassembly_timeouts = self
+            .reassembly_prior
+            .expired_frames
+            .saturating_add(metrics.expired_frames);
+        self.metrics.reassembly_capacity_rejections = self
+            .reassembly_prior
+            .capacity_rejections
+            .saturating_add(metrics.capacity_rejections);
+        self.metrics.reassembled_frames = self
+            .reassembly_prior
+            .completed_frames
+            .saturating_add(metrics.completed_frames);
         self.metrics.reassembly_pending_frames =
             u64::try_from(metrics.in_flight_frames).unwrap_or(u64::MAX);
         self.metrics.reassembly_buffered_bytes =
@@ -765,6 +1178,8 @@ impl Drop for RealBackendBridge {
     }
 }
 
+// Link connection, acquisition and optional recovery are independent states.
+#[allow(clippy::struct_excessive_bools)]
 struct Controller {
     critical_events: Sender<BackendEvent>,
     critical_event_reclaim: Receiver<BackendEvent>,
@@ -802,6 +1217,14 @@ struct Controller {
     lvds_source: String,
     storage_status: ScientificStorageStatus,
     last_lvds_status: Instant,
+    raw_recording: Option<raw_storage::RawRecording>,
+    raw_export: Option<raw_storage::PcapRawTask>,
+    raw_status: crate::bridge::RawRecordingStatus,
+    recovery_enabled: bool,
+    recovery_status: crate::bridge::RecoveryStatus,
+    recovery_audit: Option<recovery_audit::RecoveryAudit>,
+    history: Option<history::HistorySession>,
+    history_generation: u64,
 }
 
 impl Controller {
@@ -851,6 +1274,14 @@ impl Controller {
             lvds_source: String::new(),
             storage_status: ScientificStorageStatus::default(),
             last_lvds_status: Instant::now(),
+            raw_recording: None,
+            raw_export: None,
+            raw_status: crate::bridge::RawRecordingStatus::default(),
+            recovery_enabled: false,
+            recovery_status: crate::bridge::RecoveryStatus::default(),
+            recovery_audit: None,
+            history: None,
+            history_generation: 0,
         }
     }
 
@@ -878,12 +1309,14 @@ impl Controller {
             self.drain_lvds();
             self.drain_udp_lvds();
             self.drain_replay();
+            self.poll_history();
             self.poll_reader_statuses();
             self.sample_reader_metrics();
             self.drain_command_acks();
             self.drain_storage();
             if self.last_lvds_status.elapsed() >= METRICS_INTERVAL {
                 self.publish_lvds_status();
+                self.publish_raw_status();
             }
             self.poll_csv_export();
             self.flush_critical_drop_summary();
@@ -891,6 +1324,11 @@ impl Controller {
         self.disconnect(LinkKind::Lvds);
         self.disconnect(LinkKind::Rs422);
         self.stop_acquisition();
+        self.stop_raw_recording();
+        self.history.take();
+        if let Some(audit) = self.recovery_audit.take() {
+            audit.stop();
+        }
     }
 
     fn handle_request(&mut self, request: UiRequest) {
@@ -920,6 +1358,41 @@ impl Controller {
                 }
                 self.publish_lvds_status();
             }
+            UiRequest::StartRawRecording { path } => self.start_raw_recording(&path),
+            UiRequest::StopRawRecording => self.stop_raw_recording(),
+            UiRequest::SetRecoveryEnabled { enabled } => self.set_recovery_enabled(enabled),
+            UiRequest::OpenHistory { path } => self.open_history(&path),
+            UiRequest::SetHistoryPlaying { playing } => {
+                self.history_command(history::HistoryCommand::Play(playing));
+            }
+            UiRequest::SeekHistory { fraction } => {
+                self.history_command(history::HistoryCommand::Seek(fraction));
+            }
+            UiRequest::LoadHistoryWindow {
+                start_seconds,
+                end_seconds,
+            } => self.history_command(history::HistoryCommand::Window(start_seconds, end_seconds)),
+            UiRequest::CloseHistory => {
+                self.history.take();
+                self.history_generation = self.history_generation.saturating_add(1);
+                self.emit_critical(BackendEvent::HistoryStatus(Box::new(
+                    crate::bridge::HistoryStatus {
+                        generation: self.history_generation,
+                        ..crate::bridge::HistoryStatus::default()
+                    },
+                )));
+            }
+            UiRequest::ExportHistoryCsv {
+                path,
+                include_recovered,
+                include_candidates,
+                range,
+            } => self.history_command(history::HistoryCommand::Export {
+                path,
+                recovered: include_recovered,
+                candidates: include_candidates,
+                range,
+            }),
             UiRequest::SetTelemetryPolling {
                 enabled,
                 interval_millis,
@@ -935,6 +1408,300 @@ impl Controller {
         }
     }
 
+    fn open_history(&mut self, path: &str) {
+        self.history.take();
+        self.history_generation = self.history_generation.saturating_add(1);
+        match history::HistorySession::start(
+            PathBuf::from(path),
+            self.history_generation,
+            self.recovery_enabled,
+        ) {
+            Ok(session) => self.history = Some(session),
+            Err(error) => self.fault("历史文件", error.to_string()),
+        }
+    }
+
+    fn history_command(&mut self, command: history::HistoryCommand) {
+        if let Some(session) = &self.history {
+            if let Err(error) = session.command(command) {
+                self.fault("历史文件", error);
+            }
+        } else {
+            self.fault("历史文件", "请先打开历史文件");
+        }
+    }
+
+    fn poll_history(&mut self) {
+        let events = self
+            .history
+            .as_ref()
+            .map(|session| session.events.try_iter().take(64).collect::<Vec<_>>())
+            .unwrap_or_default();
+        for event in events {
+            self.emit_critical(event);
+        }
+    }
+
+    fn start_audit(&mut self, path: &Path) -> bool {
+        if let Some(audit) = self.recovery_audit.take() {
+            audit.stop();
+        }
+        match recovery_audit::RecoveryAudit::start(path) {
+            Ok(audit) => {
+                self.recovery_audit = Some(audit);
+                self.recovery_status.audit_path = Some(path.to_string_lossy().into_owned());
+                true
+            }
+            Err(error) => {
+                self.recovery_status.error = Some(error.to_string());
+                self.fault("解析审计", error.to_string());
+                false
+            }
+        }
+    }
+
+    fn set_recovery_enabled(&mut self, enabled: bool) {
+        if enabled && self.recovery_audit.is_none() && !self.start_standalone_audit() {
+            return;
+        }
+        self.recovery_enabled = enabled;
+        self.recovery_status.enabled = enabled;
+        if let Some(receiver) = &mut self.lvds_udp {
+            receiver.ingress.recovery_enabled = enabled;
+            receiver.ingress.previous_anchor = None;
+        }
+        if let Some(replay) = &mut self.replay {
+            replay.ingress.recovery_enabled = enabled;
+            replay.ingress.previous_anchor = None;
+        }
+        if let Some(path) = self.history.as_ref().map(|session| session.path.clone()) {
+            self.open_history(&path.to_string_lossy());
+        }
+        self.emit_critical(BackendEvent::RecoveryStatus(Box::new(
+            self.recovery_status.clone(),
+        )));
+    }
+
+    fn start_standalone_audit(&mut self) -> bool {
+        let base = std::env::var_os("LOCALAPPDATA").map_or_else(std::env::temp_dir, PathBuf::from);
+        match recovery_audit::standalone_path(&base) {
+            Ok(path) => self.start_audit(&path),
+            Err(error) => {
+                self.recovery_status.error = Some(error.to_string());
+                self.fault("解析审计", error.to_string());
+                false
+            }
+        }
+    }
+
+    fn start_raw_recording(&mut self, path: &str) {
+        if self.raw_recording.is_some()
+            || self
+                .raw_export
+                .as_ref()
+                .is_some_and(|task| task.status().active)
+        {
+            self.fault("原始录制", "原始录制已经运行");
+            return;
+        }
+        self.raw_export.take();
+        let pcap_history = self
+            .history
+            .as_ref()
+            .filter(|session| {
+                session
+                    .path
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("pcapng"))
+            })
+            .map(|session| session.path.clone());
+        let pcap = pcap_history.or_else(|| {
+            self.replay
+                .as_ref()
+                .map(|replay| PathBuf::from(&replay.progress.path))
+        });
+        let origin = if pcap.is_some() {
+            langmuir_storage::RawOrigin::PcapReplay
+        } else {
+            langmuir_storage::RawOrigin::LiveUdp
+        };
+        let binding = match &self.lvds_udp {
+            Some(receiver) => receiver
+                .socket
+                .local_addr()
+                .unwrap_or_else(|_| "0.0.0.0:0".parse().expect("endpoint")),
+            None if pcap.is_some() => "0.0.0.0:0".parse().expect("endpoint"),
+            None => {
+                self.fault("原始录制", "请先监听 UDP 或打开 PCAP 历史文件");
+                return;
+            }
+        };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        let header = langmuir_storage::RawHeader {
+            origin,
+            created_at: now,
+            expected_source: DEPLOYED_LVDS_UDP_SOURCE.parse().expect("endpoint"),
+            binding,
+            session_id: now.as_nanos().to_le_bytes(),
+        };
+        let path = Path::new(path);
+        if let Some(parent) = path.parent()
+            && let Err(error) = fs::create_dir_all(parent)
+        {
+            self.fault("原始录制", error.to_string());
+            return;
+        }
+        let mut audit_path = path.as_os_str().to_owned();
+        audit_path.push(".audit.jsonl");
+        if pcap.is_none() && !self.start_audit(Path::new(&audit_path)) {
+            return;
+        }
+        if let Some(input) = pcap {
+            match raw_storage::PcapRawTask::start(&input, path, header, self.recovery_enabled) {
+                Ok(task) => {
+                    self.recovery_status.audit_path =
+                        Some(Path::new(&audit_path).to_string_lossy().into_owned());
+                    self.raw_export = Some(task);
+                    self.log(
+                        LogLevel::Info,
+                        "PCAP 来源：后台完整导出全部 UDP 原始字节，独立于回放位置",
+                    );
+                }
+                Err(error) => self.fault("原始录制", error.to_string()),
+            }
+        } else {
+            let context = serde_json::json!({"raw_archive":path.to_string_lossy(),"source_file":null,"raw_session_id":hex_bytes(&header.session_id)});
+            match raw_storage::RawRecording::start(path, header) {
+                Ok(recording) => {
+                    if let Some(receiver) = &mut self.lvds_udp {
+                        receiver.ingress.reassembler = UdpLvdsReassembler::default();
+                        receiver.ingress.dependencies.clear();
+                        receiver.ingress.previous_anchor = None;
+                        receiver.ingress.record_id = 0;
+                        receiver.ingress.audit_context = context;
+                        receiver.ingress.sync_reassembly_metrics();
+                    }
+                    self.raw_recording = Some(recording);
+                }
+                Err(error) => self.fault("原始录制", error.to_string()),
+            }
+        }
+        self.publish_raw_status();
+    }
+
+    fn stop_raw_recording(&mut self) {
+        if let Some(recording) = self.raw_recording.take() {
+            self.raw_status = recording.stop();
+        }
+        if let Some(task) = self.raw_export.take() {
+            self.raw_status = task.stop();
+        }
+        if let Some(audit) = self.recovery_audit.take() {
+            let state = audit.stop();
+            self.recovery_status.audit_dropped = state.dropped;
+            if state.error.is_some() {
+                self.recovery_status.error = state.error;
+            }
+        }
+        if let Some(receiver) = &mut self.lvds_udp {
+            receiver.ingress.previous_anchor = None;
+            receiver.ingress.audit_context["raw_archive"] = serde_json::Value::Null;
+        }
+        if self.recovery_enabled {
+            self.start_standalone_audit();
+        }
+        self.emit_critical(BackendEvent::RawCaptureStatus(Box::new(
+            self.raw_status.clone(),
+        )));
+    }
+
+    fn publish_raw_status(&mut self) {
+        if let Some(recording) = &self.raw_recording {
+            self.raw_status = recording.status();
+        }
+        if let Some(task) = &self.raw_export {
+            self.raw_status = task.status();
+        }
+        self.emit_critical(BackendEvent::RawCaptureStatus(Box::new(
+            self.raw_status.clone(),
+        )));
+        if let Some(audit) = &self.recovery_audit {
+            let state = audit.status();
+            self.recovery_status.audit_dropped = state.dropped;
+            if state.error.is_some() {
+                self.recovery_status.error = state.error;
+            }
+        }
+        if self.history.is_none() {
+            self.emit_critical(BackendEvent::RecoveryStatus(Box::new(
+                self.recovery_status.clone(),
+            )));
+        }
+    }
+
+    fn consume_observations(
+        &mut self,
+        observations: Vec<ScienceObservation>,
+        rows: Vec<serde_json::Value>,
+    ) {
+        if let Some(audit) = &mut self.recovery_audit {
+            for row in rows {
+                audit.record(row);
+            }
+        }
+        for observation in observations {
+            let result = observation.result;
+            match result.quality {
+                FrameQuality::Native => self.recovery_status.native += 1,
+                FrameQuality::Recovered1Bit | FrameQuality::Recovered4Bit => {
+                    self.recovery_status.recovered += 1;
+                }
+                FrameQuality::RecoveryCandidate => self.recovery_status.candidates += 1,
+                FrameQuality::Rejected => self.recovery_status.rejected += 1,
+            }
+            if result.quality == FrameQuality::Native {
+                if observation.delivered
+                    && let Some(frame) = result.frame
+                {
+                    self.handle_scientific_frame(frame);
+                }
+                continue;
+            }
+            if result.quality != FrameQuality::Native
+                && (observation.delivered || result.quality == FrameQuality::RecoveryCandidate)
+                && let Some(frame) = result.frame
+            {
+                self.emit_display(
+                    LinkKind::Lvds,
+                    BackendEvent::QualifiedScientificSamples(Box::new(
+                        crate::bridge::QualifiedSamples {
+                            quality: result.quality,
+                            raw_record_id: observation.record_id,
+                            outer_sequence: observation.outer_sequence,
+                            frame_seq_u8: frame.frame_seq_u8,
+                            start_seconds: frame.channel_1_base_seconds(),
+                            sample_interval_seconds: 0.0005,
+                            channel_1: frame
+                                .channel_1
+                                .iter()
+                                .map(|&code| f64::from(reconstruct_adc16(code)))
+                                .collect(),
+                            channel_2: frame
+                                .channel_2
+                                .iter()
+                                .map(|&code| f64::from(reconstruct_adc16(code)))
+                                .collect(),
+                            source: self.lvds_source.clone(),
+                            reason: result.reason,
+                        },
+                    )),
+                );
+            }
+        }
+    }
+
     fn start_pcap_replay(&mut self, path: &str, save: Option<ScientificSaveFormat>) {
         if self.acquisition_running {
             self.fault("PCAP", "请先停止正式保存，再切换数据来源");
@@ -944,7 +1711,8 @@ impl Controller {
             return;
         }
         match PcapReplay::start(path.to_owned()) {
-            Ok(replay) => {
+            Ok(mut replay) => {
+                replay.ingress.recovery_enabled = self.recovery_enabled;
                 // The reader may fill its bounded queue, but no frame can be
                 // delivered until every selected output has been created.
                 if let Some(format) = save
@@ -975,11 +1743,19 @@ impl Controller {
         let mut deliveries = Vec::new();
         let was_finished = self.replay.as_ref().is_none_or(|r| r.progress.finished);
         if let Some(replay) = &mut self.replay {
-            replay.drain_deliveries(Instant::now(), &mut deliveries);
+            replay.drain_recorded(Instant::now(), &mut deliveries, self.raw_recording.as_mut());
         }
-        for delivery in deliveries {
-            self.handle_scientific_frame(delivery);
-        }
+        let (observations, rows) = self
+            .replay
+            .as_mut()
+            .map(|replay| {
+                (
+                    replay.ingress.observations.drain(..).collect(),
+                    replay.ingress.audit_rows.drain(..).collect(),
+                )
+            })
+            .unwrap_or_default();
+        self.consume_observations(observations, rows);
         if !was_finished && self.replay.as_ref().is_some_and(|r| r.progress.finished) {
             let error = self.replay.as_ref().and_then(|r| r.progress.error.clone());
             if let Some(error) = error {
@@ -1146,7 +1922,7 @@ impl Controller {
                 return;
             }
         };
-        let receiver = match UdpLvdsReceiver::bind(socket_address, expected_source) {
+        let mut receiver = match UdpLvdsReceiver::bind(socket_address, expected_source) {
             Ok(receiver) => receiver,
             Err(error) => {
                 self.fault("LVDS / UDP", error.to_string());
@@ -1161,6 +1937,7 @@ impl Controller {
             }
         };
         self.lvds_source = source_identity(&format!("实时 UDP {endpoint} <- {expected_source}"));
+        receiver.ingress.recovery_enabled = self.recovery_enabled;
         self.lvds_udp = Some(receiver);
         self.lvds_connected = true;
         self.lvds_endpoint = format!("UDP {endpoint} <- {expected_source}");
@@ -1615,21 +2392,30 @@ impl Controller {
     }
 
     fn drain_udp_lvds(&mut self) {
-        let mut deliveries = Vec::new();
         let result = self.lvds_udp.as_mut().map(|receiver| {
-            receiver.drain(MAX_READER_EVENTS_PER_TICK, |delivery| {
-                deliveries.push(delivery);
-            })
+            receiver.drain_recorded(
+                MAX_READER_EVENTS_PER_TICK,
+                self.raw_recording.as_mut(),
+                |_| {},
+            )
         });
+        let (observations, rows) = self
+            .lvds_udp
+            .as_mut()
+            .map(|receiver| {
+                (
+                    receiver.ingress.observations.drain(..).collect(),
+                    receiver.ingress.audit_rows.drain(..).collect(),
+                )
+            })
+            .unwrap_or_default();
+        self.consume_observations(observations, rows);
         if let Some(Err(error)) = result {
             let message = error.to_string();
             if self.last_lvds_fault.as_ref() != Some(&message) {
                 self.last_lvds_fault = Some(message.clone());
                 self.fault("LVDS / UDP", message);
             }
-        }
-        for delivery in deliveries {
-            self.handle_scientific_frame(delivery);
         }
     }
 

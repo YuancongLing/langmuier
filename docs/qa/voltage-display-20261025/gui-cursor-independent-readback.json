@@ -1,0 +1,58 @@
+{
+  "status": "PASS",
+  "scope": "independent actual-PCAP sample lookup for native GUI screenshot text",
+  "screenshot": "docs/qa/LVDS_VOLTAGE_ACTUAL_PCAP_CURSOR.jpg",
+  "top_cursor_time_us": 366837146,
+  "nearest_sample": {
+    "time_us": 366836964,
+    "frame_index": 126,
+    "seq8": 168,
+    "sample_index": 74,
+    "code10": [
+      309,
+      310
+    ],
+    "adc16": [
+      -12992,
+      -12928
+    ],
+    "volts": [
+      -2.03,
+      -2.02
+    ],
+    "display": [
+      "-2.03 V",
+      "-2.02 V"
+    ]
+  },
+  "top_cursor_to_nearest_sample_delta_us": 182,
+  "tooltip_sample": {
+    "time_us": 366863465,
+    "frame_index": 127,
+    "seq8": 169,
+    "sample_index": 27,
+    "code10": [
+      229,
+      229
+    ],
+    "adc16": [
+      -18112,
+      -18112
+    ],
+    "volts": [
+      -2.83,
+      -2.83
+    ],
+    "display": [
+      "-2.83 V",
+      "-2.83 V"
+    ]
+  },
+  "tooltip_channel": 2,
+  "all_native_samples": 23700,
+  "reference": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\actual-pcap-reference-frames.jsonl",
+    "bytes": 2837628,
+    "sha256": "f6c22ae9eb8849b967ba26d85df85d22546f236875fc937a22d2591e137797b9"
+  }
+}

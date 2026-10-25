@@ -1,0 +1,11 @@
+﻿{
+    "command":  "cargo +stable-x86_64-pc-windows-msvc build --release -p langmuir-desktop --target x86_64-pc-windows-msvc --target-dir target --no-default-features --locked",
+    "rustflags":  "-C target-feature=+crt-static",
+    "mock_feature":  false,
+    "hdf5_feature":  false,
+    "started":  "2026-10-25T02:35:51.2829877+08:00",
+    "ended":  "2026-10-25T02:36:21.3983007+08:00",
+    "exit_code":  0,
+    "seconds":  30.117988999999998,
+    "log":  "D:\\RUST\\langmuier\\target\\qa\\raw-history-20261025\\build-windows-static-acceptance.log"
+}

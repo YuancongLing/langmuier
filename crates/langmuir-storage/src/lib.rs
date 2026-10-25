@@ -9,6 +9,7 @@ mod legacy;
 #[cfg(any(test, feature = "mock"))]
 mod memory;
 mod metrics;
+mod raw;
 mod scientific_csv;
 mod service;
 
@@ -31,6 +32,11 @@ pub use legacy::{
 #[cfg(any(test, feature = "mock"))]
 pub use memory::{MemorySink, MemorySinkSnapshot, memory_sink};
 pub use metrics::{StorageMetrics, StorageMetricsSnapshot};
+pub use raw::{
+    RAW_HEADER_LEN, RAW_MAGIC, RAW_MAX_PAYLOAD, RAW_VERSION, RawArchive, RawCaptureAccounting,
+    RawCaptureSnapshot, RawConfig, RawDestination, RawError, RawHeader, RawOrigin, RawReader,
+    RawRecord, RawRecordReceipt, RawSink,
+};
 pub use scientific_csv::{
     SCIENTIFIC_CSV_HEADER, ScientificCsvConfig, ScientificCsvError, ScientificCsvSink,
 };

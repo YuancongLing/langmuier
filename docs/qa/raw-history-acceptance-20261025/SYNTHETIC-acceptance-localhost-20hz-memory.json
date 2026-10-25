@@ -1,0 +1,91 @@
+﻿{
+    "label":  "SYNTHETIC",
+    "scope":  "Short localhost raw recording observation; no hardware or long soak claim",
+    "elapsed_seconds":  56.1317664,
+    "samples":  [
+                    {
+                        "elapsed_seconds":  0.0753982,
+                        "pid":  44564,
+                        "responding":  true,
+                        "working_set_bytes":  133435392,
+                        "private_memory_bytes":  157773824
+                    },
+                    {
+                        "elapsed_seconds":  5.190611,
+                        "pid":  44564,
+                        "responding":  true,
+                        "working_set_bytes":  133451776,
+                        "private_memory_bytes":  157773824
+                    },
+                    {
+                        "elapsed_seconds":  10.2939109,
+                        "pid":  44564,
+                        "responding":  true,
+                        "working_set_bytes":  133451776,
+                        "private_memory_bytes":  157773824
+                    },
+                    {
+                        "elapsed_seconds":  15.3760148,
+                        "pid":  44564,
+                        "responding":  true,
+                        "working_set_bytes":  133451776,
+                        "private_memory_bytes":  157773824
+                    },
+                    {
+                        "elapsed_seconds":  20.4815179,
+                        "pid":  44564,
+                        "responding":  true,
+                        "working_set_bytes":  133451776,
+                        "private_memory_bytes":  157773824
+                    },
+                    {
+                        "elapsed_seconds":  25.5898854,
+                        "pid":  44564,
+                        "responding":  true,
+                        "working_set_bytes":  133451776,
+                        "private_memory_bytes":  157773824
+                    },
+                    {
+                        "elapsed_seconds":  30.711306099999998,
+                        "pid":  44564,
+                        "responding":  true,
+                        "working_set_bytes":  133451776,
+                        "private_memory_bytes":  157773824
+                    },
+                    {
+                        "elapsed_seconds":  35.790849,
+                        "pid":  44564,
+                        "responding":  true,
+                        "working_set_bytes":  133451776,
+                        "private_memory_bytes":  157773824
+                    },
+                    {
+                        "elapsed_seconds":  40.8636772,
+                        "pid":  44564,
+                        "responding":  true,
+                        "working_set_bytes":  133500928,
+                        "private_memory_bytes":  157782016
+                    },
+                    {
+                        "elapsed_seconds":  45.933296399999996,
+                        "pid":  44564,
+                        "responding":  true,
+                        "working_set_bytes":  133500928,
+                        "private_memory_bytes":  157782016
+                    },
+                    {
+                        "elapsed_seconds":  51.0313127,
+                        "pid":  44564,
+                        "responding":  true,
+                        "working_set_bytes":  133644288,
+                        "private_memory_bytes":  157913088
+                    },
+                    {
+                        "elapsed_seconds":  56.119876299999994,
+                        "pid":  44564,
+                        "responding":  true,
+                        "working_set_bytes":  133648384,
+                        "private_memory_bytes":  157917184
+                    }
+                ]
+}

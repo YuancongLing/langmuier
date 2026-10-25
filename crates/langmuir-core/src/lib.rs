@@ -8,6 +8,7 @@ mod command;
 mod error;
 mod framing;
 mod lvds;
+mod lvds_recovery;
 mod model;
 mod rs422;
 mod udp_lvds;
@@ -27,6 +28,11 @@ pub use lvds::{
     LVDS_SENDER_ADDRESS, SAMPLE_COUNT, SAMPLE_INTERVAL_MICROS, ScientificFrame,
     ScientificFrameDiagnosis, Timestamp, UnverifiedScientificFrame, decode_scientific_frame,
     diagnose_scientific_frame, reconstruct_adc16, unpack_4x10, validate_scientific_frame_crc16,
+};
+pub use lvds_recovery::{
+    FrameQuality, LvdsBitAlignmentRecoverer, MAX_RECOVERY_PAYLOAD_BYTES, RecoveryAnchor,
+    RecoveryContext, RecoveryResult, RecoveryValidation, ReferenceCrc, ReferenceCrcStatus,
+    sha256_hex,
 };
 pub use model::{
     AcquisitionState, CommandCounters, CoreMetrics, DeviceState, LinkState, ScientificFrameSummary,

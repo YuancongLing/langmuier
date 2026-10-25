@@ -1,0 +1,64 @@
+{
+  "files": [
+    {
+      "path": "D:\\RUST\\langmuier\\apps\\desktop\\src\\buffer.rs",
+      "bytes": 30890,
+      "sha256": "25b4ea5ece81342a54f042f32125d8f468b2b561b7da9678b80701943a2075d2"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\apps\\desktop\\src\\backend.rs",
+      "bytes": 169447,
+      "sha256": "3dc716e8428eee9c0fb99c12871101434d39a2803c1e6dfe2241c5045185f304"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\apps\\desktop\\src\\backend_history.rs",
+      "bytes": 59239,
+      "sha256": "48cb518a82f4687697aa92c6a3964b2a47a413a2cf94e97f8ff6cdb26772d322"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\apps\\desktop\\src\\bridge.rs",
+      "bytes": 15778,
+      "sha256": "f7023e5601c919802d877f37af625ea65ec5f4e382583ebe5410ee1c948256be"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\lvds.rs",
+      "bytes": 15352,
+      "sha256": "4f03b954e55a4aca31eaf56eb270a9014726bec940e4e815a5908d50537561b2"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\crates\\langmuir-storage\\src\\binary_v3.rs",
+      "bytes": 19438,
+      "sha256": "83fff5cefb8a837e3b1e14d9376dfe1db342086a3f846e7b79b7673ae0d1c9c2"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\crates\\langmuir-storage\\src\\scientific_csv.rs",
+      "bytes": 22489,
+      "sha256": "da0fd2a73ea5d70193c7bb3a9536d496b7032b3ad6488f6e5aae52e01d8a3e61"
+    },
+    {
+      "path": "D:\\RUST\\2026102401.pcapng",
+      "bytes": 172292,
+      "sha256": "1bfe2ff956ad4e372bb15c2da04910c3d6a469b85d772ccbf83e4da4e48cca07"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\lvds.txt",
+      "bytes": 10780,
+      "sha256": "b5a2eee986fbe4f26da33da67bfeab17b8f9185f72ed0c6f81f232f3c2f15add"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-023840.901.lpd",
+      "bytes": 96973,
+      "sha256": "befe6135c42c27f20bb492d5bb60e2ecf6f86a8bb965f19bbe3a4c6636714d10"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-023840.901.csv",
+      "bytes": 1636896,
+      "sha256": "33ea097d21848a631618bb29b02b2de5685184ea47d818135234ad0da20ff97e"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\data\\raw-20261025-024836-232.lvdsraw",
+      "bytes": 183750,
+      "sha256": "57abd6087247ed4307f087ec7d4eb10f0a6b17c54131ecae54ee3cc910f0b73b"
+    }
+  ]
+}

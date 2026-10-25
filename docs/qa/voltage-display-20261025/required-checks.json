@@ -1,0 +1,30 @@
+﻿[
+    {
+        "command":  "cargo fmt --all -- --check",
+        "started":  "2026-10-25T12:13:03.9192018+08:00",
+        "ended":  "2026-10-25T12:13:05.6045174+08:00",
+        "exit_code":  0,
+        "log":  "target\\qa\\voltage-20261025\\fmt.log"
+    },
+    {
+        "command":  "cargo check --workspace --locked",
+        "started":  "2026-10-25T12:13:05.6921293+08:00",
+        "ended":  "2026-10-25T12:13:07.5952225+08:00",
+        "exit_code":  0,
+        "log":  "target\\qa\\voltage-20261025\\check.log"
+    },
+    {
+        "command":  "cargo test --workspace --features langmuir-desktop/mock --locked",
+        "started":  "2026-10-25T12:13:07.6072672+08:00",
+        "ended":  "2026-10-25T12:13:49.5438596+08:00",
+        "exit_code":  0,
+        "log":  "target\\qa\\voltage-20261025\\test.log"
+    },
+    {
+        "command":  "cargo clippy --workspace --all-targets --locked -- -D warnings",
+        "started":  "2026-10-25T12:13:49.5480368+08:00",
+        "ended":  "2026-10-25T12:13:55.9835683+08:00",
+        "exit_code":  0,
+        "log":  "target\\qa\\voltage-20261025\\clippy.log"
+    }
+]

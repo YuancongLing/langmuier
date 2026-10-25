@@ -1,0 +1,130 @@
+{
+  "scope": "Exact durable copies of local final acceptance evidence. Full per-UDP JSONL, synthetic sender manifest and archives remain at paths documented by each report. No new scientific data is generated here.",
+  "files": [
+    {
+      "name": "2026102401-final-summary.json",
+      "bytes": 1148,
+      "sha256": "4d1f42072a1f106b1c2ec5b1250caf8eee461b702b136ddd7c4765180559d455"
+    },
+    {
+      "name": "acceptance-check-results.json",
+      "bytes": 1469,
+      "sha256": "0048aaaa46794b53f3f8d4da2c5d3f81aa33f723ee27234c0ff5487be574ca0a"
+    },
+    {
+      "name": "acceptance-source-manifest.json",
+      "bytes": 19761,
+      "sha256": "9bdbe4b875a56d59f140a4dd9ff1734e9be45d0b7c9ede0683faa2b8b010178b"
+    },
+    {
+      "name": "final-source-log-audit.json",
+      "bytes": 229,
+      "sha256": "ffc97493a666675b0437d5121eccc30310888e42a52d467887de6ca669c7502b"
+    },
+    {
+      "name": "build-windows-static-acceptance.json",
+      "bytes": 566,
+      "sha256": "be972890c8b40ac75c8ef4bb14cd6ee6814637738d41dc0b2582ee74b2c7eda1"
+    },
+    {
+      "name": "windows-package-acceptance-verification.json",
+      "bytes": 2119,
+      "sha256": "2028e259d7b31d3761b339c9f417cbc1a9521aa94224a8b35596b13bcc86239e"
+    },
+    {
+      "name": "gui-acceptance-process.json",
+      "bytes": 275,
+      "sha256": "0291376f32c1510fc7e4d32918ad15638cab806f97d80126efe6e807d77be03f"
+    },
+    {
+      "name": "gui-acceptance-lpd-csv-readback.json",
+      "bytes": 2685,
+      "sha256": "2c3b635b670134bd8c5a30a3c09d78b328fe7f11815849b1d7b263550d6e8ef8"
+    },
+    {
+      "name": "gui-acceptance-quality-readback.json",
+      "bytes": 3022,
+      "sha256": "fde574a8b2f2137bbb01af0f2c928d7e3779a988651e1cb92d33b4eccb134c6e"
+    },
+    {
+      "name": "gui-acceptance-raw-summary.json",
+      "bytes": 2301,
+      "sha256": "d12a7ebdda6d116f761a9f1040c7eb83f9707afd7a1cbc7d25c113904899b82b"
+    },
+    {
+      "name": "lvds-txt-current-native-regression.json",
+      "bytes": 1431,
+      "sha256": "f4f9fa0ac4478fd0ab4b2d934778bc41877868a965bc0122dc59df3fd1f399a0"
+    },
+    {
+      "name": "reference-test-evidence-18.json",
+      "bytes": 2346,
+      "sha256": "d0319e4f2f5b6887c362e247409b1124a56e0628921e9fed71fa925e19c372eb"
+    },
+    {
+      "name": "SYNTHETIC-acceptance-localhost-20hz-memory.json",
+      "bytes": 3919,
+      "sha256": "141252438e8a03061e854e1abb691d81cd6215cde588503c4f4493d3795a09d7"
+    },
+    {
+      "name": "SYNTHETIC-acceptance-localhost-20hz-raw-readback.json",
+      "bytes": 2474,
+      "sha256": "acd3b319f96e311430652ce38b8adf7415968571c5392b143a62c5e6561d0324"
+    },
+    {
+      "name": "fmt-acceptance.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "check-acceptance.log",
+      "bytes": 984,
+      "sha256": "35e1f5429e44721682aa2a194a9dc1fda08db9be3f082ab2a3f695fa207a8e5a"
+    },
+    {
+      "name": "test-workspace-acceptance.log",
+      "bytes": 72066,
+      "sha256": "fe8fb961a935fbf4c30a70a9abff6851b21e36d20b309f1290469029bf53e4ec"
+    },
+    {
+      "name": "build-release-acceptance.log",
+      "bytes": 966,
+      "sha256": "5ebed773ee51d4dfa9c8f3962e231c012e3f128624c86ce35ac07106f70147e1"
+    },
+    {
+      "name": "clippy-workspace-acceptance.log",
+      "bytes": 1636,
+      "sha256": "a06c3b560abc8eca46682fc46b610f7186a87a410787c49ec65301ea90956e9b"
+    },
+    {
+      "name": "build-windows-static-acceptance.log",
+      "bytes": 1102,
+      "sha256": "3ee667f2e2cf61e007fd8ff0ba2542b9cf7a97185e5f231e1420de13691aebfc"
+    },
+    {
+      "name": "real-capture-rust-acceptance.log",
+      "bytes": 2670,
+      "sha256": "e8ec9683507c041c38281b6e03b18be2cd00313bf792c4beec944367af7818c8"
+    },
+    {
+      "name": "actual_gui_science_verify.py",
+      "bytes": 13804,
+      "sha256": "b12d95c2c157dca6abdac68231ce958e3a2e111281f775372f35045edf20de6b"
+    },
+    {
+      "name": "synthetic_localhost_20hz.py",
+      "bytes": 14884,
+      "sha256": "6e9cb3a22732593527ef200e59ad57f432a958fafa6a501e05ecc42d14432730"
+    },
+    {
+      "name": "measure-acceptance-memory.ps1",
+      "bytes": 1216,
+      "sha256": "b32d233804c909972e2b4e263446cd80fdba4c4e33d8a7810be39ea3b2aabc55"
+    },
+    {
+      "name": "verify_windows_acceptance_package.py",
+      "bytes": 3595,
+      "sha256": "5d5984726a0ee0fd98cf2d92ba4858c782f229998cf8282d12404182899dfa7c"
+    }
+  ]
+}

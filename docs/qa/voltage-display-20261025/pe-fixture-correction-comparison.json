@@ -1,0 +1,365 @@
+{
+  "result": "PASS",
+  "scope": "independent full PE byte and section comparison only; not a native GUI test",
+  "old": {
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\voltage-before-fixture-correction-20261025\\LangmuierProbeGroundControl.exe",
+    "bytes": 10176512,
+    "sha256": "71ec198e7e42ae41599e3168b1e5215a22f12ce5e8acb48fe268bbce4d11a97c",
+    "machine": "0x8664",
+    "coff_timestamp": 1792900074,
+    "sections": [
+      {
+        "name": ".text",
+        "virtual_size": 6715200,
+        "virtual_address": 4096,
+        "raw_size": 6715392,
+        "raw_offset": 1024,
+        "characteristics": 1610612768,
+        "sha256": "b1df693cd97feda5ef09b0a2be4cea1d047071cef595e62c390b30b9715a8bd9"
+      },
+      {
+        "name": ".rdata",
+        "virtual_size": 3207864,
+        "virtual_address": 6721536,
+        "raw_size": 3208192,
+        "raw_offset": 6716416,
+        "characteristics": 1073741888,
+        "sha256": "85c72c4f9c885b11a4e62fb43090b8e8d7e92b1d80205c676f8f71a22ef71468"
+      },
+      {
+        "name": ".data",
+        "virtual_size": 19912,
+        "virtual_address": 9932800,
+        "raw_size": 8192,
+        "raw_offset": 9924608,
+        "characteristics": 3221225536,
+        "sha256": "2d2d87fb684fa4a54f7d60e00adb6ee3d8b1725a5766fca8235a1bcfa17c44bb"
+      },
+      {
+        "name": ".pdata",
+        "virtual_size": 217944,
+        "virtual_address": 9953280,
+        "raw_size": 218112,
+        "raw_offset": 9932800,
+        "characteristics": 1073741888,
+        "sha256": "cac546bee4473853a565f7052694294829ab7645f177c53e69274f11593b33ad"
+      },
+      {
+        "name": ".fptable",
+        "virtual_size": 256,
+        "virtual_address": 10174464,
+        "raw_size": 512,
+        "raw_offset": 10150912,
+        "characteristics": 3221225536,
+        "sha256": "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560"
+      },
+      {
+        "name": ".reloc",
+        "virtual_size": 24996,
+        "virtual_address": 10178560,
+        "raw_size": 25088,
+        "raw_offset": 10151424,
+        "characteristics": 1107296320,
+        "sha256": "b2a6e40007a2119737752b4396fb9e9a031977d9cb6ff33f4aeff94bc4b77e46"
+      }
+    ],
+    "debug_entries": [
+      {
+        "offset": 9150912,
+        "type": 2,
+        "size": 38,
+        "payload_offset": 9151968,
+        "timestamp": 1792900074,
+        "major": 0,
+        "minor": 0,
+        "format": "RSDS",
+        "guid_hex": "dd215c9c56791e438da7c79aae3f12c7",
+        "age": 1,
+        "pdb_path": "langmuier.pdb"
+      },
+      {
+        "offset": 9150940,
+        "type": 12,
+        "size": 20,
+        "payload_offset": 9152008,
+        "timestamp": 1792900074,
+        "major": 0,
+        "minor": 0
+      },
+      {
+        "offset": 9150968,
+        "type": 13,
+        "size": 972,
+        "payload_offset": 9152028,
+        "timestamp": 1792900074,
+        "major": 0,
+        "minor": 0
+      }
+    ],
+    "identified_metadata_ranges": [
+      {
+        "name": "COFF.TimeDateStamp",
+        "start": 248,
+        "bytes": 4
+      },
+      {
+        "name": "DEBUG_DIRECTORY.type2.TimeDateStamp",
+        "start": 9150916,
+        "bytes": 4
+      },
+      {
+        "name": "CodeView.RSDS.GUID",
+        "start": 9151972,
+        "bytes": 16
+      },
+      {
+        "name": "DEBUG_DIRECTORY.type12.TimeDateStamp",
+        "start": 9150944,
+        "bytes": 4
+      },
+      {
+        "name": "DEBUG_DIRECTORY.type13.TimeDateStamp",
+        "start": 9150972,
+        "bytes": 4
+      }
+    ]
+  },
+  "new": {
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\windows-x64\\LangmuierProbeGroundControl.exe",
+    "bytes": 10176512,
+    "sha256": "f2805c059a699b02164d00da77f9b335a371954474481180fe35e3426cc9269a",
+    "machine": "0x8664",
+    "coff_timestamp": 1792901693,
+    "sections": [
+      {
+        "name": ".text",
+        "virtual_size": 6715200,
+        "virtual_address": 4096,
+        "raw_size": 6715392,
+        "raw_offset": 1024,
+        "characteristics": 1610612768,
+        "sha256": "b1df693cd97feda5ef09b0a2be4cea1d047071cef595e62c390b30b9715a8bd9"
+      },
+      {
+        "name": ".rdata",
+        "virtual_size": 3207864,
+        "virtual_address": 6721536,
+        "raw_size": 3208192,
+        "raw_offset": 6716416,
+        "characteristics": 1073741888,
+        "sha256": "bb96171e2c58ac4474a1dce699687d5a8e49ea6dd5fa6a656cb275a574479477"
+      },
+      {
+        "name": ".data",
+        "virtual_size": 19912,
+        "virtual_address": 9932800,
+        "raw_size": 8192,
+        "raw_offset": 9924608,
+        "characteristics": 3221225536,
+        "sha256": "2d2d87fb684fa4a54f7d60e00adb6ee3d8b1725a5766fca8235a1bcfa17c44bb"
+      },
+      {
+        "name": ".pdata",
+        "virtual_size": 217944,
+        "virtual_address": 9953280,
+        "raw_size": 218112,
+        "raw_offset": 9932800,
+        "characteristics": 1073741888,
+        "sha256": "cac546bee4473853a565f7052694294829ab7645f177c53e69274f11593b33ad"
+      },
+      {
+        "name": ".fptable",
+        "virtual_size": 256,
+        "virtual_address": 10174464,
+        "raw_size": 512,
+        "raw_offset": 10150912,
+        "characteristics": 3221225536,
+        "sha256": "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560"
+      },
+      {
+        "name": ".reloc",
+        "virtual_size": 24996,
+        "virtual_address": 10178560,
+        "raw_size": 25088,
+        "raw_offset": 10151424,
+        "characteristics": 1107296320,
+        "sha256": "b2a6e40007a2119737752b4396fb9e9a031977d9cb6ff33f4aeff94bc4b77e46"
+      }
+    ],
+    "debug_entries": [
+      {
+        "offset": 9150912,
+        "type": 2,
+        "size": 38,
+        "payload_offset": 9151968,
+        "timestamp": 1792901693,
+        "major": 0,
+        "minor": 0,
+        "format": "RSDS",
+        "guid_hex": "9fbc89ec9a8205478a5a18d2f58dcf80",
+        "age": 1,
+        "pdb_path": "langmuier.pdb"
+      },
+      {
+        "offset": 9150940,
+        "type": 12,
+        "size": 20,
+        "payload_offset": 9152008,
+        "timestamp": 1792901693,
+        "major": 0,
+        "minor": 0
+      },
+      {
+        "offset": 9150968,
+        "type": 13,
+        "size": 972,
+        "payload_offset": 9152028,
+        "timestamp": 1792901693,
+        "major": 0,
+        "minor": 0
+      }
+    ],
+    "identified_metadata_ranges": [
+      {
+        "name": "COFF.TimeDateStamp",
+        "start": 248,
+        "bytes": 4
+      },
+      {
+        "name": "DEBUG_DIRECTORY.type2.TimeDateStamp",
+        "start": 9150916,
+        "bytes": 4
+      },
+      {
+        "name": "CodeView.RSDS.GUID",
+        "start": 9151972,
+        "bytes": 16
+      },
+      {
+        "name": "DEBUG_DIRECTORY.type12.TimeDateStamp",
+        "start": 9150944,
+        "bytes": 4
+      },
+      {
+        "name": "DEBUG_DIRECTORY.type13.TimeDateStamp",
+        "start": 9150972,
+        "bytes": 4
+      }
+    ]
+  },
+  "same_file_length": true,
+  "identical_section_layout": true,
+  "different_byte_count": 24,
+  "difference_runs": [
+    {
+      "start": 248,
+      "end_exclusive": 250,
+      "bytes": 2,
+      "old_hex": "ea7b",
+      "new_hex": "3d82",
+      "metadata_ranges_covering_entire_difference": [
+        "COFF.TimeDateStamp"
+      ]
+    },
+    {
+      "start": 9150916,
+      "end_exclusive": 9150918,
+      "bytes": 2,
+      "old_hex": "ea7b",
+      "new_hex": "3d82",
+      "metadata_ranges_covering_entire_difference": [
+        "DEBUG_DIRECTORY.type2.TimeDateStamp"
+      ]
+    },
+    {
+      "start": 9150944,
+      "end_exclusive": 9150946,
+      "bytes": 2,
+      "old_hex": "ea7b",
+      "new_hex": "3d82",
+      "metadata_ranges_covering_entire_difference": [
+        "DEBUG_DIRECTORY.type12.TimeDateStamp"
+      ]
+    },
+    {
+      "start": 9150972,
+      "end_exclusive": 9150974,
+      "bytes": 2,
+      "old_hex": "ea7b",
+      "new_hex": "3d82",
+      "metadata_ranges_covering_entire_difference": [
+        "DEBUG_DIRECTORY.type13.TimeDateStamp"
+      ]
+    },
+    {
+      "start": 9151972,
+      "end_exclusive": 9151988,
+      "bytes": 16,
+      "old_hex": "dd215c9c56791e438da7c79aae3f12c7",
+      "new_hex": "9fbc89ec9a8205478a5a18d2f58dcf80",
+      "metadata_ranges_covering_entire_difference": [
+        "CodeView.RSDS.GUID"
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "name": ".text",
+      "raw_bytes": 6715392,
+      "old_sha256": "b1df693cd97feda5ef09b0a2be4cea1d047071cef595e62c390b30b9715a8bd9",
+      "new_sha256": "b1df693cd97feda5ef09b0a2be4cea1d047071cef595e62c390b30b9715a8bd9",
+      "identical": true,
+      "different_byte_count": 0,
+      "executable": true
+    },
+    {
+      "name": ".rdata",
+      "raw_bytes": 3208192,
+      "old_sha256": "85c72c4f9c885b11a4e62fb43090b8e8d7e92b1d80205c676f8f71a22ef71468",
+      "new_sha256": "bb96171e2c58ac4474a1dce699687d5a8e49ea6dd5fa6a656cb275a574479477",
+      "identical": false,
+      "different_byte_count": 22,
+      "executable": false
+    },
+    {
+      "name": ".data",
+      "raw_bytes": 8192,
+      "old_sha256": "2d2d87fb684fa4a54f7d60e00adb6ee3d8b1725a5766fca8235a1bcfa17c44bb",
+      "new_sha256": "2d2d87fb684fa4a54f7d60e00adb6ee3d8b1725a5766fca8235a1bcfa17c44bb",
+      "identical": true,
+      "different_byte_count": 0,
+      "executable": false
+    },
+    {
+      "name": ".pdata",
+      "raw_bytes": 218112,
+      "old_sha256": "cac546bee4473853a565f7052694294829ab7645f177c53e69274f11593b33ad",
+      "new_sha256": "cac546bee4473853a565f7052694294829ab7645f177c53e69274f11593b33ad",
+      "identical": true,
+      "different_byte_count": 0,
+      "executable": false
+    },
+    {
+      "name": ".fptable",
+      "raw_bytes": 512,
+      "old_sha256": "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560",
+      "new_sha256": "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560",
+      "identical": true,
+      "different_byte_count": 0,
+      "executable": false
+    },
+    {
+      "name": ".reloc",
+      "raw_bytes": 25088,
+      "old_sha256": "b2a6e40007a2119737752b4396fb9e9a031977d9cb6ff33f4aeff94bc4b77e46",
+      "new_sha256": "b2a6e40007a2119737752b4396fb9e9a031977d9cb6ff33f4aeff94bc4b77e46",
+      "identical": true,
+      "different_byte_count": 0,
+      "executable": false
+    }
+  ],
+  "all_executable_sections_identical": true,
+  "all_differences_fall_within_identified_pe_build_metadata": true,
+  "unexplained_difference_runs": [],
+  "gui_evidence_note": "Different whole-file hashes identify different builds; report old and final GUI artifacts with their own build hash."
+}

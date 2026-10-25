@@ -1,0 +1,693 @@
+{
+  "status": "PASS",
+  "scope": "independent actual input readback and numeric formula; not production Rust or GUI acceptance",
+  "scientific_inputs_generated": false,
+  "source_mutated": false,
+  "voltage_formula": "adc16 * 0.00015625; equivalent to code10 * 0.01 - 5.12",
+  "numeric_literal_cases": [
+    {
+      "code10": 0,
+      "adc16": -32768,
+      "voltage_v": -5.12,
+      "display": "-5.12 V"
+    },
+    {
+      "code10": 256,
+      "adc16": -16384,
+      "voltage_v": -2.56,
+      "display": "-2.56 V"
+    },
+    {
+      "code10": 512,
+      "adc16": 0,
+      "voltage_v": 0.0,
+      "display": "0.00 V"
+    },
+    {
+      "code10": 701,
+      "adc16": 12096,
+      "voltage_v": 1.89,
+      "display": "1.89 V"
+    },
+    {
+      "code10": 702,
+      "adc16": 12160,
+      "voltage_v": 1.9,
+      "display": "1.90 V"
+    },
+    {
+      "code10": 825,
+      "adc16": 20032,
+      "voltage_v": 3.13,
+      "display": "3.13 V"
+    },
+    {
+      "code10": 1023,
+      "adc16": 32704,
+      "voltage_v": 5.11,
+      "display": "5.11 V"
+    }
+  ],
+  "all_1024_formula_equivalence": "PASS",
+  "actual_pcap": {
+    "source": {
+      "path": "D:\\RUST\\2026102401.pcapng",
+      "bytes": 172292,
+      "sha256": "1bfe2ff956ad4e372bb15c2da04910c3d6a469b85d772ccbf83e4da4e48cca07"
+    },
+    "packets": {
+      "packets": 467,
+      "udp_records": 467,
+      "packet_diagnostics": [],
+      "clean_pcap_eof": true
+    },
+    "audit": {
+      "udp_records": 467,
+      "quality_counts": {
+        "NATIVE": 237,
+        "REJECTED": 1,
+        "RECOVERY_CANDIDATE": 229
+      },
+      "confirmed_recovered": 0,
+      "source_counts": {
+        "192.168.1.128:1534": 467
+      },
+      "inner_length_counts": {
+        "269": 466,
+        "268": 1
+      },
+      "outer_sequence_first": 3584,
+      "outer_sequence_last": 4050,
+      "outer_sequence_step_counts": {
+        "1": 466
+      },
+      "candidate_shift_counts": {
+        "0": 1,
+        "4": 228,
+        "1": 1
+      },
+      "candidate_missing_tail_bit_counts": {
+        "8": 1,
+        "4": 228,
+        "1": 1
+      },
+      "complete_same_record_candidates": 0,
+      "reference_crc_status_counts": {
+        "MATCH": 237,
+        "NOT_EVALUATED": 230
+      },
+      "partial_crc_prefix_match_counts": {
+        "False": 1,
+        "True": 229
+      },
+      "cross_record_bits_used": false,
+      "scope": "Independent offline evidence; no scientific admission or hardware fault claim"
+    },
+    "native_voltage": {
+      "frames": 237,
+      "samples_per_channel": 23700,
+      "first_frame": {
+        "channel_1_code10": [
+          {
+            "code10": 231,
+            "adc16": -17984,
+            "voltage_v": -2.81,
+            "display": "-2.81 V"
+          },
+          {
+            "code10": 230,
+            "adc16": -18048,
+            "voltage_v": -2.82,
+            "display": "-2.82 V"
+          },
+          {
+            "code10": 228,
+            "adc16": -18176,
+            "voltage_v": -2.84,
+            "display": "-2.84 V"
+          },
+          {
+            "code10": 227,
+            "adc16": -18240,
+            "voltage_v": -2.85,
+            "display": "-2.85 V"
+          },
+          {
+            "code10": 225,
+            "adc16": -18368,
+            "voltage_v": -2.87,
+            "display": "-2.87 V"
+          },
+          {
+            "code10": 224,
+            "adc16": -18432,
+            "voltage_v": -2.88,
+            "display": "-2.88 V"
+          },
+          {
+            "code10": 222,
+            "adc16": -18560,
+            "voltage_v": -2.9,
+            "display": "-2.90 V"
+          },
+          {
+            "code10": 221,
+            "adc16": -18624,
+            "voltage_v": -2.91,
+            "display": "-2.91 V"
+          },
+          {
+            "code10": 219,
+            "adc16": -18752,
+            "voltage_v": -2.93,
+            "display": "-2.93 V"
+          },
+          {
+            "code10": 218,
+            "adc16": -18816,
+            "voltage_v": -2.94,
+            "display": "-2.94 V"
+          },
+          {
+            "code10": 216,
+            "adc16": -18944,
+            "voltage_v": -2.96,
+            "display": "-2.96 V"
+          },
+          {
+            "code10": 214,
+            "adc16": -19072,
+            "voltage_v": -2.98,
+            "display": "-2.98 V"
+          }
+        ],
+        "channel_2_code10": [
+          {
+            "code10": 231,
+            "adc16": -17984,
+            "voltage_v": -2.81,
+            "display": "-2.81 V"
+          },
+          {
+            "code10": 230,
+            "adc16": -18048,
+            "voltage_v": -2.82,
+            "display": "-2.82 V"
+          },
+          {
+            "code10": 228,
+            "adc16": -18176,
+            "voltage_v": -2.84,
+            "display": "-2.84 V"
+          },
+          {
+            "code10": 226,
+            "adc16": -18304,
+            "voltage_v": -2.86,
+            "display": "-2.86 V"
+          },
+          {
+            "code10": 225,
+            "adc16": -18368,
+            "voltage_v": -2.87,
+            "display": "-2.87 V"
+          },
+          {
+            "code10": 223,
+            "adc16": -18496,
+            "voltage_v": -2.89,
+            "display": "-2.89 V"
+          },
+          {
+            "code10": 222,
+            "adc16": -18560,
+            "voltage_v": -2.9,
+            "display": "-2.90 V"
+          },
+          {
+            "code10": 220,
+            "adc16": -18688,
+            "voltage_v": -2.92,
+            "display": "-2.92 V"
+          },
+          {
+            "code10": 219,
+            "adc16": -18752,
+            "voltage_v": -2.93,
+            "display": "-2.93 V"
+          },
+          {
+            "code10": 217,
+            "adc16": -18880,
+            "voltage_v": -2.95,
+            "display": "-2.95 V"
+          },
+          {
+            "code10": 216,
+            "adc16": -18944,
+            "voltage_v": -2.96,
+            "display": "-2.96 V"
+          },
+          {
+            "code10": 214,
+            "adc16": -19072,
+            "voltage_v": -2.98,
+            "display": "-2.98 V"
+          }
+        ]
+      },
+      "channels": {
+        "1": {
+          "minimum": {
+            "code10": 168,
+            "adc16": -22016,
+            "voltage_v": -3.44,
+            "display": "-3.44 V"
+          },
+          "maximum": {
+            "code10": 319,
+            "adc16": -12352,
+            "voltage_v": -1.93,
+            "display": "-1.93 V"
+          },
+          "sign_counts": {
+            "negative": 23700,
+            "zero": 0,
+            "positive": 0
+          },
+          "first_sign_examples": {
+            "negative": {
+              "frame_index": 0,
+              "frame_seconds": 348,
+              "frame_microseconds": 999964,
+              "frame_seq_u8": 68,
+              "sample_index": 0,
+              "sample_time_us": 348999964,
+              "code10": 231,
+              "adc16": -17984,
+              "voltage_v": -2.81,
+              "display": "-2.81 V"
+            }
+          },
+          "unique_code_count": 152,
+          "all_samples_on_0_01v_grid": true
+        },
+        "2": {
+          "minimum": {
+            "code10": 167,
+            "adc16": -22080,
+            "voltage_v": -3.45,
+            "display": "-3.45 V"
+          },
+          "maximum": {
+            "code10": 321,
+            "adc16": -12224,
+            "voltage_v": -1.91,
+            "display": "-1.91 V"
+          },
+          "sign_counts": {
+            "negative": 23700,
+            "zero": 0,
+            "positive": 0
+          },
+          "first_sign_examples": {
+            "negative": {
+              "frame_index": 0,
+              "frame_seconds": 348,
+              "frame_microseconds": 999964,
+              "frame_seq_u8": 68,
+              "sample_index": 0,
+              "sample_time_us": 348999964,
+              "code10": 231,
+              "adc16": -17984,
+              "voltage_v": -2.81,
+              "display": "-2.81 V"
+            }
+          },
+          "unique_code_count": 155,
+          "all_samples_on_0_01v_grid": true
+        }
+      }
+    }
+  },
+  "supplied_txt": {
+    "source": {
+      "path": "D:\\RUST\\langmuier\\lvds.txt",
+      "bytes": 10780,
+      "sha256": "b5a2eee986fbe4f26da33da67bfeab17b8f9185f72ed0c6f81f232f3c2f15add"
+    },
+    "baseline_assertion": "PASS",
+    "voltage": {
+      "frames": 20,
+      "samples_per_channel": 2000,
+      "first_frame": {
+        "channel_1_code10": [
+          {
+            "code10": 886,
+            "adc16": 23936,
+            "voltage_v": 3.74,
+            "display": "3.74 V"
+          },
+          {
+            "code10": 805,
+            "adc16": 18752,
+            "voltage_v": 2.93,
+            "display": "2.93 V"
+          },
+          {
+            "code10": 723,
+            "adc16": 13504,
+            "voltage_v": 2.11,
+            "display": "2.11 V"
+          },
+          {
+            "code10": 642,
+            "adc16": 8320,
+            "voltage_v": 1.3,
+            "display": "1.30 V"
+          },
+          {
+            "code10": 561,
+            "adc16": 3136,
+            "voltage_v": 0.49,
+            "display": "0.49 V"
+          },
+          {
+            "code10": 480,
+            "adc16": -2048,
+            "voltage_v": -0.32,
+            "display": "-0.32 V"
+          },
+          {
+            "code10": 398,
+            "adc16": -7296,
+            "voltage_v": -1.14,
+            "display": "-1.14 V"
+          },
+          {
+            "code10": 317,
+            "adc16": -12480,
+            "voltage_v": -1.95,
+            "display": "-1.95 V"
+          },
+          {
+            "code10": 236,
+            "adc16": -17664,
+            "voltage_v": -2.76,
+            "display": "-2.76 V"
+          },
+          {
+            "code10": 155,
+            "adc16": -22848,
+            "voltage_v": -3.57,
+            "display": "-3.57 V"
+          },
+          {
+            "code10": 138,
+            "adc16": -23936,
+            "voltage_v": -3.74,
+            "display": "-3.74 V"
+          },
+          {
+            "code10": 220,
+            "adc16": -18688,
+            "voltage_v": -2.92,
+            "display": "-2.92 V"
+          }
+        ],
+        "channel_2_code10": [
+          {
+            "code10": 846,
+            "adc16": 21376,
+            "voltage_v": 3.34,
+            "display": "3.34 V"
+          },
+          {
+            "code10": 784,
+            "adc16": 17408,
+            "voltage_v": 2.72,
+            "display": "2.72 V"
+          },
+          {
+            "code10": 721,
+            "adc16": 13376,
+            "voltage_v": 2.09,
+            "display": "2.09 V"
+          },
+          {
+            "code10": 659,
+            "adc16": 9408,
+            "voltage_v": 1.47,
+            "display": "1.47 V"
+          },
+          {
+            "code10": 596,
+            "adc16": 5376,
+            "voltage_v": 0.84,
+            "display": "0.84 V"
+          },
+          {
+            "code10": 534,
+            "adc16": 1408,
+            "voltage_v": 0.22,
+            "display": "0.22 V"
+          },
+          {
+            "code10": 471,
+            "adc16": -2624,
+            "voltage_v": -0.41,
+            "display": "-0.41 V"
+          },
+          {
+            "code10": 409,
+            "adc16": -6592,
+            "voltage_v": -1.03,
+            "display": "-1.03 V"
+          },
+          {
+            "code10": 346,
+            "adc16": -10624,
+            "voltage_v": -1.66,
+            "display": "-1.66 V"
+          },
+          {
+            "code10": 284,
+            "adc16": -14592,
+            "voltage_v": -2.28,
+            "display": "-2.28 V"
+          },
+          {
+            "code10": 271,
+            "adc16": -15424,
+            "voltage_v": -2.41,
+            "display": "-2.41 V"
+          },
+          {
+            "code10": 334,
+            "adc16": -11392,
+            "voltage_v": -1.78,
+            "display": "-1.78 V"
+          }
+        ]
+      },
+      "channels": {
+        "1": {
+          "minimum": {
+            "code10": 138,
+            "adc16": -23936,
+            "voltage_v": -3.74,
+            "display": "-3.74 V"
+          },
+          "maximum": {
+            "code10": 886,
+            "adc16": 23936,
+            "voltage_v": 3.74,
+            "display": "3.74 V"
+          },
+          "sign_counts": {
+            "negative": 1000,
+            "zero": 0,
+            "positive": 1000
+          },
+          "first_sign_examples": {
+            "positive": {
+              "frame_index": 0,
+              "frame_seconds": 1700000000,
+              "frame_microseconds": 0,
+              "frame_seq_u8": 0,
+              "sample_index": 0,
+              "sample_time_us": 1700000000000000,
+              "code10": 886,
+              "adc16": 23936,
+              "voltage_v": 3.74,
+              "display": "3.74 V"
+            },
+            "negative": {
+              "frame_index": 0,
+              "frame_seconds": 1700000000,
+              "frame_microseconds": 0,
+              "frame_seq_u8": 0,
+              "sample_index": 5,
+              "sample_time_us": 1700000000002500,
+              "code10": 480,
+              "adc16": -2048,
+              "voltage_v": -0.32,
+              "display": "-0.32 V"
+            }
+          },
+          "unique_code_count": 20,
+          "all_samples_on_0_01v_grid": true
+        },
+        "2": {
+          "minimum": {
+            "code10": 271,
+            "adc16": -15424,
+            "voltage_v": -2.41,
+            "display": "-2.41 V"
+          },
+          "maximum": {
+            "code10": 846,
+            "adc16": 21376,
+            "voltage_v": 3.34,
+            "display": "3.34 V"
+          },
+          "sign_counts": {
+            "negative": 800,
+            "zero": 0,
+            "positive": 1200
+          },
+          "first_sign_examples": {
+            "positive": {
+              "frame_index": 0,
+              "frame_seconds": 1700000000,
+              "frame_microseconds": 0,
+              "frame_seq_u8": 0,
+              "sample_index": 0,
+              "sample_time_us": 1700000000000000,
+              "code10": 846,
+              "adc16": 21376,
+              "voltage_v": 3.34,
+              "display": "3.34 V"
+            },
+            "negative": {
+              "frame_index": 0,
+              "frame_seconds": 1700000000,
+              "frame_microseconds": 0,
+              "frame_seq_u8": 0,
+              "sample_index": 6,
+              "sample_time_us": 1700000000003000,
+              "code10": 471,
+              "adc16": -2624,
+              "voltage_v": -0.41,
+              "display": "-0.41 V"
+            }
+          },
+          "unique_code_count": 20,
+          "all_samples_on_0_01v_grid": true
+        }
+      }
+    }
+  },
+  "protected_baseline": {
+    "status": "PASS",
+    "file_count": 12,
+    "files": [
+      {
+        "path": "D:\\RUST\\langmuier\\apps\\desktop\\src\\buffer.rs",
+        "status": "PASS",
+        "expected_bytes": 30890,
+        "expected_sha256": "25b4ea5ece81342a54f042f32125d8f468b2b561b7da9678b80701943a2075d2",
+        "actual_bytes": 30890,
+        "actual_sha256": "25b4ea5ece81342a54f042f32125d8f468b2b561b7da9678b80701943a2075d2"
+      },
+      {
+        "path": "D:\\RUST\\langmuier\\apps\\desktop\\src\\backend.rs",
+        "status": "PASS",
+        "expected_bytes": 169447,
+        "expected_sha256": "3dc716e8428eee9c0fb99c12871101434d39a2803c1e6dfe2241c5045185f304",
+        "actual_bytes": 169447,
+        "actual_sha256": "3dc716e8428eee9c0fb99c12871101434d39a2803c1e6dfe2241c5045185f304"
+      },
+      {
+        "path": "D:\\RUST\\langmuier\\apps\\desktop\\src\\backend_history.rs",
+        "status": "PASS",
+        "expected_bytes": 59239,
+        "expected_sha256": "48cb518a82f4687697aa92c6a3964b2a47a413a2cf94e97f8ff6cdb26772d322",
+        "actual_bytes": 59239,
+        "actual_sha256": "48cb518a82f4687697aa92c6a3964b2a47a413a2cf94e97f8ff6cdb26772d322"
+      },
+      {
+        "path": "D:\\RUST\\langmuier\\apps\\desktop\\src\\bridge.rs",
+        "status": "PASS",
+        "expected_bytes": 15778,
+        "expected_sha256": "f7023e5601c919802d877f37af625ea65ec5f4e382583ebe5410ee1c948256be",
+        "actual_bytes": 15778,
+        "actual_sha256": "f7023e5601c919802d877f37af625ea65ec5f4e382583ebe5410ee1c948256be"
+      },
+      {
+        "path": "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\lvds.rs",
+        "status": "PASS",
+        "expected_bytes": 15352,
+        "expected_sha256": "4f03b954e55a4aca31eaf56eb270a9014726bec940e4e815a5908d50537561b2",
+        "actual_bytes": 15352,
+        "actual_sha256": "4f03b954e55a4aca31eaf56eb270a9014726bec940e4e815a5908d50537561b2"
+      },
+      {
+        "path": "D:\\RUST\\langmuier\\crates\\langmuir-storage\\src\\binary_v3.rs",
+        "status": "PASS",
+        "expected_bytes": 19438,
+        "expected_sha256": "83fff5cefb8a837e3b1e14d9376dfe1db342086a3f846e7b79b7673ae0d1c9c2",
+        "actual_bytes": 19438,
+        "actual_sha256": "83fff5cefb8a837e3b1e14d9376dfe1db342086a3f846e7b79b7673ae0d1c9c2"
+      },
+      {
+        "path": "D:\\RUST\\langmuier\\crates\\langmuir-storage\\src\\scientific_csv.rs",
+        "status": "PASS",
+        "expected_bytes": 22489,
+        "expected_sha256": "da0fd2a73ea5d70193c7bb3a9536d496b7032b3ad6488f6e5aae52e01d8a3e61",
+        "actual_bytes": 22489,
+        "actual_sha256": "da0fd2a73ea5d70193c7bb3a9536d496b7032b3ad6488f6e5aae52e01d8a3e61"
+      },
+      {
+        "path": "D:\\RUST\\2026102401.pcapng",
+        "status": "PASS",
+        "expected_bytes": 172292,
+        "expected_sha256": "1bfe2ff956ad4e372bb15c2da04910c3d6a469b85d772ccbf83e4da4e48cca07",
+        "actual_bytes": 172292,
+        "actual_sha256": "1bfe2ff956ad4e372bb15c2da04910c3d6a469b85d772ccbf83e4da4e48cca07"
+      },
+      {
+        "path": "D:\\RUST\\langmuier\\lvds.txt",
+        "status": "PASS",
+        "expected_bytes": 10780,
+        "expected_sha256": "b5a2eee986fbe4f26da33da67bfeab17b8f9185f72ed0c6f81f232f3c2f15add",
+        "actual_bytes": 10780,
+        "actual_sha256": "b5a2eee986fbe4f26da33da67bfeab17b8f9185f72ed0c6f81f232f3c2f15add"
+      },
+      {
+        "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-023840.901.lpd",
+        "status": "PASS",
+        "expected_bytes": 96973,
+        "expected_sha256": "befe6135c42c27f20bb492d5bb60e2ecf6f86a8bb965f19bbe3a4c6636714d10",
+        "actual_bytes": 96973,
+        "actual_sha256": "befe6135c42c27f20bb492d5bb60e2ecf6f86a8bb965f19bbe3a4c6636714d10"
+      },
+      {
+        "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-023840.901.csv",
+        "status": "PASS",
+        "expected_bytes": 1636896,
+        "expected_sha256": "33ea097d21848a631618bb29b02b2de5685184ea47d818135234ad0da20ff97e",
+        "actual_bytes": 1636896,
+        "actual_sha256": "33ea097d21848a631618bb29b02b2de5685184ea47d818135234ad0da20ff97e"
+      },
+      {
+        "path": "D:\\RUST\\langmuier\\data\\raw-20261025-024836-232.lvdsraw",
+        "status": "PASS",
+        "expected_bytes": 183750,
+        "expected_sha256": "57abd6087247ed4307f087ec7d4eb10f0a6b17c54131ecae54ee3cc910f0b73b",
+        "actual_bytes": 183750,
+        "actual_sha256": "57abd6087247ed4307f087ec7d4eb10f0a6b17c54131ecae54ee3cc910f0b73b"
+      }
+    ]
+  }
+}

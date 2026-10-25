@@ -1,0 +1,43 @@
+{
+  "status": "PASS",
+  "scope": "original TXT independent values for final non-Mock EXE positive cursor screenshot",
+  "exe_sha256": "f2805c059a699b02164d00da77f9b335a371954474481180fe35e3426cc9269a",
+  "source": {
+    "path": "D:\\RUST\\langmuier\\lvds.txt",
+    "bytes": 10780,
+    "sha256": "b5a2eee986fbe4f26da33da67bfeab17b8f9185f72ed0c6f81f232f3c2f15add"
+  },
+  "source_is_network_capture": false,
+  "network_envelope": "existing artificial UDP/PCAPNG wrapper; inner bytes identical to TXT",
+  "pointer_time_us": 1700000000010162,
+  "pointer_to_nearest_sample_delta_us": 162,
+  "nearest_sample": {
+    "time_us": 1700000000010000,
+    "frame_index": 0,
+    "seq8": 0,
+    "sample_index": 20,
+    "code10": [
+      886,
+      846
+    ],
+    "adc16": [
+      23936,
+      21376
+    ],
+    "volts": [
+      3.74,
+      3.34
+    ],
+    "display": [
+      "3.74 V",
+      "3.34 V"
+    ]
+  },
+  "exact_zero_code512_samples": 0,
+  "zero_axis_note": "actual waveforms cross zero; exact zero sample verified by production numerical and legal-frame automated tests",
+  "screenshot": {
+    "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_FINAL_TXT_POSITIVE_NEGATIVE_CURSOR.jpg",
+    "bytes": 278923,
+    "sha256": "d06ea630509077063d789d4c36715345aa0c76e1e8655fbc548c06cfa9b4774a"
+  }
+}

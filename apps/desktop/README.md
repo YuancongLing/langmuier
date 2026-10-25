@@ -9,7 +9,35 @@ orchestration layer. Protocol decoding stays in `langmuir-core`, serial I/O in
 > device time and both packed code10 channels without calculating or comparing CRC16. Accepted
 > UDP frames pass the existing recent-frame deduplication gate, update the single plot
 > stream and, while saving is enabled, enter the formal scientific writer. CRC modes,
-> filtering, details and diagnostic waveform selection have been removed.
+> filtering is not applied to native frames. Optional bit recovery uses a separate
+> evidence and quality path; it never changes native acceptance or standard storage.
+
+## Raw recording and history
+
+**打开历史数据** opens the **历史与原始数据** window. Choose a `.lvdsraw`, LPD v3,
+or PCAPNG file with **浏览…**, or paste its full path and click **打开**.
+The central area shows explicit history mode, playback/pause, start, seek progress
+and exit controls. The existing overlay/split, pan, zoom, follow, freeze and reset
+controls work with the loaded channels. A requested time window is at most 60 seconds;
+reading, indexing and export run outside the GUI thread.
+
+**开始原始录制** operates separately from **开始保存**. Live recording preserves
+every UDP Payload received by the bound socket before source filtering or decoding.
+Starting raw recording from a PCAP history exports all UDP records in the file.
+Automatic destinations use unique names under `data/`; custom paths must not exist.
+Received, queued, written and dropped counts plus close/error status describe only
+the application archive, not packets lost before the socket. See
+[LVDSRAW v1](../../docs/LVDSRAW_FORMAT.md) for endpoints, metadata and mandatory footer.
+
+**尝试恢复异常帧** defaults to off. Turning it on permits bounded 1-bit/4-bit
+alignment searches in received data and raw/PCAP histories. Quality selection offers
+native, native plus confirmed recovery, or explicitly labeled diagnostic candidates.
+Only actual bits within one datagram are used. Incomplete CRC tails remain incomplete.
+Recovered and candidate data never enter ordinary LPD v3 or 11-column CSV capture.
+History exports that include them use a separately versioned quality CSV and retain
+record IDs, quality, recovery checks and source; the audit records hashes and actual
+raw/normalized bytes. See the
+[acceptance report](../../docs/LVDS_RAW_CAPTURE_RECOVERY_HISTORY_QA.md) for real input results.
 
 ## Run
 
@@ -101,7 +129,8 @@ calendar epoch. The plot shows signed reconstructed ADC values
 in both scientific storage formats. The trailer bytes
 are retained unchanged but not checked for integrity. The core keeps the historical
 offline CCITT-FALSE reference (`0x1021`, `0xFFFF`, no reflection, no xorout) over
-`frame[7..267]`; this API is not used by production reception, plotting or capture.
+`frame[7..267]`; native reception, plotting and capture do not use this as a gate.
+The optional recovery path records this reference check separately.
 UDP, PCAP replay, legacy byte streams and CLI share the same structure/time/code10
 decoder. Invalid microseconds, fixed fields or a nonzero reserved byte are rejected,
 without inventing device timestamps or repairing wire data.

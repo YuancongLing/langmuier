@@ -298,6 +298,20 @@ impl BackendBridge for MockBridge {
             }
             UiRequest::StartPcapReplay { .. } => self.reject_pcap_replay(),
             UiRequest::StopPcapReplay => self.stop_pcap_replay(),
+            UiRequest::StartRawRecording { .. }
+            | UiRequest::StopRawRecording
+            | UiRequest::SetRecoveryEnabled { .. }
+            | UiRequest::OpenHistory { .. }
+            | UiRequest::SetHistoryPlaying { .. }
+            | UiRequest::SeekHistory { .. }
+            | UiRequest::LoadHistoryWindow { .. }
+            | UiRequest::CloseHistory
+            | UiRequest::ExportHistoryCsv { .. } => {
+                self.events.push_back(BackendEvent::Fault {
+                    source: "MOCK".to_owned(),
+                    message: "原始文件与历史查看仅由生产后端处理".to_owned(),
+                });
+            }
             UiRequest::SetTelemetryPolling {
                 enabled,
                 interval_millis,

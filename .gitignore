@@ -9,4 +9,5 @@ __pycache__/
 *.py[cod]
 *.h5
 *.lpd
+*.lvdsraw
 .DS_Store

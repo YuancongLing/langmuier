@@ -1,0 +1,5 @@
+# Preserve published acceptance evidence exactly as hashed.
+/docs/qa/raw-history-acceptance-20261025/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/docs/qa/voltage-display-20261025/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/docs/LVDS_VOLTAGE_DISPLAY_QA.md -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/docs/superpowers/plans/2026-10-25-lvds-voltage-display.md -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

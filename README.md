@@ -49,6 +49,13 @@ CRC16 is not checked for receiving, plotting, or scientific storage: **科学数
 CRC 完整性验证**. See [the current acceptance report](docs/LVDS_55AA_FINAL_ACCEPTANCE.md)
 for the revised behavior; earlier CRC QA reports describe historical versions.
 
+The desktop also provides independent UDP raw recording (`.lvdsraw`) and opens
+LVDSRAW, LPD v3 and PCAPNG histories in the existing dual-channel plot. Optional
+bit recovery is off by default and carries explicit quality and provenance;
+recovered/candidate data stay out of standard LPD and CSV capture. See the
+[desktop workflow](apps/desktop/README.md#raw-recording-and-history) and
+[current raw/recovery/history QA](docs/LVDS_RAW_CAPTURE_RECOVERY_HISTORY_QA.md).
+
 For Windows x64 prerequisites, clone/update commands, a non-Mock Release build,
 and ZIP packaging, see [docs/WINDOWS_BUILD.md](docs/WINDOWS_BUILD.md).
 

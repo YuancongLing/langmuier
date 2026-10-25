@@ -1,0 +1,61 @@
+{
+  "result": "PASS",
+  "source": {
+    "path": "D:\\RUST\\langmuier\\target\\x86_64-pc-windows-msvc\\release\\langmuier.exe",
+    "bytes": 10174464,
+    "sha256": "e8b923dd9818ebc294cc8fdc8bea48235961fd055eb88965dd1c9169fdc6fd1f"
+  },
+  "delivered_exe": {
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\windows-x64\\LangmuierProbeGroundControl.exe",
+    "bytes": 10174464,
+    "sha256": "e8b923dd9818ebc294cc8fdc8bea48235961fd055eb88965dd1c9169fdc6fd1f"
+  },
+  "archive": {
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\LangmuierProbeGroundControl-windows-x64.zip",
+    "bytes": 4209507,
+    "sha256": "b97cf5848c701f24c527e557fd1cd2b7bc705cf5a468ba82ab9d1b0f68cab6e3"
+  },
+  "readme": {
+    "path": "D:\\RUST\\langmuier\\docs\\WINDOWS_README.md",
+    "bytes": 3269,
+    "sha256": "1737d27a4fb154aabca539f57971d56c91e782c9d1b494fbfa79ddd92ecd2d4b"
+  },
+  "delivered_readme": {
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\windows-x64\\README.md",
+    "bytes": 3269,
+    "sha256": "1737d27a4fb154aabca539f57971d56c91e782c9d1b494fbfa79ddd92ecd2d4b"
+  },
+  "zip_entries": [
+    "LangmuierProbeGroundControl.exe",
+    "README.md"
+  ],
+  "zip_crc_and_content_match": true,
+  "pe_machine": "0x8664",
+  "pe_format": "PE32+ Windows x64",
+  "imports": [
+    "advapi32.dll",
+    "api-ms-win-core-synch-l1-2-0.dll",
+    "bcryptprimitives.dll",
+    "cfgmgr32.dll",
+    "combase.dll",
+    "dwmapi.dll",
+    "gdi32.dll",
+    "imm32.dll",
+    "kernel32.dll",
+    "ntdll.dll",
+    "ole32.dll",
+    "opengl32.dll",
+    "setupapi.dll",
+    "shell32.dll",
+    "shlwapi.dll",
+    "user32.dll",
+    "uxtheme.dll",
+    "ws2_32.dll"
+  ],
+  "no_dynamic_msvc_crt_imports": true,
+  "build_command": "cargo +stable-x86_64-pc-windows-msvc build --release -p langmuir-desktop --target x86_64-pc-windows-msvc --target-dir target --no-default-features --locked",
+  "rustflags": "-C target-feature=+crt-static",
+  "mock_feature": false,
+  "hdf5_feature": false,
+  "native_ui_evidence": "separate current Windows GUI acceptance; this script verifies package bytes only"
+}

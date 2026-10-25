@@ -23,7 +23,11 @@ use crate::{
     },
     buffer::{SamplePoint, TimeSeriesBuffer},
     ui::{fonts, theme},
+    voltage::adc16_to_volts,
 };
+
+#[path = "app_history.rs"]
+mod history_ui;
 
 // UI history: 2 kHz × 60 s, plus one complete scientific frame.
 // Scientific file storage is independent of this bounded display history.
@@ -165,6 +169,7 @@ struct LvdsView {
     replay_path: String,
     replay_save_science: bool,
     save_format: ScientificSaveFormat,
+    history: history_ui::HistoryView,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -524,9 +529,14 @@ impl LangmuirDesktopApp {
             self.operator.frozen_plot = None;
             self.push_log(LogLevel::Info, "画面更新已恢复，后台接收未中断");
         } else {
+            let (one, two) = self.display_histories();
+            let frozen = FrozenPlot {
+                channel_1: one.clone(),
+                channel_2: two.clone(),
+            };
             self.operator.frozen_plot = Some(FrozenPlot {
-                channel_1: self.channel_1.clone(),
-                channel_2: self.channel_2.clone(),
+                channel_1: frozen.channel_1,
+                channel_2: frozen.channel_2,
             });
             self.push_log(LogLevel::Info, "画面已冻结，后台接收继续运行");
         }
@@ -545,17 +555,36 @@ impl LangmuirDesktopApp {
     }
 
     fn display_histories(&self) -> (&TimeSeriesBuffer, &TimeSeriesBuffer) {
-        self.operator
-            .frozen_plot
-            .as_ref()
-            .map_or((&self.channel_1, &self.channel_2), |frozen| {
-                (&frozen.channel_1, &frozen.channel_2)
-            })
+        if let Some(frozen) = &self.operator.frozen_plot {
+            (&frozen.channel_1, &frozen.channel_2)
+        } else if self.lvds_view.history.status.active {
+            (
+                &self.lvds_view.history.channel_1,
+                &self.lvds_view.history.channel_2,
+            )
+        } else if self.lvds_view.history.live_has_qualified {
+            (
+                &self.lvds_view.history.live_channel_1,
+                &self.lvds_view.history.live_channel_2,
+            )
+        } else {
+            (&self.channel_1, &self.channel_2)
+        }
     }
 
     fn display_histories_mut(&mut self) -> (&mut TimeSeriesBuffer, &mut TimeSeriesBuffer) {
         if let Some(frozen) = &mut self.operator.frozen_plot {
             (&mut frozen.channel_1, &mut frozen.channel_2)
+        } else if self.lvds_view.history.status.active {
+            (
+                &mut self.lvds_view.history.channel_1,
+                &mut self.lvds_view.history.channel_2,
+            )
+        } else if self.lvds_view.history.live_has_qualified {
+            (
+                &mut self.lvds_view.history.live_channel_1,
+                &mut self.lvds_view.history.live_channel_2,
+            )
         } else {
             (&mut self.channel_1, &mut self.channel_2)
         }
@@ -598,6 +627,7 @@ impl LangmuirDesktopApp {
     }
 
     fn clear_current_plot(&mut self) {
+        self.clear_live_quality_history();
         self.channel_1.clear();
         self.channel_2.clear();
         self.lvds_view.plotted_frames = 0;
@@ -611,7 +641,14 @@ impl LangmuirDesktopApp {
             .as_ref()
             .is_some_and(|previous| previous.source != status.source);
         if source_changed {
-            self.clear_current_plot();
+            if self.lvds_view.history.status.active {
+                self.clear_live_quality_history();
+                self.channel_1.clear();
+                self.channel_2.clear();
+                self.lvds_view.plotted_frames = 0;
+            } else {
+                self.clear_current_plot();
+            }
             self.operator.last_scientific_update = None;
         }
         self.lvds_view.status = Some(status);
@@ -694,6 +731,12 @@ impl LangmuirDesktopApp {
 
     fn handle_backend_event(&mut self, event: BackendEvent) {
         match event {
+            event @ (BackendEvent::RawCaptureStatus(_)
+            | BackendEvent::RecoveryStatus(_)
+            | BackendEvent::HistoryStatus(_)
+            | BackendEvent::HistoryWindow(_)
+            | BackendEvent::QualifiedScientificSamples(_)
+            | BackendEvent::HistoryCsvExported { .. }) => self.handle_history_event(event),
             BackendEvent::PortsUpdated { rs422 } => {
                 self.rs422.ports = rs422;
                 self.rs422.selected_port = 0;
@@ -703,23 +746,7 @@ impl LangmuirDesktopApp {
                 link,
                 connected,
                 detail,
-            } => {
-                match link {
-                    LinkKind::Rs422 => {
-                        self.rs422.connected = connected;
-                        self.rs422.detail.clone_from(&detail);
-                    }
-                    LinkKind::Lvds => {
-                        self.lvds.connected = connected;
-                        self.lvds.detail.clone_from(&detail);
-                    }
-                }
-                if connected {
-                    self.restore_faults_for_source(&link.to_string());
-                }
-                let status = if connected { "已连接" } else { "已断开" };
-                self.push_log(LogLevel::Info, format!("{link} {status}: {detail}"));
-            }
+            } => self.apply_link_changed(link, connected, &detail),
             BackendEvent::AcquisitionChanged { running } => {
                 self.acquisition_running = running;
                 if running {
@@ -790,6 +817,24 @@ impl LangmuirDesktopApp {
         }
     }
 
+    fn apply_link_changed(&mut self, link: LinkKind, connected: bool, detail: &str) {
+        match link {
+            LinkKind::Rs422 => {
+                self.rs422.connected = connected;
+                detail.clone_into(&mut self.rs422.detail);
+            }
+            LinkKind::Lvds => {
+                self.lvds.connected = connected;
+                detail.clone_into(&mut self.lvds.detail);
+            }
+        }
+        if connected {
+            self.restore_faults_for_source(&link.to_string());
+        }
+        let status = if connected { "已连接" } else { "已断开" };
+        self.push_log(LogLevel::Info, format!("{link} {status}: {detail}"));
+    }
+
     fn handle_scientific_samples(
         &mut self,
         channel_1_start_seconds: f64,
@@ -798,6 +843,12 @@ impl LangmuirDesktopApp {
         channel_1: Vec<f64>,
         channel_2: Vec<f64>,
     ) {
+        self.remember_native_samples(
+            channel_1_start_seconds,
+            sample_interval_seconds,
+            &channel_1,
+            &channel_2,
+        );
         self.operator.last_scientific_update = Some(Instant::now());
         self.lvds_view.plotted_frames = self.lvds_view.plotted_frames.saturating_add(1);
         extend_scientific_channel(
@@ -1830,12 +1881,13 @@ impl LangmuirDesktopApp {
         let compact = width < 560.0;
         let ultra_compact = width < 360.0;
         let range = self.plot_range();
+        let (one, two) = self.display_histories();
         let cache = format!(
             "视图 {:.1}s / 历史 {:.0}s · {}/{} 点",
             range[1] - range[0],
             PLOT_HISTORY_SECONDS,
-            self.channel_1.len(),
-            self.channel_2.len()
+            one.len(),
+            two.len()
         );
         central_control_style(ui);
         ui.spacing_mut().item_spacing.y = 8.0;
@@ -1858,7 +1910,7 @@ impl LangmuirDesktopApp {
                     [ui.available_width().max(0.0), CENTRAL_CONTROL_HEIGHT],
                     egui::Label::new(RichText::new(&cache).small().color(theme::TEXT_MUTED))
                         .truncate(),
-                ).on_hover_text(format!("{cache}\n左键拖动平移 · 滚轮围绕鼠标缩放 · 移动鼠标查看重建 ADC\n手动视图不会被新数据抢回；跟随最新恢复实时窗口。"));
+                ).on_hover_text(format!("{cache}\n左键拖动平移 · 滚轮围绕鼠标缩放 · 移动鼠标查看电压 (V)\n手动视图不会被新数据抢回；跟随最新恢复实时窗口。"));
         });
     }
 
@@ -1926,7 +1978,8 @@ impl LangmuirDesktopApp {
                         [ui.available_width(), readout_row_height],
                         egui::Label::new(
                             RichText::new(format!(
-                                "设备时间 {} s  通道1 {} ADC  通道2 {} ADC",
+                                "{} · 设备时间 {} s  通道1 {} V  通道2 {} V",
+                                self.displayed_quality_label(),
                                 format_plot_timestamp(cursor, 0.0),
                                 value_text(values[0]),
                                 value_text(values[1])
@@ -1940,8 +1993,12 @@ impl LangmuirDesktopApp {
                 } else {
                     ui.add_sized(
                         [ui.available_width(), readout_row_height],
-                        egui::Label::new(RichText::new("").small().color(theme::TEXT_MUTED))
-                            .truncate(),
+                        egui::Label::new(
+                            RichText::new(self.displayed_quality_label())
+                                .small()
+                                .color(theme::TEXT_MUTED),
+                        )
+                        .truncate(),
                     );
                 }
             },
@@ -1956,6 +2013,8 @@ impl LangmuirDesktopApp {
             let hidden = !self.show_channels[0] && !self.show_channels[1];
             let state = if hidden {
                 "通道 1 和通道 2 当前均已隐藏"
+            } else if self.lvds_view.history.status.active {
+                "可调整时间窗或数据质量筛选"
             } else {
                 "请开始 UDP 监听或离线 PCAP 回放"
             };
@@ -2020,10 +2079,11 @@ impl LangmuirDesktopApp {
                     height,
                     range,
                     reset,
+                    normalized,
                     y_label: if normalized {
-                        "独立归一化幅值（实际量程见图例）"
+                        "独立归一化幅值（无量纲；实际电压见图例）"
                     } else {
-                        "ADC 码值"
+                        "电压 (V)"
                     },
                     channels: show_channels,
                     names: [&names[0], &names[1]],
@@ -2059,10 +2119,11 @@ impl LangmuirDesktopApp {
                         height: split_height,
                         range,
                         reset,
+                        normalized: false,
                         y_label: if channel == 0 {
-                            "通道 1 ADC 码值"
+                            "通道 1 电压 (V)"
                         } else {
-                            "通道 2 ADC 码值"
+                            "通道 2 电压 (V)"
                         },
                         channels: [channel == 0, channel == 1],
                         names: ["通道 1", "通道 2"],
@@ -2088,6 +2149,7 @@ impl LangmuirDesktopApp {
         if return_to_follow {
             self.follow_latest();
         }
+        self.request_visible_history_window(range);
     }
 
     fn operations_panel(&mut self, ui: &mut Ui) {
@@ -2102,7 +2164,9 @@ impl LangmuirDesktopApp {
                 let width = ui.available_width().max(0.0);
                 central_control_style(ui);
                 ui.spacing_mut().item_spacing.y = if compact { 4.0 } else { 12.0 };
-                if compact {
+                if self.lvds_view.history.status.active {
+                    self.history_inline_controls(ui, &mut request);
+                } else if compact {
                     central_control_row(ui, |ui| self.lvds_listen_inputs(ui));
                     central_control_row(ui, |ui| {
                         if width < 320.0 {
@@ -2126,6 +2190,7 @@ impl LangmuirDesktopApp {
                         if width >= 320.0 {
                             self.lvds_save_button(ui, &mut request, true);
                         }
+                        self.history_open_button(ui, true);
                         self.lvds_more_menu(ui, &mut request);
                     });
                     self.lvds_receive_status(ui, true);
@@ -2150,6 +2215,8 @@ impl LangmuirDesktopApp {
                         if ui.button("离线回放 PCAP").clicked() {
                             self.lvds_view.replay_dialog_open = true;
                         }
+                        self.history_open_button(ui, false);
+                        self.raw_record_button(ui, &mut request, false);
                     });
                     central_control_row(ui, |ui| {
                         if width >= 440.0 {
@@ -2165,7 +2232,9 @@ impl LangmuirDesktopApp {
                         .on_hover_text(format!("{text}\n显示保存进度及文件状态。"));
                     });
                 }
-                self.lvds_quality_grid(ui);
+                if !self.lvds_view.history.status.active {
+                    self.lvds_quality_grid(ui);
+                }
             });
         if let Some(request) = request {
             self.submit(request);
@@ -2321,6 +2390,13 @@ impl LangmuirDesktopApp {
                 ui.label(self.lvds_save_summary());
             }
             ui.separator();
+            self.raw_record_button(ui, request, true);
+            self.recovery_controls(ui, request);
+            if ui.button("历史与原始数据设置").clicked() {
+                self.lvds_view.history.dialog_open = true;
+                ui.close();
+            }
+            ui.separator();
             if ui.button("刷新串口").clicked() {
                 *request = Some(UiRequest::RefreshPorts);
                 ui.close();
@@ -2348,7 +2424,29 @@ impl LangmuirDesktopApp {
             .status
             .as_ref()
             .map_or(self.lvds.detail.as_str(), |s| s.receive_state.as_str());
-        let summary = lvds_receive_summary(raw, self.lvds.connected);
+        let mut summary = lvds_receive_summary(raw, self.lvds.connected).to_owned();
+        let recording = &self.lvds_view.history.raw;
+        if recording.error.is_some() || recording.dropped > 0 {
+            summary = format!("原始录制异常 · 丢失 {} · {summary}", recording.dropped);
+        } else if recording.path.is_some() {
+            use std::fmt::Write as _;
+            let _ = write!(
+                summary,
+                " · 原始 {} / {} · 丢失 {}{}",
+                recording.written,
+                recording.received,
+                recording.dropped,
+                if recording.error.is_some() {
+                    " · 录制异常"
+                } else if recording.active {
+                    " · 录制中"
+                } else if recording.closed {
+                    " · 已关闭"
+                } else {
+                    ""
+                }
+            );
+        }
         let detail = if compact {
             format!("{raw}\n{}", self.lvds_save_summary())
         } else {
@@ -2362,7 +2460,9 @@ impl LangmuirDesktopApp {
                     ui.add_sized(
                         [ui.available_width().max(0.0), 20.0],
                         egui::Label::new(RichText::new(summary).small().color(
-                            if raw.contains("异常")
+                            if recording.error.is_some()
+                                || recording.dropped > 0
+                                || raw.contains("异常")
                                 || raw.contains("错误")
                                 || raw.contains("address")
                             {
@@ -2863,9 +2963,14 @@ impl eframe::App for LangmuirDesktopApp {
 
         self.emergency_stop_dialog(ui.ctx());
         self.lvds_dialog(ui.ctx());
+        self.history_dialog(ui.ctx());
 
         ui.ctx().request_repaint_after(
-            if self.acquisition_running || self.scientific_data_is_fresh() {
+            if self.acquisition_running
+                || self.scientific_data_is_fresh()
+                || self.lvds_view.history.status.playing
+                || self.lvds_view.history.status.loading
+            {
                 // Drawing cadence is independent of the 20 Hz receive cadence.
                 Duration::from_millis(16)
             } else {
@@ -2896,6 +3001,7 @@ struct ScientificPlotConfig<'a> {
     height: f32,
     range: [f64; 2],
     reset: bool,
+    normalized: bool,
     y_label: &'static str,
     channels: [bool; 2],
     names: [&'a str; 2],
@@ -3004,6 +3110,7 @@ fn show_scientific_plot(
 }
 
 fn configured_scientific_plot(config: &ScientificPlotConfig<'_>) -> Plot<'static> {
+    let normalized = config.normalized;
     let plot = Plot::new(config.id)
         .min_size(egui::vec2(1.0, 1.0))
         .show_axes([config.height >= 100.0; 2])
@@ -3011,6 +3118,26 @@ fn configured_scientific_plot(config: &ScientificPlotConfig<'_>) -> Plot<'static
         .y_axis_label(config.y_label)
         .x_axis_formatter(|mark, range| {
             format_plot_timestamp(mark.value, range.end() - range.start())
+        })
+        .y_axis_formatter(|mark, _| format!("{:.2}", mark.value))
+        .label_formatter(move |hover| {
+            let (name, position) = match *hover {
+                egui_plot::HoverPosition::NearDataPoint {
+                    plot_name,
+                    position,
+                    ..
+                } => (plot_name, position),
+                egui_plot::HoverPosition::Elsewhere { position } => ("", position),
+            };
+            let ordinate = if normalized {
+                format!("归一化幅值 {:.2}（无量纲）", position.y)
+            } else {
+                format!("电压 {:.2} V", position.y)
+            };
+            Some(format!(
+                "{name}\n设备时间 {} s\n{ordinate}",
+                format_plot_timestamp(position.x, 0.0)
+            ))
         })
         .allow_drag(true)
         .pan_pointer_button(PointerButton::Primary)
@@ -3040,9 +3167,9 @@ fn extend_scientific_channel(
             .scan(start_seconds, |time_seconds, value| {
                 let point = SamplePoint {
                     time_seconds: *time_seconds,
-                    // Backend events already carry signed reconstructed ADC.
-                    // Preserve them without another offset or voltage scaling.
-                    value,
+                    // Convert reconstructed ADC16 once at display ingress.
+                    // Cached extrema, history and cursors now all use volts.
+                    value: adc16_to_volts(value),
                 };
                 *time_seconds += sample_interval_seconds;
                 Some(point)
@@ -3791,7 +3918,7 @@ fn normalize_plot_points(points: &mut [[f64; 2]]) -> Option<(f64, f64)> {
 
 fn overlay_channel_name(name: &str, range: Option<(f64, f64)>) -> String {
     match range {
-        Some((min, max)) => format!("{name} [{min:.0}, {max:.0}]"),
+        Some((min, max)) => format!("{name} [{min:.2}, {max:.2}] V"),
         None => name.to_owned(),
     }
 }
@@ -3985,7 +4112,7 @@ mod tests {
         assert_eq!(app.channel_1.len(), 2 * SAMPLE_COUNT);
         let (combined, _) = app.display_plot_points();
         assert_eq!(combined[0], [100.0, 0.0]);
-        assert_eq!(combined.last().unwrap()[1], 64.0);
+        assert_eq!(combined.last().unwrap()[1], 0.01);
         app.apply_lvds_status(status("UDP session 1"));
         assert_eq!(app.lvds_view.plotted_frames, 2);
         assert!(endpoint.request_rx.try_recv().is_err());
@@ -4040,7 +4167,7 @@ mod tests {
         assert_eq!(app.channel_1.len(), SAMPLE_COUNT);
         assert_eq!(app.display_plot_points().0[0], [100.0, 0.0]);
         app.toggle_display_freeze();
-        assert_eq!(app.display_plot_points().0[0], [172.0, 64.0]);
+        assert_eq!(app.display_plot_points().0[0], [172.0, 0.01]);
         app.handle_scientific_samples(
             1.0,
             1.0,
@@ -4089,7 +4216,7 @@ mod tests {
         assert!(channel_1.len() <= super::MAX_DISPLAY_POINTS);
         assert!(channel_2.len() <= super::MAX_DISPLAY_POINTS);
         assert_eq!(channel_1.first().unwrap()[1], 0.0);
-        assert_eq!(channel_2.last().unwrap()[1], 64.0);
+        assert_eq!(channel_2.last().unwrap()[1], 0.01);
     }
 
     #[test]
@@ -4115,7 +4242,7 @@ mod tests {
         assert!((last_1[0] - 1_800_000_019.999_5).abs() < 0.000_05);
         assert!((last_2[0] - last_1[0]).abs() < 0.000_001);
         assert_eq!(last_1[1], 0.0);
-        assert_eq!(last_2[1], 64.0);
+        assert_eq!(last_2[1], 0.01);
     }
 
     #[test]

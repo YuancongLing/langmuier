@@ -1,0 +1,33 @@
+{
+  "status": "PASS",
+  "scope": "previous ADC-display versus new voltage-display actual-PCAP scientific outputs",
+  "display_unit_change_modifies_scientific_files": false,
+  "files": [
+    {
+      "old": {
+        "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-023840.901.csv",
+        "bytes": 1636896,
+        "sha256": "33ea097d21848a631618bb29b02b2de5685184ea47d818135234ad0da20ff97e"
+      },
+      "new": {
+        "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-115147.359.csv",
+        "bytes": 1636896,
+        "sha256": "33ea097d21848a631618bb29b02b2de5685184ea47d818135234ad0da20ff97e"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "old": {
+        "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-023840.901.lpd",
+        "bytes": 96973,
+        "sha256": "befe6135c42c27f20bb492d5bb60e2ecf6f86a8bb965f19bbe3a4c6636714d10"
+      },
+      "new": {
+        "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-115147.359.lpd",
+        "bytes": 96973,
+        "sha256": "befe6135c42c27f20bb492d5bb60e2ecf6f86a8bb965f19bbe3a4c6636714d10"
+      },
+      "byte_for_byte_equal": true
+    }
+  ]
+}

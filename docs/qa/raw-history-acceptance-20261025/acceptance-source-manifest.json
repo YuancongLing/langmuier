@@ -1,0 +1,356 @@
+﻿{
+    "generated":  "2026-10-25T02:35:24.6222242+08:00",
+    "scope":  "Frozen Rust sources and manifests before final checks and Windows acceptance build",
+    "files":  [
+                  {
+                      "path":  "D:\\RUST\\langmuier\\Cargo.toml",
+                      "bytes":  1003,
+                      "sha256":  "286ed8e8170a3126c996e457ba2842de68d47321a9c6cdafc1948af2ca0e7aac"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\Cargo.lock",
+                      "bytes":  95419,
+                      "sha256":  "8fa816695e2a882143bf4885e05a1b6e05c059260b3ff0d1063196ce179a0ef8"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\Cargo.toml",
+                      "bytes":  941,
+                      "sha256":  "fb047b2f7a654e6d7165ef61fa1e919be886cca8b987091ade472a143b5904a5"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\app.rs",
+                      "bytes":  180520,
+                      "sha256":  "262372a63ce21ea1fc774e3aa38b8ed711f16951acb45ff5db87679209b72844"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\app_history.rs",
+                      "bytes":  64016,
+                      "sha256":  "4e9c9fbb7f5df3bdd6925e5070d8fd52c0feb683f1b809b1ebb2be69a6a10886"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\app_layout_tests.rs",
+                      "bytes":  34045,
+                      "sha256":  "8bc4081350e185112f36d99ce7873d5e4edeb7100e98c9ca0f5376915c5832e6"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\app_parameter_tests.rs",
+                      "bytes":  13336,
+                      "sha256":  "e11f8e39ac8e7929594387f0710c302dede76c530c8c6f4d776bf7a9cc047820"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\app_plot_tests.rs",
+                      "bytes":  12193,
+                      "sha256":  "759473db9722cc51ca9665ec35b793b8d93c17e82b5a348e909ad30cbbe26e8c"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\backend.rs",
+                      "bytes":  169447,
+                      "sha256":  "3dc716e8428eee9c0fb99c12871101434d39a2803c1e6dfe2241c5045185f304"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\backend_10bit_tests.rs",
+                      "bytes":  19993,
+                      "sha256":  "8244435e15f460f6e9914bc5cd5180cf0a658b68e4d43c257debf177bafea82f"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\backend_capture_history_tests.rs",
+                      "bytes":  28815,
+                      "sha256":  "535999f9b5267e15eaa4619235b6b2feae416ef41bb3f6755511e1d97f8cb9a6"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\backend_e2e_tests.rs",
+                      "bytes":  34991,
+                      "sha256":  "bd24b1ca8f5bf72b713fe9158f8472187ca29ddf7c4372d9f7b35019d76c9820"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\backend_history.rs",
+                      "bytes":  59239,
+                      "sha256":  "48cb518a82f4687697aa92c6a3964b2a47a413a2cf94e97f8ff6cdb26772d322"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\backend_raw_history_real_tests.rs",
+                      "bytes":  11916,
+                      "sha256":  "ac0171398fdf9b17910c71d7744dfe47bd0015e7402aae11e556fb30dc3cecbf"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\backend_raw_storage.rs",
+                      "bytes":  13739,
+                      "sha256":  "4b066eac5e7af5eb4d49481cdde1d79cade4882f6151d9ed5dec61a451b858d8"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\backend_recovery_audit.rs",
+                      "bytes":  10242,
+                      "sha256":  "bb9ac2e805b76245974285269971d57e83afae41ca9fb9c3eec497c7f4f2436e"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\backend_replay_tests.rs",
+                      "bytes":  26310,
+                      "sha256":  "1cdcf8c010740918930e4a8da94991a1020cafc09b4a49cd203b3cfc0595f748"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\backend_scientific_csv_tests.rs",
+                      "bytes":  11352,
+                      "sha256":  "4709ff7b1105d66f25fbbaf0b0b225a3e6801f806651c3d87e46229c976be8f1"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\backend_scientific_storage.rs",
+                      "bytes":  11303,
+                      "sha256":  "7cba35f04bc624c29f95839a1d75bedff52910dd8f09504d593782d9b15c0303"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\bridge.rs",
+                      "bytes":  15778,
+                      "sha256":  "f7023e5601c919802d877f37af625ea65ec5f4e382583ebe5410ee1c948256be"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\buffer.rs",
+                      "bytes":  30890,
+                      "sha256":  "25b4ea5ece81342a54f042f32125d8f468b2b561b7da9678b80701943a2075d2"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\main.rs",
+                      "bytes":  2434,
+                      "sha256":  "6e6f10d952edcf7dcf51cfd2f6c62beeb9000639c9466662a221706c4e6a6465"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\mock.rs",
+                      "bytes":  18862,
+                      "sha256":  "773b76288bec5200e0de821944f8ea70a920b94b75ff3a05844b7b0cf89958b8"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\perf.rs",
+                      "bytes":  2000,
+                      "sha256":  "0b285a25da39b619dc66db2b906983909951eb10fd0cf114ca312e9f5aa0eaad"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\ui\\fonts.rs",
+                      "bytes":  9248,
+                      "sha256":  "f7dd0a3bf183818c14e9ff89bee6aec2ab0b8230d0decc4325731422b812ff70"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\ui\\mod.rs",
+                      "bytes":  76,
+                      "sha256":  "a1278f1d4664c7675626e609efb5ded1aef284fe14c7d1ff6073a6fb88ed5173"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\apps\\desktop\\src\\ui\\theme.rs",
+                      "bytes":  6546,
+                      "sha256":  "b0131346fea924b311bf00d446640cc32e9bf31d5df6fe4c9e48e9dc5611c08c"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-core\\Cargo.toml",
+                      "bytes":  238,
+                      "sha256":  "fe52d9f3c81e6f3543bfef4b8048ca7ddfe5c310e4b95ca104affaeafe3cab72"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\checksum.rs",
+                      "bytes":  2734,
+                      "sha256":  "ffff9a274c98efdc190f00f3437f3a7271f17f0b774fa1376002d260b6639ccb"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\command.rs",
+                      "bytes":  17082,
+                      "sha256":  "df18a4dd061f8ff6ea267e2319e1af92227584eaa6f1db45bf1a6065b4170d1b"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\error.rs",
+                      "bytes":  3800,
+                      "sha256":  "87380c11325a648e0607fd5776a438239cc9df94b0c2a71ad8984205ea74d288"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\framing.rs",
+                      "bytes":  14726,
+                      "sha256":  "a44d90a2318c57ea53699e4eeb0310e8b643ec271f5166d9ec1e4f424dfc8ae9"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\lib.rs",
+                      "bytes":  2705,
+                      "sha256":  "8a6e58b2de621503ef79eeff3275cde536c4b6bbd344c392295439b9b624617c"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\lvds.rs",
+                      "bytes":  15352,
+                      "sha256":  "4f03b954e55a4aca31eaf56eb270a9014726bec940e4e815a5908d50537561b2"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\lvds_protocol_tests.rs",
+                      "bytes":  12510,
+                      "sha256":  "2457a0a8a3750b246ddd15924102e4a9056a9d98a115bc72bd644fa5618516f7"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\lvds_recovery.rs",
+                      "bytes":  10993,
+                      "sha256":  "fef35ed0acbeb73f47052fec9e0b5ef829c8d8704a59b64ec26bd29a89b181e6"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\lvds_recovery_perf_tests.rs",
+                      "bytes":  11146,
+                      "sha256":  "343a56b927b697fc4ea9135692deea22107796080d323982d7577095d76957ed"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\lvds_recovery_tests.rs",
+                      "bytes":  6305,
+                      "sha256":  "dbfe905c61114d43911c1e3b02bb96acd7570ca1b2f270a348d14ca59187d8e6"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\lvds_test_support.rs",
+                      "bytes":  1309,
+                      "sha256":  "9ae7871f256bf518a75ec06ab39f0669bd84230cd6b75a886440f249f18132ac"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\model.rs",
+                      "bytes":  3887,
+                      "sha256":  "c243c68e46b15f3203125af226332cc31360a178cc90285628fc73fad918c80d"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\rs422.rs",
+                      "bytes":  8507,
+                      "sha256":  "828a9a5dc4fd402bdbf93ec3c72408fb37bff91676ccc4c8e7ff026fb8ffc6e0"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\udp_lvds.rs",
+                      "bytes":  38758,
+                      "sha256":  "fb268768d894c67dcb8f8bbfe4b83f10dec3c75b39ada1e1b5d87c18723b107f"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\udp_lvds_dedup.rs",
+                      "bytes":  21112,
+                      "sha256":  "8d62af6db578ac9d4f0d9fe09a68ffba6d82f19353760eb18d6bd50834e76163"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-core\\src\\udp_lvds_sequence.rs",
+                      "bytes":  25080,
+                      "sha256":  "72ed1b5e421f8d8ec7125163a489483817ffe237fa7b35f26a8908e4cd5f466b"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-storage\\Cargo.toml",
+                      "bytes":  712,
+                      "sha256":  "1c87336c57135d1ecc95f3e97f4f9a99b40d2f1c4eb10b28441266bf771ab6c5"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-storage\\src\\binary.rs",
+                      "bytes":  9745,
+                      "sha256":  "d5ae9abf20e160af0e248377c6c473bd43676df5cfe6d4f8f339e1ddbacfd99a"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-storage\\src\\binary_v3.rs",
+                      "bytes":  19438,
+                      "sha256":  "83fff5cefb8a837e3b1e14d9376dfe1db342086a3f846e7b79b7673ae0d1c9c2"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-storage\\src\\error.rs",
+                      "bytes":  1805,
+                      "sha256":  "0b957430608daddd67d67c74b83265099c9d1810624e1e9ccb72727a965d4bfd"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-storage\\src\\hdf5.rs",
+                      "bytes":  14951,
+                      "sha256":  "804699b1d68b0c945b010c864c4596f4cea5fe27d35aac2d89273346a67a2889"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-storage\\src\\legacy.rs",
+                      "bytes":  815,
+                      "sha256":  "d8ae90bf2e8a06b3a066a5446c4fb6e974b777744a8a019082285c3db9b0f336"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-storage\\src\\lib.rs",
+                      "bytes":  1670,
+                      "sha256":  "b910c33670e1c963cd0e17f972c52a6ab7592ed2ae99d492067bf770a0ee5476"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-storage\\src\\memory.rs",
+                      "bytes":  2123,
+                      "sha256":  "937c6a9f63d93eec735d8a9365ace2074d953595a5b7223958751f94fb058d63"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-storage\\src\\metrics.rs",
+                      "bytes":  3088,
+                      "sha256":  "fb8aa9fdf9942be3b74b6a9ea1a73b080985d655f93fc0691b0320cf0726951f"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-storage\\src\\raw.rs",
+                      "bytes":  32024,
+                      "sha256":  "34336484255f4e891fd67d488108e7f047d0ab4b2cce1fd822dbadf529f896b7"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-storage\\src\\raw_tests.rs",
+                      "bytes":  18633,
+                      "sha256":  "df533851cbb5264259caedfb95d231e04cae30b938fa8fd18755b18ed68e4d85"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-storage\\src\\scientific_csv.rs",
+                      "bytes":  22489,
+                      "sha256":  "da0fd2a73ea5d70193c7bb3a9536d496b7032b3ad6488f6e5aae52e01d8a3e61"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-storage\\src\\service.rs",
+                      "bytes":  32888,
+                      "sha256":  "4e36a8ae890bad47852799177ae20a5792ffb944d6164abd47251e9d40dbf63b"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-transport\\Cargo.toml",
+                      "bytes":  710,
+                      "sha256":  "1243f4d19c23734a110f93ecf1e4a40e16c064417b2df00192e42d864221e932"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-transport\\examples\\replay_bench.rs",
+                      "bytes":  5714,
+                      "sha256":  "3a90256ae9999fe7e7198965f8e98bb2c0bf5e7e582d57a47a7f827f7d4f393d"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-transport\\src\\core_adapter.rs",
+                      "bytes":  6906,
+                      "sha256":  "77651804063823a55ab8cd34dcb4d4344859dae6df347235d73c10ad38b8f4c6"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-transport\\src\\error.rs",
+                      "bytes":  3481,
+                      "sha256":  "cc63836ece29eeff0492486c26134182b1097fde1d174a9218da3dfb9bd7d4b2"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-transport\\src\\lib.rs",
+                      "bytes":  1168,
+                      "sha256":  "3a72aa73588adc3ae936ee62eb6d9e327107ae8e93c838b7e937ae6242d63f91"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-transport\\src\\metrics.rs",
+                      "bytes":  12485,
+                      "sha256":  "2edc300841badd8a1039f9646d52985ba654ca1e71f8b209326fcfcb8c7e929c"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-transport\\src\\mock.rs",
+                      "bytes":  11108,
+                      "sha256":  "e6e209ca0e8a94be61b7e0ccdd8a291814d4360377ee97d64ddf5def0cdec4c2"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-transport\\src\\pcapng.rs",
+                      "bytes":  30091,
+                      "sha256":  "d094e5e4b6bb118a28e83ba32a17f6abf4cc4e754fd75d36e9d4f2fd16e7fe83"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-transport\\src\\pipeline_test.rs",
+                      "bytes":  5600,
+                      "sha256":  "ad8b4c623bd23bbcc91a7c925fc35ce82930d8ed2b65970420bad57646445389"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-transport\\src\\serial.rs",
+                      "bytes":  4620,
+                      "sha256":  "a6b9bb0fcbb7929e5b2ab3c0bf60ffe0b9fa9965e13de5f1cc0b338294ba4d13"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-transport\\src\\transport.rs",
+                      "bytes":  952,
+                      "sha256":  "1ee783f0356e81c3099f5302bb4227e49e8b14459679b0d2d432a7534a72dd4e"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-transport\\src\\udp.rs",
+                      "bytes":  6989,
+                      "sha256":  "7d28eb94fea0efc5ef5da05b25086363543e036ae6681dfd9edd1ff00a4cfb0c"
+                  },
+                  {
+                      "path":  "D:\\RUST\\langmuier\\crates\\langmuir-transport\\src\\worker.rs",
+                      "bytes":  36519,
+                      "sha256":  "d3c511342d33095793874a8a4591c2f472b8895339a886615241456c707fa8ff"
+                  }
+              ]
+}

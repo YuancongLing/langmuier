@@ -1,0 +1,1346 @@
+{
+  "result": "PASS",
+  "generated_utc": "2026-10-25T08:17:47.560639+00:00",
+  "scope": "documentation publication only; no Cargo/build/GUI/scientific acceptance rerun",
+  "user_authorization": "User explicitly authorized GitHub publication after the original acceptance-stage stop/no-commit instruction.",
+  "report": {
+    "path": "docs/LVDS_VOLTAGE_DISPLAY_QA.md",
+    "bytes": 33615,
+    "sha256": "2e4f3b84c71e0b5ab24735305188703b7aa63dac00ace575012f6b6810147be5"
+  },
+  "plan": {
+    "path": "docs/superpowers/plans/2026-10-25-lvds-voltage-display.md",
+    "bytes": 4482,
+    "sha256": "0d9739cc487a99a1c7271d4e494c893698e371eada779c8a2156238e607a2a53"
+  },
+  "selected_evidence_files": [
+    {
+      "path": "docs/qa/voltage-display-20261025/actual-voltage-data-audit.json",
+      "bytes": 19334,
+      "sha256": "843ae308dd955bc96d2e0baab5ca5a7187391f59e838ae2904712723dca63737"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/actual_gui_science_verify.py",
+      "bytes": 13804,
+      "sha256": "b12d95c2c157dca6abdac68231ce958e3a2e111281f775372f35045edf20de6b"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/check.log",
+      "bytes": 956,
+      "sha256": "8ce0f2c1cd787a9f51973c0cd49655ed503b737437491dabfda9c57f9386ab44"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/check_existing_txt_pcap.py",
+      "bytes": 1468,
+      "sha256": "9b9ed0fb76ecb820f168bf2cc8cb79e3f06bce5c05e6067f72e39406a482082a"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/check_report_evidence.py",
+      "bytes": 5374,
+      "sha256": "4ac2498414b07668636014bd5e617d31207539758b30a65e038323f50480e584"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/clippy.log",
+      "bytes": 956,
+      "sha256": "96440922a8cc415610af32edc6718d77919a16f0463475391e95bcb659416db5"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/compare_fixture_correction_pe.py",
+      "bytes": 6426,
+      "sha256": "ccaf17c6737b821228963fc67f4573ce90229cead7df43a96ee85a8521410ea7"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/display-red.log",
+      "bytes": 8018,
+      "sha256": "b1d94e1a956a187b93db038058dc9f02e8433d89fc2f0f48014c9c9d23425dbd"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/existing-storage-independent-readback.json",
+      "bytes": 2682,
+      "sha256": "a5b76e809edc85678647a372c20006306c353f1fb664f8b670c153315bedbe04"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/existing-txt-pcap-provenance-check.json",
+      "bytes": 890,
+      "sha256": "c0921588813712029e700313bc2bef5fb00c28e3592d7f4d74482b21e0d94f2f"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/final-evidence-manifest.json",
+      "bytes": 28624,
+      "sha256": "38ae72dae41ddbfbea1be5f150af26ff9a09e79f6362149c1f35ce662dae73aa"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/final-gui-cursor-independent-readback.json",
+      "bytes": 1669,
+      "sha256": "dee94f42af4a1540802f4ea60d5f497971c53f80c7158d45e34a7789bb09db2e"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/final-gui-storage-independent-readback.json",
+      "bytes": 2682,
+      "sha256": "f38caf72f08c523b233912e0771179d7a3347f12448fb5d17d05d823cfc5d123"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/final-native-gui-process.json",
+      "bytes": 339,
+      "sha256": "00d796ae00b830be81d7cd9289ece1908b22e5bff76894d41b59cbfd562bd490"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/final-normalized-cursor-independent-readback.json",
+      "bytes": 1412,
+      "sha256": "cef733f619088a1256e9ac08445f6e6eca0987e1e88590061dc8f45030a3f4c6"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/final-txt-positive-cursor-independent-readback.json",
+      "bytes": 1288,
+      "sha256": "aacdb91dfdbb29e14f6a23fdb8315920dd41dd6d3ffabc67313d0dc21e5b91bc"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/final-vs-existing-storage-byte-identity.json",
+      "bytes": 1885,
+      "sha256": "8386d29dfda265c605e18684dd2d00264dda1f347f80cb17e90c199b31a239ef"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/fmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/freeze_source_manifest.py",
+      "bytes": 1561,
+      "sha256": "a71451dd66b6cac2c0091a9c45615195b321bce6e39e1ad74771f97ec12ffe4c"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/frozen-source-manifest.json",
+      "bytes": 14736,
+      "sha256": "0b27c6118ff0e6d180887899ae7d58efb9b5852d0aa2cfa4536ae2d1801bfc72"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/gui-cursor-independent-readback.json",
+      "bytes": 1161,
+      "sha256": "9f0e11033cf782472e5321dd7290d17d1fa581b71f4095dea3f1a30e019d38bd"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/history-cursor-independent-readback.json",
+      "bytes": 2232,
+      "sha256": "44f4c443ea567d6e8fdbb7814307c48b20e743f3f75cea43e0bae8346bdf9b57"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/native-gui-process.json",
+      "bytes": 174,
+      "sha256": "db4758022f2e24b06ae41fac2c8cfc104d34cf6226a2d1031de4d263cbaf75fa"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/new-gui-storage-independent-readback.json",
+      "bytes": 2682,
+      "sha256": "a9026565db845cd455a54b2fc9165a5b3af3ac2e5ff7f23d7bac9c1d3cb17080"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/new-vs-existing-storage-byte-identity.json",
+      "bytes": 1145,
+      "sha256": "b12a40e62b6c4e4d407c22d8971e63141e5264807094c5655fef09efb44f9b71"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/pe-fixture-correction-comparison.json",
+      "bytes": 10537,
+      "sha256": "f2ef3eb458095d896ce1fe53c3a79ff94623a7c077577dcae2d8675558aa3e90"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/previous-package.json",
+      "bytes": 732,
+      "sha256": "cef6c64b7a15c8de9f9d31cc123d42859ac3d9c579bc2d6ebfca3497c5c9f15f"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/README.md",
+      "bytes": 1874,
+      "sha256": "3464837c2e01be7cd84c84db9ff478ac65759fae98c83afd939328c568281ea9"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/required-checks.json",
+      "bytes": 1146,
+      "sha256": "7589f072fe44e6829f22042b1c6027ab9005002d2fe0142017e34e2e1e1beefa"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/test.log",
+      "bytes": 73276,
+      "sha256": "5e09e6c66572af48e15498d9bf93c3baf8779f7323ab95efd61cbfe7ef16d2ec"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/txt-positive-cursor-independent-readback.json",
+      "bytes": 1109,
+      "sha256": "0caa4c0dee8034960e72da89fcb01fb63cbedef21485531947e638a5ae201412"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/unchanged-baseline.json",
+      "bytes": 2356,
+      "sha256": "36eee2b088f9ddf3e5243c3fab259368fd146a671f70a6c75240084c9a4b4c5b"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/verify_final_normalized_cursor.py",
+      "bytes": 2566,
+      "sha256": "ee66b79f52806e48547120add3c731381a595614e2cdd32233a8203fff731b16"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/verify_final_txt_positive_cursor.py",
+      "bytes": 2709,
+      "sha256": "02a8e955bace2d897051633aa95b9aa3a18a23b8827b41ba481a672729781619"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/verify_final_voltage_gui_artifacts.py",
+      "bytes": 3855,
+      "sha256": "1466e93c4f485597654cacd22f68a2535464e889f968f8a172c7bfb94be8ee48"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/verify_history_cursor_readback.py",
+      "bytes": 2705,
+      "sha256": "ae9e372de6f6f334aaca269f30e90857f3a75fece18bbdbfd9f9579de544b5cd"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/verify_txt_positive_cursor.py",
+      "bytes": 2628,
+      "sha256": "73e03a8c9cf8c6377a0342a406be6e351bc7d5a3588dc7411840da7f5e5be5cb"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/verify_voltage_gui_artifacts.py",
+      "bytes": 3166,
+      "sha256": "f1249af50e4100384a4512873479598d83fc6fd66a60b7fdf80fcb3a184e81b6"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/verify_windows_acceptance_package.py",
+      "bytes": 3595,
+      "sha256": "5d5984726a0ee0fd98cf2d92ba4858c782f229998cf8282d12404182899dfa7c"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/voltage_data_audit.py",
+      "bytes": 5706,
+      "sha256": "21f04aaa35538945d35efa7aab0e273d171ff18506713d5757a07c1885477344"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/windows-package-acceptance-verification.json",
+      "bytes": 2119,
+      "sha256": "45bdbcb17e211d4fa03a54f5ac99f8ab863334770946c4342e2b188b9f8c1523"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/windows-release-build-result.json",
+      "bytes": 364,
+      "sha256": "be7efcab2e91fbf7b84c0f6a27c3e66005fb136e680375984d80694415d39a79"
+    },
+    {
+      "path": "docs/qa/voltage-display-20261025/windows-release-build.log",
+      "bytes": 950,
+      "sha256": "ce7916e83e1dc7ad3aac71c344132d00072d5b7577c7b3250c667681c1b4db40"
+    }
+  ],
+  "selected_evidence_file_count_excluding_this_manifest": 43,
+  "byte_identical_copies": [
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/actual-voltage-data-audit.json",
+        "bytes": 19334,
+        "sha256": "843ae308dd955bc96d2e0baab5ca5a7187391f59e838ae2904712723dca63737"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/actual-voltage-data-audit.json",
+        "bytes": 19334,
+        "sha256": "843ae308dd955bc96d2e0baab5ca5a7187391f59e838ae2904712723dca63737"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/actual_gui_science_verify.py",
+        "bytes": 13804,
+        "sha256": "b12d95c2c157dca6abdac68231ce958e3a2e111281f775372f35045edf20de6b"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/actual_gui_science_verify.py",
+        "bytes": 13804,
+        "sha256": "b12d95c2c157dca6abdac68231ce958e3a2e111281f775372f35045edf20de6b"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/check.log",
+        "bytes": 956,
+        "sha256": "8ce0f2c1cd787a9f51973c0cd49655ed503b737437491dabfda9c57f9386ab44"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/check.log",
+        "bytes": 956,
+        "sha256": "8ce0f2c1cd787a9f51973c0cd49655ed503b737437491dabfda9c57f9386ab44"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/check_existing_txt_pcap.py",
+        "bytes": 1468,
+        "sha256": "9b9ed0fb76ecb820f168bf2cc8cb79e3f06bce5c05e6067f72e39406a482082a"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/check_existing_txt_pcap.py",
+        "bytes": 1468,
+        "sha256": "9b9ed0fb76ecb820f168bf2cc8cb79e3f06bce5c05e6067f72e39406a482082a"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/check_report_evidence.py",
+        "bytes": 5374,
+        "sha256": "4ac2498414b07668636014bd5e617d31207539758b30a65e038323f50480e584"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/check_report_evidence.py",
+        "bytes": 5374,
+        "sha256": "4ac2498414b07668636014bd5e617d31207539758b30a65e038323f50480e584"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/clippy.log",
+        "bytes": 956,
+        "sha256": "96440922a8cc415610af32edc6718d77919a16f0463475391e95bcb659416db5"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/clippy.log",
+        "bytes": 956,
+        "sha256": "96440922a8cc415610af32edc6718d77919a16f0463475391e95bcb659416db5"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/compare_fixture_correction_pe.py",
+        "bytes": 6426,
+        "sha256": "ccaf17c6737b821228963fc67f4573ce90229cead7df43a96ee85a8521410ea7"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/compare_fixture_correction_pe.py",
+        "bytes": 6426,
+        "sha256": "ccaf17c6737b821228963fc67f4573ce90229cead7df43a96ee85a8521410ea7"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/display-red.log",
+        "bytes": 8018,
+        "sha256": "b1d94e1a956a187b93db038058dc9f02e8433d89fc2f0f48014c9c9d23425dbd"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/display-red.log",
+        "bytes": 8018,
+        "sha256": "b1d94e1a956a187b93db038058dc9f02e8433d89fc2f0f48014c9c9d23425dbd"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/existing-storage-independent-readback.json",
+        "bytes": 2682,
+        "sha256": "a5b76e809edc85678647a372c20006306c353f1fb664f8b670c153315bedbe04"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/existing-storage-independent-readback.json",
+        "bytes": 2682,
+        "sha256": "a5b76e809edc85678647a372c20006306c353f1fb664f8b670c153315bedbe04"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/existing-txt-pcap-provenance-check.json",
+        "bytes": 890,
+        "sha256": "c0921588813712029e700313bc2bef5fb00c28e3592d7f4d74482b21e0d94f2f"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/existing-txt-pcap-provenance-check.json",
+        "bytes": 890,
+        "sha256": "c0921588813712029e700313bc2bef5fb00c28e3592d7f4d74482b21e0d94f2f"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/final-evidence-manifest.json",
+        "bytes": 28624,
+        "sha256": "38ae72dae41ddbfbea1be5f150af26ff9a09e79f6362149c1f35ce662dae73aa"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/final-evidence-manifest.json",
+        "bytes": 28624,
+        "sha256": "38ae72dae41ddbfbea1be5f150af26ff9a09e79f6362149c1f35ce662dae73aa"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/final-gui-cursor-independent-readback.json",
+        "bytes": 1669,
+        "sha256": "dee94f42af4a1540802f4ea60d5f497971c53f80c7158d45e34a7789bb09db2e"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/final-gui-cursor-independent-readback.json",
+        "bytes": 1669,
+        "sha256": "dee94f42af4a1540802f4ea60d5f497971c53f80c7158d45e34a7789bb09db2e"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/final-gui-storage-independent-readback.json",
+        "bytes": 2682,
+        "sha256": "f38caf72f08c523b233912e0771179d7a3347f12448fb5d17d05d823cfc5d123"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/final-gui-storage-independent-readback.json",
+        "bytes": 2682,
+        "sha256": "f38caf72f08c523b233912e0771179d7a3347f12448fb5d17d05d823cfc5d123"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/final-native-gui-process.json",
+        "bytes": 339,
+        "sha256": "00d796ae00b830be81d7cd9289ece1908b22e5bff76894d41b59cbfd562bd490"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/final-native-gui-process.json",
+        "bytes": 339,
+        "sha256": "00d796ae00b830be81d7cd9289ece1908b22e5bff76894d41b59cbfd562bd490"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/final-normalized-cursor-independent-readback.json",
+        "bytes": 1412,
+        "sha256": "cef733f619088a1256e9ac08445f6e6eca0987e1e88590061dc8f45030a3f4c6"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/final-normalized-cursor-independent-readback.json",
+        "bytes": 1412,
+        "sha256": "cef733f619088a1256e9ac08445f6e6eca0987e1e88590061dc8f45030a3f4c6"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/final-txt-positive-cursor-independent-readback.json",
+        "bytes": 1288,
+        "sha256": "aacdb91dfdbb29e14f6a23fdb8315920dd41dd6d3ffabc67313d0dc21e5b91bc"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/final-txt-positive-cursor-independent-readback.json",
+        "bytes": 1288,
+        "sha256": "aacdb91dfdbb29e14f6a23fdb8315920dd41dd6d3ffabc67313d0dc21e5b91bc"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/final-vs-existing-storage-byte-identity.json",
+        "bytes": 1885,
+        "sha256": "8386d29dfda265c605e18684dd2d00264dda1f347f80cb17e90c199b31a239ef"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/final-vs-existing-storage-byte-identity.json",
+        "bytes": 1885,
+        "sha256": "8386d29dfda265c605e18684dd2d00264dda1f347f80cb17e90c199b31a239ef"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/fmt.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/fmt.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/freeze_source_manifest.py",
+        "bytes": 1561,
+        "sha256": "a71451dd66b6cac2c0091a9c45615195b321bce6e39e1ad74771f97ec12ffe4c"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/freeze_source_manifest.py",
+        "bytes": 1561,
+        "sha256": "a71451dd66b6cac2c0091a9c45615195b321bce6e39e1ad74771f97ec12ffe4c"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/frozen-source-manifest.json",
+        "bytes": 14736,
+        "sha256": "0b27c6118ff0e6d180887899ae7d58efb9b5852d0aa2cfa4536ae2d1801bfc72"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/frozen-source-manifest.json",
+        "bytes": 14736,
+        "sha256": "0b27c6118ff0e6d180887899ae7d58efb9b5852d0aa2cfa4536ae2d1801bfc72"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/gui-cursor-independent-readback.json",
+        "bytes": 1161,
+        "sha256": "9f0e11033cf782472e5321dd7290d17d1fa581b71f4095dea3f1a30e019d38bd"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/gui-cursor-independent-readback.json",
+        "bytes": 1161,
+        "sha256": "9f0e11033cf782472e5321dd7290d17d1fa581b71f4095dea3f1a30e019d38bd"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/history-cursor-independent-readback.json",
+        "bytes": 2232,
+        "sha256": "44f4c443ea567d6e8fdbb7814307c48b20e743f3f75cea43e0bae8346bdf9b57"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/history-cursor-independent-readback.json",
+        "bytes": 2232,
+        "sha256": "44f4c443ea567d6e8fdbb7814307c48b20e743f3f75cea43e0bae8346bdf9b57"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/native-gui-process.json",
+        "bytes": 174,
+        "sha256": "db4758022f2e24b06ae41fac2c8cfc104d34cf6226a2d1031de4d263cbaf75fa"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/native-gui-process.json",
+        "bytes": 174,
+        "sha256": "db4758022f2e24b06ae41fac2c8cfc104d34cf6226a2d1031de4d263cbaf75fa"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/new-gui-storage-independent-readback.json",
+        "bytes": 2682,
+        "sha256": "a9026565db845cd455a54b2fc9165a5b3af3ac2e5ff7f23d7bac9c1d3cb17080"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/new-gui-storage-independent-readback.json",
+        "bytes": 2682,
+        "sha256": "a9026565db845cd455a54b2fc9165a5b3af3ac2e5ff7f23d7bac9c1d3cb17080"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/new-vs-existing-storage-byte-identity.json",
+        "bytes": 1145,
+        "sha256": "b12a40e62b6c4e4d407c22d8971e63141e5264807094c5655fef09efb44f9b71"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/new-vs-existing-storage-byte-identity.json",
+        "bytes": 1145,
+        "sha256": "b12a40e62b6c4e4d407c22d8971e63141e5264807094c5655fef09efb44f9b71"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/pe-fixture-correction-comparison.json",
+        "bytes": 10537,
+        "sha256": "f2ef3eb458095d896ce1fe53c3a79ff94623a7c077577dcae2d8675558aa3e90"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/pe-fixture-correction-comparison.json",
+        "bytes": 10537,
+        "sha256": "f2ef3eb458095d896ce1fe53c3a79ff94623a7c077577dcae2d8675558aa3e90"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/previous-package.json",
+        "bytes": 732,
+        "sha256": "cef6c64b7a15c8de9f9d31cc123d42859ac3d9c579bc2d6ebfca3497c5c9f15f"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/previous-package.json",
+        "bytes": 732,
+        "sha256": "cef6c64b7a15c8de9f9d31cc123d42859ac3d9c579bc2d6ebfca3497c5c9f15f"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/required-checks.json",
+        "bytes": 1146,
+        "sha256": "7589f072fe44e6829f22042b1c6027ab9005002d2fe0142017e34e2e1e1beefa"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/required-checks.json",
+        "bytes": 1146,
+        "sha256": "7589f072fe44e6829f22042b1c6027ab9005002d2fe0142017e34e2e1e1beefa"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/test.log",
+        "bytes": 73276,
+        "sha256": "5e09e6c66572af48e15498d9bf93c3baf8779f7323ab95efd61cbfe7ef16d2ec"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/test.log",
+        "bytes": 73276,
+        "sha256": "5e09e6c66572af48e15498d9bf93c3baf8779f7323ab95efd61cbfe7ef16d2ec"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/txt-positive-cursor-independent-readback.json",
+        "bytes": 1109,
+        "sha256": "0caa4c0dee8034960e72da89fcb01fb63cbedef21485531947e638a5ae201412"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/txt-positive-cursor-independent-readback.json",
+        "bytes": 1109,
+        "sha256": "0caa4c0dee8034960e72da89fcb01fb63cbedef21485531947e638a5ae201412"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/unchanged-baseline.json",
+        "bytes": 2356,
+        "sha256": "36eee2b088f9ddf3e5243c3fab259368fd146a671f70a6c75240084c9a4b4c5b"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/unchanged-baseline.json",
+        "bytes": 2356,
+        "sha256": "36eee2b088f9ddf3e5243c3fab259368fd146a671f70a6c75240084c9a4b4c5b"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/verify_final_normalized_cursor.py",
+        "bytes": 2566,
+        "sha256": "ee66b79f52806e48547120add3c731381a595614e2cdd32233a8203fff731b16"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/verify_final_normalized_cursor.py",
+        "bytes": 2566,
+        "sha256": "ee66b79f52806e48547120add3c731381a595614e2cdd32233a8203fff731b16"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/verify_final_txt_positive_cursor.py",
+        "bytes": 2709,
+        "sha256": "02a8e955bace2d897051633aa95b9aa3a18a23b8827b41ba481a672729781619"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/verify_final_txt_positive_cursor.py",
+        "bytes": 2709,
+        "sha256": "02a8e955bace2d897051633aa95b9aa3a18a23b8827b41ba481a672729781619"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/verify_final_voltage_gui_artifacts.py",
+        "bytes": 3855,
+        "sha256": "1466e93c4f485597654cacd22f68a2535464e889f968f8a172c7bfb94be8ee48"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/verify_final_voltage_gui_artifacts.py",
+        "bytes": 3855,
+        "sha256": "1466e93c4f485597654cacd22f68a2535464e889f968f8a172c7bfb94be8ee48"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/verify_history_cursor_readback.py",
+        "bytes": 2705,
+        "sha256": "ae9e372de6f6f334aaca269f30e90857f3a75fece18bbdbfd9f9579de544b5cd"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/verify_history_cursor_readback.py",
+        "bytes": 2705,
+        "sha256": "ae9e372de6f6f334aaca269f30e90857f3a75fece18bbdbfd9f9579de544b5cd"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/verify_txt_positive_cursor.py",
+        "bytes": 2628,
+        "sha256": "73e03a8c9cf8c6377a0342a406be6e351bc7d5a3588dc7411840da7f5e5be5cb"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/verify_txt_positive_cursor.py",
+        "bytes": 2628,
+        "sha256": "73e03a8c9cf8c6377a0342a406be6e351bc7d5a3588dc7411840da7f5e5be5cb"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/verify_voltage_gui_artifacts.py",
+        "bytes": 3166,
+        "sha256": "f1249af50e4100384a4512873479598d83fc6fd66a60b7fdf80fcb3a184e81b6"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/verify_voltage_gui_artifacts.py",
+        "bytes": 3166,
+        "sha256": "f1249af50e4100384a4512873479598d83fc6fd66a60b7fdf80fcb3a184e81b6"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/verify_windows_acceptance_package.py",
+        "bytes": 3595,
+        "sha256": "5d5984726a0ee0fd98cf2d92ba4858c782f229998cf8282d12404182899dfa7c"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/verify_windows_acceptance_package.py",
+        "bytes": 3595,
+        "sha256": "5d5984726a0ee0fd98cf2d92ba4858c782f229998cf8282d12404182899dfa7c"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/voltage_data_audit.py",
+        "bytes": 5706,
+        "sha256": "21f04aaa35538945d35efa7aab0e273d171ff18506713d5757a07c1885477344"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/voltage_data_audit.py",
+        "bytes": 5706,
+        "sha256": "21f04aaa35538945d35efa7aab0e273d171ff18506713d5757a07c1885477344"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/windows-package-acceptance-verification.json",
+        "bytes": 2119,
+        "sha256": "45bdbcb17e211d4fa03a54f5ac99f8ab863334770946c4342e2b188b9f8c1523"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/windows-package-acceptance-verification.json",
+        "bytes": 2119,
+        "sha256": "45bdbcb17e211d4fa03a54f5ac99f8ab863334770946c4342e2b188b9f8c1523"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/windows-release-build-result.json",
+        "bytes": 364,
+        "sha256": "be7efcab2e91fbf7b84c0f6a27c3e66005fb136e680375984d80694415d39a79"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/windows-release-build-result.json",
+        "bytes": 364,
+        "sha256": "be7efcab2e91fbf7b84c0f6a27c3e66005fb136e680375984d80694415d39a79"
+      },
+      "byte_for_byte_equal": true
+    },
+    {
+      "source": {
+        "path": "target/qa/voltage-20261025/windows-release-build.log",
+        "bytes": 950,
+        "sha256": "ce7916e83e1dc7ad3aac71c344132d00072d5b7577c7b3250c667681c1b4db40"
+      },
+      "copy": {
+        "path": "docs/qa/voltage-display-20261025/windows-release-build.log",
+        "bytes": 950,
+        "sha256": "ce7916e83e1dc7ad3aac71c344132d00072d5b7577c7b3250c667681c1b4db40"
+      },
+      "byte_for_byte_equal": true
+    }
+  ],
+  "original_frozen_manifest": {
+    "path": "target/qa/voltage-20261025/final-evidence-manifest.json",
+    "bytes": 28624,
+    "sha256": "38ae72dae41ddbfbea1be5f150af26ff9a09e79f6362149c1f35ce662dae73aa"
+  },
+  "frozen_document_hashes_describe": "Pre-publication report/plan backed up locally under target/qa/voltage-20261025/publication-backup/; not current edited documents.",
+  "original_frozen_manifest_unchanged": true,
+  "current_production_source_files_match_frozen_snapshot": 73,
+  "current_delivered_exe": {
+    "path": "target/delivery/windows-x64/LangmuierProbeGroundControl.exe",
+    "bytes": 10176512,
+    "sha256": "f2805c059a699b02164d00da77f9b335a371954474481180fe35e3426cc9269a"
+  },
+  "current_delivery_zip": {
+    "path": "target/delivery/LangmuierProbeGroundControl-windows-x64.zip",
+    "bytes": 4210621,
+    "sha256": "0931228e43429f9b356d8286cea781aba33a26e00a1bc6769699903faf02cd93"
+  },
+  "report_links": [
+    {
+      "target": "qa/voltage-display-20261025/actual-voltage-data-audit.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/actual-voltage-data-audit.json",
+      "bytes": 19334,
+      "sha256": "843ae308dd955bc96d2e0baab5ca5a7187391f59e838ae2904712723dca63737"
+    },
+    {
+      "target": "qa/voltage-display-20261025/voltage_data_audit.py",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/voltage_data_audit.py",
+      "bytes": 5706,
+      "sha256": "21f04aaa35538945d35efa7aab0e273d171ff18506713d5757a07c1885477344"
+    },
+    {
+      "target": "../apps/desktop/src/voltage.rs",
+      "status": "PASS",
+      "path": "apps/desktop/src/voltage.rs",
+      "bytes": 1153,
+      "sha256": "ff1e8422f2c2ac005ba9dfc187f92e1067372fa22443ca76c91030a5af49f452"
+    },
+    {
+      "target": "../apps/desktop/src/main.rs",
+      "status": "PASS",
+      "path": "apps/desktop/src/main.rs",
+      "bytes": 2448,
+      "sha256": "f0f1a12f45edbecd2b9a5fa690f49ea9000fb856a64345767df811c96edc102a"
+    },
+    {
+      "target": "../apps/desktop/src/app.rs",
+      "status": "PASS",
+      "path": "apps/desktop/src/app.rs",
+      "bytes": 181529,
+      "sha256": "0dd3cc5f66dd8cd837a370603a5629a6ac7f3622ad6bfc283a36ab6947a4ef8c"
+    },
+    {
+      "target": "../apps/desktop/src/app_history.rs",
+      "status": "PASS",
+      "path": "apps/desktop/src/app_history.rs",
+      "bytes": 64454,
+      "sha256": "be106bcbdd308ef8c7eb049df9c206c6cecf56ff84e07aa88c2b22f3e207e2fa"
+    },
+    {
+      "target": "../apps/desktop/src/app.rs",
+      "status": "PASS",
+      "path": "apps/desktop/src/app.rs",
+      "bytes": 181529,
+      "sha256": "0dd3cc5f66dd8cd837a370603a5629a6ac7f3622ad6bfc283a36ab6947a4ef8c"
+    },
+    {
+      "target": "../apps/desktop/src/app_plot_tests.rs",
+      "status": "PASS",
+      "path": "apps/desktop/src/app_plot_tests.rs",
+      "bytes": 24582,
+      "sha256": "89d605381bedc97b719d2827284abd0fb1539b7499a37e1736ce8a966b523425"
+    },
+    {
+      "target": "qa/voltage-display-20261025/test.log",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/test.log",
+      "bytes": 73276,
+      "sha256": "5e09e6c66572af48e15498d9bf93c3baf8779f7323ab95efd61cbfe7ef16d2ec"
+    },
+    {
+      "target": "qa/voltage-display-20261025/existing-txt-pcap-provenance-check.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/existing-txt-pcap-provenance-check.json",
+      "bytes": 890,
+      "sha256": "c0921588813712029e700313bc2bef5fb00c28e3592d7f4d74482b21e0d94f2f"
+    },
+    {
+      "target": "qa/voltage-display-20261025/final-native-gui-process.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/final-native-gui-process.json",
+      "bytes": 339,
+      "sha256": "00d796ae00b830be81d7cd9289ece1908b22e5bff76894d41b59cbfd562bd490"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_FINAL_ACTUAL_PCAP_CURSOR.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_FINAL_ACTUAL_PCAP_CURSOR.jpg",
+      "bytes": 266638,
+      "sha256": "334cb426e66a6e5063f9a000961273758f59268c1c4f470e77ab29c4707370a7"
+    },
+    {
+      "target": "qa/voltage-display-20261025/final-gui-cursor-independent-readback.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/final-gui-cursor-independent-readback.json",
+      "bytes": 1669,
+      "sha256": "dee94f42af4a1540802f4ea60d5f497971c53f80c7158d45e34a7789bb09db2e"
+    },
+    {
+      "target": "qa/voltage-display-20261025/verify_final_voltage_gui_artifacts.py",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/verify_final_voltage_gui_artifacts.py",
+      "bytes": 3855,
+      "sha256": "1466e93c4f485597654cacd22f68a2535464e889f968f8a172c7bfb94be8ee48"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_FINAL_LPD_SPLIT.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_FINAL_LPD_SPLIT.jpg",
+      "bytes": 216601,
+      "sha256": "64bcd01a71501a91fd65b80930d6dbb56f965692fe706cfb153cf32a66ef8d89"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_FINAL_LPD_OPEN.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_FINAL_LPD_OPEN.jpg",
+      "bytes": 200978,
+      "sha256": "b064159211ec24fb4b10b01abf8326c450222bd777e2c403e693831915105195"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_FINAL_NORMALIZED_CURSOR.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_FINAL_NORMALIZED_CURSOR.jpg",
+      "bytes": 209610,
+      "sha256": "17e6dc28fc7f0bd14d695f9328c56b6c1830cb64275cfddb727d8a59c3069392"
+    },
+    {
+      "target": "qa/voltage-display-20261025/final-normalized-cursor-independent-readback.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/final-normalized-cursor-independent-readback.json",
+      "bytes": 1412,
+      "sha256": "cef733f619088a1256e9ac08445f6e6eca0987e1e88590061dc8f45030a3f4c6"
+    },
+    {
+      "target": "qa/voltage-display-20261025/verify_final_normalized_cursor.py",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/verify_final_normalized_cursor.py",
+      "bytes": 2566,
+      "sha256": "ee66b79f52806e48547120add3c731381a595614e2cdd32233a8203fff731b16"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_FINAL_TXT_POSITIVE_NEGATIVE_CURSOR.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_FINAL_TXT_POSITIVE_NEGATIVE_CURSOR.jpg",
+      "bytes": 278923,
+      "sha256": "d06ea630509077063d789d4c36715345aa0c76e1e8655fbc548c06cfa9b4774a"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_FINAL_TXT_PCAP_OPEN.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_FINAL_TXT_PCAP_OPEN.jpg",
+      "bytes": 270809,
+      "sha256": "6695b4f0e775eec824f401593cfb37d780d3c19e000b274e66b988790c57f94f"
+    },
+    {
+      "target": "qa/voltage-display-20261025/final-txt-positive-cursor-independent-readback.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/final-txt-positive-cursor-independent-readback.json",
+      "bytes": 1288,
+      "sha256": "aacdb91dfdbb29e14f6a23fdb8315920dd41dd6d3ffabc67313d0dc21e5b91bc"
+    },
+    {
+      "target": "qa/voltage-display-20261025/verify_final_txt_positive_cursor.py",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/verify_final_txt_positive_cursor.py",
+      "bytes": 2709,
+      "sha256": "02a8e955bace2d897051633aa95b9aa3a18a23b8827b41ba481a672729781619"
+    },
+    {
+      "target": "qa/voltage-display-20261025/native-gui-process.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/native-gui-process.json",
+      "bytes": 174,
+      "sha256": "db4758022f2e24b06ae41fac2c8cfc104d34cf6226a2d1031de4d263cbaf75fa"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_TXT_PCAP_OPEN.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_TXT_PCAP_OPEN.jpg",
+      "bytes": 280039,
+      "sha256": "94b21064752a39c8e9f6bfd633ed53a7ac9a5d51e52724b3ca6c52e72be17a79"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_TXT_POSITIVE_NEGATIVE_SPLIT.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_TXT_POSITIVE_NEGATIVE_SPLIT.jpg",
+      "bytes": 288038,
+      "sha256": "ce2280e01650f5feefb694389f124b87fedb53038c32ca116b32fecde75ba3c7"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_TXT_POSITIVE_NEGATIVE_OVERLAY.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_TXT_POSITIVE_NEGATIVE_OVERLAY.jpg",
+      "bytes": 276118,
+      "sha256": "ebf64a1daecf93e9534546591e7da254e18dc3bdf4b9a912fa4e9298c1744374"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_TXT_POSITIVE_CURSOR.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_TXT_POSITIVE_CURSOR.jpg",
+      "bytes": 279775,
+      "sha256": "67348b7d5b6d744bd0615cad443093b404791dbca7a975dd9f63246dbf8b0f77"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_NORMALIZED_CURSOR.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_NORMALIZED_CURSOR.jpg",
+      "bytes": 149683,
+      "sha256": "f8f7ea25addc2c8b2b360a28a80e854a741e8407feffc19f66cadd65ffd83b37"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_LPD_OPEN.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_LPD_OPEN.jpg",
+      "bytes": 137089,
+      "sha256": "fa57f36e7e9387e7f0bd63dffeff19c339bfe6e70fd64796563551e9032b29e3"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_LPD_SPLIT.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_LPD_SPLIT.jpg",
+      "bytes": 252523,
+      "sha256": "17ee54a010188d46443b8a4f1846dffa2a76a620d8f1cf8681a56eeeb0233fa4"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_RAW_OPEN.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_RAW_OPEN.jpg",
+      "bytes": 214585,
+      "sha256": "089560d322f6ce3a53f925d25b10460572bcee0d4c888ec14fff9d499fef95fd"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_RAW_SPLIT.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_RAW_SPLIT.jpg",
+      "bytes": 217913,
+      "sha256": "3128f3be9ea022f20822a985e24b13db6424b9cde2aca98fcbce85e37fda18b1"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_ACTUAL_PCAP_CURSOR.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_ACTUAL_PCAP_CURSOR.jpg",
+      "bytes": 267372,
+      "sha256": "63834e196b7baa2d0b49c8453a1319023ea30ecea30c19e53d505924287096ee"
+    },
+    {
+      "target": "qa/voltage-display-20261025/gui-cursor-independent-readback.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/gui-cursor-independent-readback.json",
+      "bytes": 1161,
+      "sha256": "9f0e11033cf782472e5321dd7290d17d1fa581b71f4095dea3f1a30e019d38bd"
+    },
+    {
+      "target": "qa/voltage-display-20261025/verify_voltage_gui_artifacts.py",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/verify_voltage_gui_artifacts.py",
+      "bytes": 3166,
+      "sha256": "f1249af50e4100384a4512873479598d83fc6fd66a60b7fdf80fcb3a184e81b6"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_LPD_SPLIT.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_LPD_SPLIT.jpg",
+      "bytes": 252523,
+      "sha256": "17ee54a010188d46443b8a4f1846dffa2a76a620d8f1cf8681a56eeeb0233fa4"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_LPD_PAN_MANUAL.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_LPD_PAN_MANUAL.jpg",
+      "bytes": 146344,
+      "sha256": "a949f6cd9fdd541bd0b7c82a56b006baf1feb755d9bb6699247116987e19dcd3"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_LPD_MANUAL_RETAINED.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_LPD_MANUAL_RETAINED.jpg",
+      "bytes": 146447,
+      "sha256": "7a9f3e878d7cc9b2a5b4653ab9f4d601bee9a2bd793d8025fcb3a57b404196a5"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_MANUAL_BEFORE_ZOOM.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_MANUAL_BEFORE_ZOOM.jpg",
+      "bytes": 155829,
+      "sha256": "ede1d2a0807228a8acb82573adfb454ba92b5445f68ad763e4b74452a0a91be3"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_ZOOM.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_ZOOM.jpg",
+      "bytes": 145370,
+      "sha256": "f04ebe439758688e1c97b2d14d755e713f313d118d77eb7dd1cd768b94bc7eac"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_RESET_FOLLOW.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_RESET_FOLLOW.jpg",
+      "bytes": 145846,
+      "sha256": "7356e47e43aa0f31556e99473b1e83d3efcbe6d42debd3f7f68ca21b6444a8f2"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_NORMALIZED_CURSOR.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_NORMALIZED_CURSOR.jpg",
+      "bytes": 149683,
+      "sha256": "f8f7ea25addc2c8b2b360a28a80e854a741e8407feffc19f66cadd65ffd83b37"
+    },
+    {
+      "target": "qa/voltage-display-20261025/history-cursor-independent-readback.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/history-cursor-independent-readback.json",
+      "bytes": 2232,
+      "sha256": "44f4c443ea567d6e8fdbb7814307c48b20e743f3f75cea43e0bae8346bdf9b57"
+    },
+    {
+      "target": "qa/voltage-display-20261025/verify_history_cursor_readback.py",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/verify_history_cursor_readback.py",
+      "bytes": 2705,
+      "sha256": "ae9e372de6f6f334aaca269f30e90857f3a75fece18bbdbfd9f9579de544b5cd"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_TXT_POSITIVE_CURSOR.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_TXT_POSITIVE_CURSOR.jpg",
+      "bytes": 279775,
+      "sha256": "67348b7d5b6d744bd0615cad443093b404791dbca7a975dd9f63246dbf8b0f77"
+    },
+    {
+      "target": "qa/voltage-display-20261025/txt-positive-cursor-independent-readback.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/txt-positive-cursor-independent-readback.json",
+      "bytes": 1109,
+      "sha256": "0caa4c0dee8034960e72da89fcb01fb63cbedef21485531947e638a5ae201412"
+    },
+    {
+      "target": "qa/voltage-display-20261025/verify_txt_positive_cursor.py",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/verify_txt_positive_cursor.py",
+      "bytes": 2628,
+      "sha256": "73e03a8c9cf8c6377a0342a406be6e351bc7d5a3588dc7411840da7f5e5be5cb"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_LAUNCH_DIRECTORY_ERROR.jpg",
+      "status": "PASS",
+      "path": "docs/qa/LVDS_VOLTAGE_LAUNCH_DIRECTORY_ERROR.jpg",
+      "bytes": 149867,
+      "sha256": "d979fabce458a493e5afa3ab0af9f20e4a10d2b69a3b798803f701edcda53b81"
+    },
+    {
+      "target": "qa/voltage-display-20261025/final-gui-storage-independent-readback.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/final-gui-storage-independent-readback.json",
+      "bytes": 2682,
+      "sha256": "f38caf72f08c523b233912e0771179d7a3347f12448fb5d17d05d823cfc5d123"
+    },
+    {
+      "target": "qa/voltage-display-20261025/final-vs-existing-storage-byte-identity.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/final-vs-existing-storage-byte-identity.json",
+      "bytes": 1885,
+      "sha256": "8386d29dfda265c605e18684dd2d00264dda1f347f80cb17e90c199b31a239ef"
+    },
+    {
+      "target": "qa/voltage-display-20261025/verify_final_voltage_gui_artifacts.py",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/verify_final_voltage_gui_artifacts.py",
+      "bytes": 3855,
+      "sha256": "1466e93c4f485597654cacd22f68a2535464e889f968f8a172c7bfb94be8ee48"
+    },
+    {
+      "target": "qa/voltage-display-20261025/new-gui-storage-independent-readback.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/new-gui-storage-independent-readback.json",
+      "bytes": 2682,
+      "sha256": "a9026565db845cd455a54b2fc9165a5b3af3ac2e5ff7f23d7bac9c1d3cb17080"
+    },
+    {
+      "target": "qa/voltage-display-20261025/new-vs-existing-storage-byte-identity.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/new-vs-existing-storage-byte-identity.json",
+      "bytes": 1145,
+      "sha256": "b12a40e62b6c4e4d407c22d8971e63141e5264807094c5655fef09efb44f9b71"
+    },
+    {
+      "target": "qa/voltage-display-20261025/existing-storage-independent-readback.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/existing-storage-independent-readback.json",
+      "bytes": 2682,
+      "sha256": "a5b76e809edc85678647a372c20006306c353f1fb664f8b670c153315bedbe04"
+    },
+    {
+      "target": "qa/voltage-display-20261025/actual_gui_science_verify.py",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/actual_gui_science_verify.py",
+      "bytes": 13804,
+      "sha256": "b12d95c2c157dca6abdac68231ce958e3a2e111281f775372f35045edf20de6b"
+    },
+    {
+      "target": "qa/voltage-display-20261025/unchanged-baseline.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/unchanged-baseline.json",
+      "bytes": 2356,
+      "sha256": "36eee2b088f9ddf3e5243c3fab259368fd146a671f70a6c75240084c9a4b4c5b"
+    },
+    {
+      "target": "qa/voltage-display-20261025/frozen-source-manifest.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/frozen-source-manifest.json",
+      "bytes": 14736,
+      "sha256": "0b27c6118ff0e6d180887899ae7d58efb9b5852d0aa2cfa4536ae2d1801bfc72"
+    },
+    {
+      "target": "qa/voltage-display-20261025/freeze_source_manifest.py",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/freeze_source_manifest.py",
+      "bytes": 1561,
+      "sha256": "a71451dd66b6cac2c0091a9c45615195b321bce6e39e1ad74771f97ec12ffe4c"
+    },
+    {
+      "target": "qa/voltage-display-20261025/fmt.log",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/fmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "target": "qa/voltage-display-20261025/check.log",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/check.log",
+      "bytes": 956,
+      "sha256": "8ce0f2c1cd787a9f51973c0cd49655ed503b737437491dabfda9c57f9386ab44"
+    },
+    {
+      "target": "qa/voltage-display-20261025/test.log",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/test.log",
+      "bytes": 73276,
+      "sha256": "5e09e6c66572af48e15498d9bf93c3baf8779f7323ab95efd61cbfe7ef16d2ec"
+    },
+    {
+      "target": "qa/voltage-display-20261025/clippy.log",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/clippy.log",
+      "bytes": 956,
+      "sha256": "96440922a8cc415610af32edc6718d77919a16f0463475391e95bcb659416db5"
+    },
+    {
+      "target": "qa/voltage-display-20261025/display-red.log",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/display-red.log",
+      "bytes": 8018,
+      "sha256": "b1d94e1a956a187b93db038058dc9f02e8433d89fc2f0f48014c9c9d23425dbd"
+    },
+    {
+      "target": "qa/voltage-display-20261025/test.log",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/test.log",
+      "bytes": 73276,
+      "sha256": "5e09e6c66572af48e15498d9bf93c3baf8779f7323ab95efd61cbfe7ef16d2ec"
+    },
+    {
+      "target": "qa/voltage-display-20261025/required-checks.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/required-checks.json",
+      "bytes": 1146,
+      "sha256": "7589f072fe44e6829f22042b1c6027ab9005002d2fe0142017e34e2e1e1beefa"
+    },
+    {
+      "target": "WINDOWS_BUILD.md",
+      "status": "PASS",
+      "path": "docs/WINDOWS_BUILD.md",
+      "bytes": 11251,
+      "sha256": "44bc8249ba55857f92479834309fee1e3e95393c0c8afff7a697ff2d24b861ef"
+    },
+    {
+      "target": "qa/voltage-display-20261025/windows-release-build-result.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/windows-release-build-result.json",
+      "bytes": 364,
+      "sha256": "be7efcab2e91fbf7b84c0f6a27c3e66005fb136e680375984d80694415d39a79"
+    },
+    {
+      "target": "qa/voltage-display-20261025/windows-release-build.log",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/windows-release-build.log",
+      "bytes": 950,
+      "sha256": "ce7916e83e1dc7ad3aac71c344132d00072d5b7577c7b3250c667681c1b4db40"
+    },
+    {
+      "target": "qa/voltage-display-20261025/windows-package-acceptance-verification.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/windows-package-acceptance-verification.json",
+      "bytes": 2119,
+      "sha256": "45bdbcb17e211d4fa03a54f5ac99f8ab863334770946c4342e2b188b9f8c1523"
+    },
+    {
+      "target": "qa/voltage-display-20261025/verify_windows_acceptance_package.py",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/verify_windows_acceptance_package.py",
+      "bytes": 3595,
+      "sha256": "5d5984726a0ee0fd98cf2d92ba4858c782f229998cf8282d12404182899dfa7c"
+    },
+    {
+      "target": "qa/voltage-display-20261025/pe-fixture-correction-comparison.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/pe-fixture-correction-comparison.json",
+      "bytes": 10537,
+      "sha256": "f2ef3eb458095d896ce1fe53c3a79ff94623a7c077577dcae2d8675558aa3e90"
+    },
+    {
+      "target": "qa/voltage-display-20261025/compare_fixture_correction_pe.py",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/compare_fixture_correction_pe.py",
+      "bytes": 6426,
+      "sha256": "ccaf17c6737b821228963fc67f4573ce90229cead7df43a96ee85a8521410ea7"
+    },
+    {
+      "target": "qa/voltage-display-20261025/final-evidence-manifest.json",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/final-evidence-manifest.json",
+      "bytes": 28624,
+      "sha256": "38ae72dae41ddbfbea1be5f150af26ff9a09e79f6362149c1f35ce662dae73aa"
+    },
+    {
+      "target": "qa/voltage-display-20261025/check_report_evidence.py",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/check_report_evidence.py",
+      "bytes": 5374,
+      "sha256": "4ac2498414b07668636014bd5e617d31207539758b30a65e038323f50480e584"
+    },
+    {
+      "target": "qa/voltage-display-20261025/README.md",
+      "status": "PASS",
+      "path": "docs/qa/voltage-display-20261025/README.md",
+      "bytes": 1874,
+      "sha256": "3464837c2e01be7cd84c84db9ff478ac65759fae98c83afd939328c568281ea9"
+    },
+    {
+      "target": "qa/voltage-display-20261025/publication-manifest.json",
+      "status": "SELF_REFERENCE_EXCLUDED_FROM_HASHES"
+    }
+  ],
+  "report_link_count": 77,
+  "manifest_self_hash_excluded": true,
+  "scientific_inputs_outputs_full_jsonl_or_source_backups_copied": false,
+  "acceptance_test_counts_from_frozen_snapshot_not_rerun": {
+    "passed": 357,
+    "failed": 0,
+    "ignored": 7
+  }
+}

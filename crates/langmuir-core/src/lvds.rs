@@ -244,6 +244,12 @@ fn validate_scientific_frame_structure(frame: &[u8]) -> Result<(), FrameError> {
             actual: frame.len(),
         });
     }
+    validate_scientific_fixed_fields(frame)
+}
+
+// Shared only with diagnostic prefix decoding. All callers first establish
+// that DATA251 (offset 266) is present; ordinary decoding still requires 269B.
+fn validate_scientific_fixed_fields(frame: &[u8]) -> Result<(), FrameError> {
     if frame[..2] != FRAME_HEADER {
         return Err(FrameError::InvalidHeader {
             protocol: Protocol::Lvds,
@@ -293,6 +299,20 @@ fn validate_scientific_frame_structure(frame: &[u8]) -> Result<(), FrameError> {
     }
 
     Ok(())
+}
+
+/// Decode only actually received science fields for a diagnostic preview.
+/// There is no synthetic CRC tail and this never grants normal acceptance.
+pub(crate) fn decode_scientific_data_prefix(frame: &[u8]) -> Result<ScientificFrame, FrameError> {
+    if frame.len() < 267 {
+        return Err(FrameError::UnexpectedLength {
+            protocol: Protocol::Lvds,
+            expected: 267,
+            actual: frame.len(),
+        });
+    }
+    validate_scientific_fixed_fields(frame)?;
+    decode_scientific_body(frame)
 }
 
 fn decode_scientific_body(frame: &[u8]) -> Result<ScientificFrame, FrameError> {

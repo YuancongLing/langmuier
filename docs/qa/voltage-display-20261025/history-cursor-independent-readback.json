@@ -1,0 +1,119 @@
+{
+  "status": "PASS",
+  "scope": "new non-Mock GUI history/normalized screenshot literal lookup from original actual PCAP",
+  "normalized_top": {
+    "pointer_time_us": 350078420,
+    "delta_us": -45,
+    "nearest_sample": {
+      "time_us": 350078465,
+      "frame_index": 21,
+      "seq8": 89,
+      "sample_index": 57,
+      "code10": [
+        308,
+        309
+      ],
+      "adc16": [
+        -13056,
+        -12992
+      ],
+      "volts": [
+        -2.04,
+        -2.03
+      ],
+      "display": [
+        "-2.04 V",
+        "-2.03 V"
+      ]
+    }
+  },
+  "normalized_hover": {
+    "pointer_time_us": 350099964,
+    "delta_us": 0,
+    "nearest_sample": {
+      "time_us": 350099964,
+      "frame_index": 22,
+      "seq8": 90,
+      "sample_index": 0,
+      "code10": [
+        243,
+        243
+      ],
+      "adc16": [
+        -17216,
+        -17216
+      ],
+      "volts": [
+        -2.69,
+        -2.69
+      ],
+      "display": [
+        "-2.69 V",
+        "-2.69 V"
+      ]
+    },
+    "channel": 2,
+    "min_voltage_v": -3.45,
+    "max_voltage_v": -1.91,
+    "normalized_value": 0.49350649350649356,
+    "normalized_display": "0.49",
+    "normalized_unit": "dimensionless"
+  },
+  "pan_top": {
+    "pointer_time_us": 350894364,
+    "delta_us": -100,
+    "nearest_sample": {
+      "time_us": 350894464,
+      "frame_index": 37,
+      "seq8": 105,
+      "sample_index": 89,
+      "code10": [
+        268,
+        269
+      ],
+      "adc16": [
+        -15616,
+        -15552
+      ],
+      "volts": [
+        -2.44,
+        -2.43
+      ],
+      "display": [
+        "-2.44 V",
+        "-2.43 V"
+      ]
+    }
+  },
+  "pan_hover": {
+    "pointer_time_us": 350911464,
+    "delta_us": 0,
+    "nearest_sample": {
+      "time_us": 350911464,
+      "frame_index": 38,
+      "seq8": 106,
+      "sample_index": 23,
+      "code10": [
+        217,
+        216
+      ],
+      "adc16": [
+        -18880,
+        -18944
+      ],
+      "volts": [
+        -2.95,
+        -2.96
+      ],
+      "display": [
+        "-2.95 V",
+        "-2.96 V"
+      ]
+    }
+  },
+  "screenshot_inputs": [
+    "docs/qa/LVDS_VOLTAGE_NORMALIZED_CURSOR.jpg",
+    "docs/qa/LVDS_VOLTAGE_LPD_PAN_MANUAL.jpg",
+    "docs/qa/LVDS_VOLTAGE_LPD_MANUAL_RETAINED.jpg"
+  ]
+}

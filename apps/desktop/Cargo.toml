@@ -24,6 +24,11 @@ langmuir-core = { path = "../../crates/langmuir-core" }
 langmuir-storage = { path = "../../crates/langmuir-storage", default-features = false }
 langmuir-transport = { path = "../../crates/langmuir-transport" }
 skrifa.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+rfd = { version = "0.15", default-features = false }
 
 [dev-dependencies]
 tempfile.workspace = true

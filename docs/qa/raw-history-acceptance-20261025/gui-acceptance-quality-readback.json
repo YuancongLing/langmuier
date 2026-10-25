@@ -1,0 +1,84 @@
+{
+  "status": "PASS",
+  "generated_utc": "2026-10-24T18:48:09.013662+00:00",
+  "scope": "actual existing exports checked against independent real-PCAP selected prefixes",
+  "scientific_data_generated": false,
+  "crc_integrity": "CRC_NOT_CHECKED; independent reference CRC is not an admission gate",
+  "checks": {
+    "quality_csv": {
+      "path": "D:\\RUST\\langmuier\\data\\history-20261025-024800-763-quality-v1.csv",
+      "bytes": 11479703,
+      "sha256": "0b4875e432869bb224ea6a6054fe93df68b67d56ed07d5f4b597cbdec8104273",
+      "status": "PASS",
+      "version": 1,
+      "columns": 16,
+      "frames": 466,
+      "data_rows": 46600,
+      "columns_checked": 745600,
+      "codes_checked": 93200,
+      "frame_quality_counts": {
+        "NATIVE": 237,
+        "RECOVERY_CANDIDATE": 229
+      },
+      "sources": [
+        "D:\\RUST\\2026102401.pcapng"
+      ],
+      "source_association_checked_against": "D:\\RUST\\2026102401.pcapng",
+      "validation_fields_checked_per_row": [
+        "structure",
+        "unique",
+        "full_bits",
+        "outer_sequence",
+        "inner_sequence",
+        "device_time"
+      ],
+      "candidate_never_promoted_to_recovered": true
+    }
+  },
+  "verifier": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\raw-history-20261025\\actual_gui_science_verify.py",
+    "bytes": 13804,
+    "sha256": "b12d95c2c157dca6abdac68231ce958e3a2e111281f775372f35045edf20de6b"
+  },
+  "independent_readback_helper": {
+    "path": "D:\\RUST\\langmuier\\tools\\qa\\lvds_txt_reference.py",
+    "bytes": 11375,
+    "sha256": "8c6e3c5557294239dfc645cbebdcf41a6ef52696fb1500fa56224a3fa2f1b09d"
+  },
+  "reference_jsonl": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\raw-history-20261025\\2026102401-final-frames.jsonl",
+    "bytes": 2838095,
+    "sha256": "10a54f32db5db39f10451ff309d6c649a7847ab2aa97372888d2fd9872746f78"
+  },
+  "requested_existing_exports": {
+    "quality_csv": {
+      "path": "D:\\RUST\\langmuier\\data\\history-20261025-024800-763-quality-v1.csv",
+      "bytes": 11479703,
+      "sha256": "0b4875e432869bb224ea6a6054fe93df68b67d56ed07d5f4b597cbdec8104273"
+    }
+  },
+  "reference": {
+    "udp_records": 467,
+    "quality_counts": {
+      "NATIVE": 237,
+      "RECOVERY_CANDIDATE": 229,
+      "REJECTED": 1
+    },
+    "native_frames": 237,
+    "native_sample_rows": 23700,
+    "native_plus_candidate_frames": 466,
+    "native_plus_candidate_sample_rows": 46600,
+    "record_id_mapping": "raw_record_id = zero-based independent JSONL record_id + 1",
+    "expected_values": "independent selected seconds/microseconds/seq8/code10; ADC=code10*64-32768; dt=500us"
+  },
+  "reference_summary": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\raw-history-20261025\\2026102401-final-summary.json",
+    "bytes": 1148,
+    "sha256": "4d1f42072a1f106b1c2ec5b1250caf8eee461b702b136ddd7c4765180559d455"
+  },
+  "quality_source_file": {
+    "path": "D:\\RUST\\2026102401.pcapng",
+    "bytes": 172292,
+    "sha256": "1bfe2ff956ad4e372bb15c2da04910c3d6a469b85d772ccbf83e4da4e48cca07"
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "status": "PASS",
+  "label": "SYNTHETIC",
+  "scope": "synthetically paced repetitions of actual PCAP payloads; not original capture timing",
+  "manifest": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\raw-history-20261025\\SYNTHETIC-acceptance-localhost-20hz-manifest.jsonl",
+    "bytes": 1279033,
+    "sha256": "1a1a959bfda4a218e9669c7ca3cf43e456db4f7e7e2020889430badc6bf228b3"
+  },
+  "raw": {
+    "path": "D:\\RUST\\langmuier\\data\\raw-20261025-025331-925.lvdsraw",
+    "bytes": 471817,
+    "sha256": "0f1831f5d131f1832ec2d0a76a1c681feacbc69490d2dffb59a8508fb4d6498f"
+  },
+  "records": 1200,
+  "payload_bytes": 351597,
+  "source": "127.0.0.1:58451",
+  "destination": "127.0.0.1:1534",
+  "all_source_matches_false": true,
+  "all_payload_bytes_and_order_match": true,
+  "raw_summary": {
+    "raw_header": {
+      "version": 1,
+      "header_bytes": 128,
+      "origin": "LIVE_UDP",
+      "created_at_ns": 1792868011925682900,
+      "session_id_hex": "d4bafd33f58be1180000000000000000",
+      "expected_source": "192.168.1.128:1534",
+      "binding": "127.0.0.1:1534"
+    },
+    "footer": {
+      "observed": 1200,
+      "enqueued": 1200,
+      "written": 1200,
+      "dropped": 0,
+      "payload_bytes": 351597,
+      "last_observed_id": 1200,
+      "status": 1,
+      "reason": 1,
+      "last_written_id": 1200
+    },
+    "clean_raw_eof": true
+  },
+  "send_timing": {
+    "kind": "SYNTHETIC_END",
+    "label": "SYNTHETIC",
+    "complete": true,
+    "error": null,
+    "sent_count": 1200,
+    "sent_payload_bytes": 351597,
+    "started_wall_time_ns": 1792868026457905100,
+    "ended_wall_time_ns": 1792868086458802500,
+    "started_monotonic_ns": 2026510327909500,
+    "ended_monotonic_ns": 2026570328803300,
+    "elapsed_seconds": 60.0008938,
+    "first_to_last_seconds": 59.9487423,
+    "effective_hz_first_to_last": 20.0004195917885,
+    "interval_ms_min": 13.7686,
+    "interval_ms_median": 50.0017,
+    "interval_ms_mean": 49.998951042535445,
+    "interval_ms_max": 86.4506,
+    "lateness_ms_max": 36.6133,
+    "meaning": "successful sendto calls only; receiving/raw preservation require separate verification"
+  },
+  "receive_minus_send_wall_ms": {
+    "min": 0.1166,
+    "median": 3.13535,
+    "max": 13.6329,
+    "note": "receive wall timestamps differ from send timestamps; clock adjustments are not normalized"
+  },
+  "limits": "No claim of original acquisition, genuine 192.168.1.128 ingress, scientific decode throughput, hardware, or RSS verification"
+}

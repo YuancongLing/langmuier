@@ -1,0 +1,7 @@
+﻿{
+    "pid":  14844,
+    "path":  "D:\\RUST\\langmuier\\target\\delivery\\windows-x64\\LangmuierProbeGroundControl.exe",
+    "working_directory":  "D:/RUST/langmuier",
+    "exe_sha256":  "f2805c059a699b02164d00da77f9b335a371954474481180fe35e3426cc9269a",
+    "purpose":  "Final post-fixture-correction non-Mock GUI acceptance"
+}

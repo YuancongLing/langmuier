@@ -6,6 +6,7 @@ mod buffer;
 mod mock;
 mod perf;
 mod ui;
+mod voltage;
 
 use app::LangmuirDesktopApp;
 use backend::RealBackendBridge;

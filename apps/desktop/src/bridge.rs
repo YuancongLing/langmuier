@@ -1,6 +1,6 @@
 use std::fmt;
 
-use langmuir_core::UdpLvdsSequenceMetrics;
+use langmuir_core::{FrameQuality, UdpLvdsSequenceMetrics};
 
 #[cfg(test)]
 use crossbeam_channel::{Receiver, Sender, TrySendError, bounded};
@@ -147,6 +147,125 @@ pub struct ReplayProgress {
     pub error: Option<String>,
 }
 
+/// Raw recording is independent of accepted science and its output writers.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RawRecordingStatus {
+    pub active: bool,
+    pub path: Option<String>,
+    pub received: u64,
+    pub enqueued: u64,
+    pub written: u64,
+    pub dropped: u64,
+    pub closed: bool,
+    pub complete: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RecoveryStatus {
+    pub enabled: bool,
+    pub native: u64,
+    pub recovered: u64,
+    pub candidates: u64,
+    pub rejected: u64,
+    pub audit_path: Option<String>,
+    pub audit_dropped: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryFileKind {
+    LpdV3,
+    LvdsRaw,
+    PcapNg,
+}
+
+impl HistoryFileKind {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::LpdV3 => "LPD v3",
+            Self::LvdsRaw => "LVDSRAW",
+            Self::PcapNg => "PCAPNG",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HistoryFrameInfo {
+    pub record_id: u64,
+    pub outer_sequence: Option<u32>,
+    pub device_time_seconds: Option<f64>,
+    pub frame_seq_u8: Option<u8>,
+    pub quality: FrameQuality,
+    pub reason: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HistoryPoint {
+    pub time_seconds: f64,
+    pub value: f64,
+    pub quality: FrameQuality,
+    pub record_id: u64,
+}
+
+/// A replacement window, never an unbounded append of an entire history file.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct HistoryWindow {
+    pub generation: u64,
+    pub revision: u64,
+    pub range: [f64; 2],
+    pub channel_1: Vec<HistoryPoint>,
+    pub channel_2: Vec<HistoryPoint>,
+    pub frames: Vec<HistoryFrameInfo>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+// Loading, playback and export describe independent background operations.
+#[allow(clippy::struct_excessive_bools)]
+pub struct HistoryStatus {
+    pub generation: u64,
+    pub active: bool,
+    pub path: String,
+    pub format: Option<HistoryFileKind>,
+    pub loading: bool,
+    pub playing: bool,
+    pub finished: bool,
+    pub total_records: Option<u64>,
+    pub read_records: u64,
+    pub position_fraction: f64,
+    pub first_device_time: Option<f64>,
+    pub last_device_time: Option<f64>,
+    pub current_device_time: Option<f64>,
+    pub current_seq8: Option<u8>,
+    pub current_outer_seq: Option<u32>,
+    pub native: u64,
+    pub recovered: u64,
+    pub candidates: u64,
+    pub rejected: u64,
+    /// Bounded recent anomaly page; complete provenance remains in the audit.
+    pub anomalies: Vec<HistoryFrameInfo>,
+    pub error: Option<String>,
+    pub exporting: bool,
+    pub export_path: Option<String>,
+    pub export_error: Option<String>,
+    pub index_entries: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct QualifiedSamples {
+    pub quality: FrameQuality,
+    pub raw_record_id: u64,
+    pub outer_sequence: Option<u32>,
+    pub frame_seq_u8: u8,
+    pub start_seconds: f64,
+    pub sample_interval_seconds: f64,
+    pub channel_1: Vec<f64>,
+    pub channel_2: Vec<f64>,
+    pub source: String,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ScientificSaveFormat {
     #[default]
@@ -221,6 +340,33 @@ pub enum UiRequest {
         save: Option<ScientificSaveFormat>,
     },
     StopPcapReplay,
+    StartRawRecording {
+        path: String,
+    },
+    StopRawRecording,
+    SetRecoveryEnabled {
+        enabled: bool,
+    },
+    OpenHistory {
+        path: String,
+    },
+    SetHistoryPlaying {
+        playing: bool,
+    },
+    SeekHistory {
+        fraction: f64,
+    },
+    LoadHistoryWindow {
+        start_seconds: f64,
+        end_seconds: f64,
+    },
+    CloseHistory,
+    ExportHistoryCsv {
+        path: String,
+        include_recovered: bool,
+        include_candidates: bool,
+        range: Option<[f64; 2]>,
+    },
     SetTelemetryPolling {
         enabled: bool,
         interval_millis: u32,
@@ -235,6 +381,16 @@ pub enum UiRequest {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BackendEvent {
+    RawCaptureStatus(Box<RawRecordingStatus>),
+    RecoveryStatus(Box<RecoveryStatus>),
+    HistoryStatus(Box<HistoryStatus>),
+    HistoryWindow(Box<HistoryWindow>),
+    QualifiedScientificSamples(Box<QualifiedSamples>),
+    HistoryCsvExported {
+        path: String,
+        rows: u64,
+        quality_format: bool,
+    },
     LvdsStatus(Box<LvdsStatusSnapshot>),
     PortsUpdated {
         rs422: Vec<String>,

@@ -1,0 +1,60 @@
+{
+  "status": "PASS",
+  "scope": "current independent Python auditor; no claim of current Rust/GUI execution",
+  "source": {
+    "path": "D:\\RUST\\langmuier\\lvds.txt",
+    "bytes": 10780,
+    "sha256": "b5a2eee986fbe4f26da33da67bfeab17b8f9185f72ed0c6f81f232f3c2f15add"
+  },
+  "input_provenance": "20 HEX lines transferred from user chat; ASCII/LF final LF. Hash identifies this local transfer file.",
+  "frame_count": 20,
+  "quality_counts": {
+    "NATIVE": 20
+  },
+  "science_frame_lengths": {
+    "269": 20
+  },
+  "samples_per_channel_per_frame": 100,
+  "code10_values_checked": 4000,
+  "sample_interval_us": 500,
+  "frame_time_step_us": 50000,
+  "seq8": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19
+  ],
+  "first_device_time_us": 1700000000000000,
+  "last_sample_device_time_us": 1700000000999500,
+  "reference_crc_status_counts": {
+    "MATCH": 20
+  },
+  "native_admission_uses_crc": false,
+  "current_auditor_matches_existing_final_pcap_rows": true,
+  "current_pcap_quality_counts": {
+    "NATIVE": 237,
+    "REJECTED": 1,
+    "RECOVERY_CANDIDATE": 229
+  },
+  "auditor": {
+    "path": "D:\\RUST\\langmuier\\tools\\qa\\lvds_raw_recovery_reference.py",
+    "bytes": 29817,
+    "sha256": "e83d04f25432854916854e2bcaceec8bd89bcfd6806a3672db4f6d43d4f60eba"
+  }
+}

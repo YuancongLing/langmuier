@@ -1,0 +1,46 @@
+{
+  "status": "PASS",
+  "scope": "original ADC-display, prior voltage-display and final voltage-display actual-PCAP scientific outputs",
+  "final_exe_sha256": "f2805c059a699b02164d00da77f9b335a371954474481180fe35e3426cc9269a",
+  "display_unit_change_modifies_scientific_files": false,
+  "files": [
+    {
+      "old_adc": {
+        "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-023840.901.csv",
+        "bytes": 1636896,
+        "sha256": "33ea097d21848a631618bb29b02b2de5685184ea47d818135234ad0da20ff97e"
+      },
+      "prior_voltage": {
+        "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-115147.359.csv",
+        "bytes": 1636896,
+        "sha256": "33ea097d21848a631618bb29b02b2de5685184ea47d818135234ad0da20ff97e"
+      },
+      "final_voltage": {
+        "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-121748.495.csv",
+        "bytes": 1636896,
+        "sha256": "33ea097d21848a631618bb29b02b2de5685184ea47d818135234ad0da20ff97e"
+      },
+      "old_adc_vs_final_byte_for_byte_equal": true,
+      "prior_voltage_vs_final_byte_for_byte_equal": true
+    },
+    {
+      "old_adc": {
+        "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-023840.901.lpd",
+        "bytes": 96973,
+        "sha256": "befe6135c42c27f20bb492d5bb60e2ecf6f86a8bb965f19bbe3a4c6636714d10"
+      },
+      "prior_voltage": {
+        "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-115147.359.lpd",
+        "bytes": 96973,
+        "sha256": "befe6135c42c27f20bb492d5bb60e2ecf6f86a8bb965f19bbe3a4c6636714d10"
+      },
+      "final_voltage": {
+        "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-121748.495.lpd",
+        "bytes": 96973,
+        "sha256": "befe6135c42c27f20bb492d5bb60e2ecf6f86a8bb965f19bbe3a4c6636714d10"
+      },
+      "old_adc_vs_final_byte_for_byte_equal": true,
+      "prior_voltage_vs_final_byte_for_byte_equal": true
+    }
+  ]
+}

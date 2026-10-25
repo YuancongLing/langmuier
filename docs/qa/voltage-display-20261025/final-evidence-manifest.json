@@ -1,0 +1,746 @@
+{
+  "result": "PASS",
+  "scope": "current voltage software acceptance local artifact consistency; no hardware/calibration claim",
+  "report": {
+    "path": "D:\\RUST\\langmuier\\docs\\LVDS_VOLTAGE_DISPLAY_QA.md",
+    "bytes": 32406,
+    "sha256": "7eb2fb637c3c0545887c506e52ebc99d114c0c55b4d70f70a8fc97eff49a390d"
+  },
+  "plan": {
+    "path": "D:\\RUST\\langmuier\\docs\\superpowers\\plans\\2026-10-25-lvds-voltage-display.md",
+    "bytes": 3507,
+    "sha256": "0ea6e855e3dc3a3376ad0ba75326883c8f9236aadfc15d335bf84443ef18008c"
+  },
+  "report_links_count": 76,
+  "report_links": [
+    {
+      "target": "../target/qa/voltage-20261025/actual-voltage-data-audit.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\actual-voltage-data-audit.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/voltage_data_audit.py",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\voltage_data_audit.py",
+      "status": "PASS"
+    },
+    {
+      "target": "../apps/desktop/src/voltage.rs",
+      "resolved": "D:\\RUST\\langmuier\\apps\\desktop\\src\\voltage.rs",
+      "status": "PASS"
+    },
+    {
+      "target": "../apps/desktop/src/main.rs",
+      "resolved": "D:\\RUST\\langmuier\\apps\\desktop\\src\\main.rs",
+      "status": "PASS"
+    },
+    {
+      "target": "../apps/desktop/src/app.rs",
+      "resolved": "D:\\RUST\\langmuier\\apps\\desktop\\src\\app.rs",
+      "status": "PASS"
+    },
+    {
+      "target": "../apps/desktop/src/app_history.rs",
+      "resolved": "D:\\RUST\\langmuier\\apps\\desktop\\src\\app_history.rs",
+      "status": "PASS"
+    },
+    {
+      "target": "../apps/desktop/src/app.rs",
+      "resolved": "D:\\RUST\\langmuier\\apps\\desktop\\src\\app.rs",
+      "status": "PASS"
+    },
+    {
+      "target": "../apps/desktop/src/app_plot_tests.rs",
+      "resolved": "D:\\RUST\\langmuier\\apps\\desktop\\src\\app_plot_tests.rs",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/test.log",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\test.log",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/existing-txt-pcap-provenance-check.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\existing-txt-pcap-provenance-check.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/actual-pcap-reference-frames.jsonl",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\actual-pcap-reference-frames.jsonl",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/final-native-gui-process.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\final-native-gui-process.json",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_FINAL_ACTUAL_PCAP_CURSOR.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_FINAL_ACTUAL_PCAP_CURSOR.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/final-gui-cursor-independent-readback.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\final-gui-cursor-independent-readback.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/verify_final_voltage_gui_artifacts.py",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\verify_final_voltage_gui_artifacts.py",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_FINAL_LPD_SPLIT.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_FINAL_LPD_SPLIT.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_FINAL_LPD_OPEN.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_FINAL_LPD_OPEN.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_FINAL_NORMALIZED_CURSOR.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_FINAL_NORMALIZED_CURSOR.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/final-normalized-cursor-independent-readback.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\final-normalized-cursor-independent-readback.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/verify_final_normalized_cursor.py",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\verify_final_normalized_cursor.py",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_FINAL_TXT_POSITIVE_NEGATIVE_CURSOR.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_FINAL_TXT_POSITIVE_NEGATIVE_CURSOR.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_FINAL_TXT_PCAP_OPEN.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_FINAL_TXT_PCAP_OPEN.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/final-txt-positive-cursor-independent-readback.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\final-txt-positive-cursor-independent-readback.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/verify_final_txt_positive_cursor.py",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\verify_final_txt_positive_cursor.py",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/native-gui-process.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\native-gui-process.json",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_TXT_PCAP_OPEN.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_TXT_PCAP_OPEN.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_TXT_POSITIVE_NEGATIVE_SPLIT.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_TXT_POSITIVE_NEGATIVE_SPLIT.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_TXT_POSITIVE_NEGATIVE_OVERLAY.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_TXT_POSITIVE_NEGATIVE_OVERLAY.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_TXT_POSITIVE_CURSOR.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_TXT_POSITIVE_CURSOR.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_NORMALIZED_CURSOR.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_NORMALIZED_CURSOR.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_LPD_OPEN.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_LPD_OPEN.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_LPD_SPLIT.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_LPD_SPLIT.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_RAW_OPEN.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_RAW_OPEN.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_RAW_SPLIT.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_RAW_SPLIT.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_ACTUAL_PCAP_CURSOR.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_ACTUAL_PCAP_CURSOR.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/gui-cursor-independent-readback.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\gui-cursor-independent-readback.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/verify_voltage_gui_artifacts.py",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\verify_voltage_gui_artifacts.py",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_LPD_SPLIT.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_LPD_SPLIT.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_LPD_PAN_MANUAL.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_LPD_PAN_MANUAL.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_LPD_MANUAL_RETAINED.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_LPD_MANUAL_RETAINED.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_MANUAL_BEFORE_ZOOM.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_MANUAL_BEFORE_ZOOM.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_ZOOM.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_ZOOM.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_RESET_FOLLOW.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_RESET_FOLLOW.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_NORMALIZED_CURSOR.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_NORMALIZED_CURSOR.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/history-cursor-independent-readback.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\history-cursor-independent-readback.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/verify_history_cursor_readback.py",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\verify_history_cursor_readback.py",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_TXT_POSITIVE_CURSOR.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_TXT_POSITIVE_CURSOR.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/txt-positive-cursor-independent-readback.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\txt-positive-cursor-independent-readback.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/verify_txt_positive_cursor.py",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\verify_txt_positive_cursor.py",
+      "status": "PASS"
+    },
+    {
+      "target": "qa/LVDS_VOLTAGE_LAUNCH_DIRECTORY_ERROR.jpg",
+      "resolved": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_LAUNCH_DIRECTORY_ERROR.jpg",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/final-gui-storage-independent-readback.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\final-gui-storage-independent-readback.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/final-vs-existing-storage-byte-identity.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\final-vs-existing-storage-byte-identity.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/verify_final_voltage_gui_artifacts.py",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\verify_final_voltage_gui_artifacts.py",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/new-gui-storage-independent-readback.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\new-gui-storage-independent-readback.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/new-vs-existing-storage-byte-identity.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\new-vs-existing-storage-byte-identity.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/existing-storage-independent-readback.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\existing-storage-independent-readback.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/actual_gui_science_verify.py",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\actual_gui_science_verify.py",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/unchanged-baseline.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\unchanged-baseline.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/frozen-source-manifest.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\frozen-source-manifest.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/freeze_source_manifest.py",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\freeze_source_manifest.py",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/fmt.log",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\fmt.log",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/check.log",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\check.log",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/test.log",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\test.log",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/clippy.log",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\clippy.log",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/display-red.log",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\display-red.log",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/test.log",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\test.log",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/required-checks.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\required-checks.json",
+      "status": "PASS"
+    },
+    {
+      "target": "WINDOWS_BUILD.md",
+      "resolved": "D:\\RUST\\langmuier\\docs\\WINDOWS_BUILD.md",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/windows-release-build-result.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\windows-release-build-result.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/windows-release-build.log",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\windows-release-build.log",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/windows-package-acceptance-verification.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\windows-package-acceptance-verification.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/verify_windows_acceptance_package.py",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\verify_windows_acceptance_package.py",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/pe-fixture-correction-comparison.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\pe-fixture-correction-comparison.json",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/compare_fixture_correction_pe.py",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\compare_fixture_correction_pe.py",
+      "status": "PASS"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/final-evidence-manifest.json",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\final-evidence-manifest.json",
+      "status": "SELF_REFERENCE"
+    },
+    {
+      "target": "../target/qa/voltage-20261025/check_report_evidence.py",
+      "resolved": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\check_report_evidence.py",
+      "status": "PASS"
+    }
+  ],
+  "screenshot_count": 25,
+  "screenshots": [
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_ACTUAL_PCAP_CURSOR.jpg",
+      "bytes": 267372,
+      "sha256": "63834e196b7baa2d0b49c8453a1319023ea30ecea30c19e53d505924287096ee"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_ACTUAL_PCAP_FREEZE.jpg",
+      "bytes": 263956,
+      "sha256": "8acceeb96cbb27fc9da5670ba0960954625635be4e9d1093913be26c82b48dc3"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_FINAL_ACTUAL_PCAP_CURSOR.jpg",
+      "bytes": 266638,
+      "sha256": "334cb426e66a6e5063f9a000961273758f59268c1c4f470e77ab29c4707370a7"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_FINAL_LPD_OPEN.jpg",
+      "bytes": 200978,
+      "sha256": "b064159211ec24fb4b10b01abf8326c450222bd777e2c403e693831915105195"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_FINAL_LPD_SPLIT.jpg",
+      "bytes": 216601,
+      "sha256": "64bcd01a71501a91fd65b80930d6dbb56f965692fe706cfb153cf32a66ef8d89"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_FINAL_NORMALIZED_CURSOR.jpg",
+      "bytes": 209610,
+      "sha256": "17e6dc28fc7f0bd14d695f9328c56b6c1830cb64275cfddb727d8a59c3069392"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_FINAL_TXT_PCAP_OPEN.jpg",
+      "bytes": 270809,
+      "sha256": "6695b4f0e775eec824f401593cfb37d780d3c19e000b274e66b988790c57f94f"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_FINAL_TXT_POSITIVE_NEGATIVE_CURSOR.jpg",
+      "bytes": 278923,
+      "sha256": "d06ea630509077063d789d4c36715345aa0c76e1e8655fbc548c06cfa9b4774a"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_LAUNCH_DIRECTORY_ERROR.jpg",
+      "bytes": 149867,
+      "sha256": "d979fabce458a493e5afa3ab0af9f20e4a10d2b69a3b798803f701edcda53b81"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_LPD_MANUAL_RETAINED.jpg",
+      "bytes": 146447,
+      "sha256": "7a9f3e878d7cc9b2a5b4653ab9f4d601bee9a2bd793d8025fcb3a57b404196a5"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_LPD_MANUAL_ZOOM.jpg",
+      "bytes": 143192,
+      "sha256": "0df23f8dd31e191ac74cb9cdcd613de836b8b7aa927b461e225072b7a6b7755e"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_LPD_OPEN.jpg",
+      "bytes": 137089,
+      "sha256": "fa57f36e7e9387e7f0bd63dffeff19c339bfe6e70fd64796563551e9032b29e3"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_LPD_PAN_MANUAL.jpg",
+      "bytes": 146344,
+      "sha256": "a949f6cd9fdd541bd0b7c82a56b006baf1feb755d9bb6699247116987e19dcd3"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_LPD_SPLIT.jpg",
+      "bytes": 252523,
+      "sha256": "17ee54a010188d46443b8a4f1846dffa2a76a620d8f1cf8681a56eeeb0233fa4"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_MANUAL_BEFORE_ZOOM.jpg",
+      "bytes": 155829,
+      "sha256": "ede1d2a0807228a8acb82573adfb454ba92b5445f68ad763e4b74452a0a91be3"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_NORMALIZED_CURSOR.jpg",
+      "bytes": 149683,
+      "sha256": "f8f7ea25addc2c8b2b360a28a80e854a741e8407feffc19f66cadd65ffd83b37"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_RAW_OPEN.jpg",
+      "bytes": 214585,
+      "sha256": "089560d322f6ce3a53f925d25b10460572bcee0d4c888ec14fff9d499fef95fd"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_RAW_SPLIT.jpg",
+      "bytes": 217913,
+      "sha256": "3128f3be9ea022f20822a985e24b13db6424b9cde2aca98fcbce85e37fda18b1"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_RESET_FOLLOW.jpg",
+      "bytes": 145846,
+      "sha256": "7356e47e43aa0f31556e99473b1e83d3efcbe6d42debd3f7f68ca21b6444a8f2"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_STARTUP.jpg",
+      "bytes": 141351,
+      "sha256": "1770c3892152ffb8a1b8e7c5ce2bcc79b084aa69fea8386a6f5705d5d4b21880"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_TXT_PCAP_OPEN.jpg",
+      "bytes": 280039,
+      "sha256": "94b21064752a39c8e9f6bfd633ed53a7ac9a5d51e52724b3ca6c52e72be17a79"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_TXT_POSITIVE_CURSOR.jpg",
+      "bytes": 279775,
+      "sha256": "67348b7d5b6d744bd0615cad443093b404791dbca7a975dd9f63246dbf8b0f77"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_TXT_POSITIVE_NEGATIVE_OVERLAY.jpg",
+      "bytes": 276118,
+      "sha256": "ebf64a1daecf93e9534546591e7da254e18dc3bdf4b9a912fa4e9298c1744374"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_TXT_POSITIVE_NEGATIVE_SPLIT.jpg",
+      "bytes": 288038,
+      "sha256": "ce2280e01650f5feefb694389f124b87fedb53038c32ca116b32fecde75ba3c7"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_ZOOM.jpg",
+      "bytes": 145370,
+      "sha256": "f04ebe439758688e1c97b2d14d755e713f313d118d77eb7dd1cd768b94bc7eac"
+    }
+  ],
+  "required_commands": [
+    {
+      "command": "cargo fmt --all -- --check",
+      "started": "2026-10-25T12:13:03.9192018+08:00",
+      "ended": "2026-10-25T12:13:05.6045174+08:00",
+      "exit_code": 0,
+      "log": "target\\qa\\voltage-20261025\\fmt.log"
+    },
+    {
+      "command": "cargo check --workspace --locked",
+      "started": "2026-10-25T12:13:05.6921293+08:00",
+      "ended": "2026-10-25T12:13:07.5952225+08:00",
+      "exit_code": 0,
+      "log": "target\\qa\\voltage-20261025\\check.log"
+    },
+    {
+      "command": "cargo test --workspace --features langmuir-desktop/mock --locked",
+      "started": "2026-10-25T12:13:07.6072672+08:00",
+      "ended": "2026-10-25T12:13:49.5438596+08:00",
+      "exit_code": 0,
+      "log": "target\\qa\\voltage-20261025\\test.log"
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+      "started": "2026-10-25T12:13:49.5480368+08:00",
+      "ended": "2026-10-25T12:13:55.9835683+08:00",
+      "exit_code": 0,
+      "log": "target\\qa\\voltage-20261025\\clippy.log"
+    }
+  ],
+  "test_suites": [
+    {
+      "passed": 99,
+      "failed": 0,
+      "ignored": 1
+    },
+    {
+      "passed": 191,
+      "failed": 0,
+      "ignored": 6
+    },
+    {
+      "passed": 6,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 36,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 25,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "test_total": {
+    "passed": 357,
+    "failed": 0,
+    "ignored": 7
+  },
+  "frozen_source_files": 73,
+  "protected_files_unchanged": 12,
+  "old_package_backup_files_unchanged": 3,
+  "current_package": {
+    "result": "PASS",
+    "source": {
+      "path": "D:\\RUST\\langmuier\\target\\x86_64-pc-windows-msvc\\release\\langmuier.exe",
+      "bytes": 10176512,
+      "sha256": "f2805c059a699b02164d00da77f9b335a371954474481180fe35e3426cc9269a"
+    },
+    "delivered_exe": {
+      "path": "D:\\RUST\\langmuier\\target\\delivery\\windows-x64\\LangmuierProbeGroundControl.exe",
+      "bytes": 10176512,
+      "sha256": "f2805c059a699b02164d00da77f9b335a371954474481180fe35e3426cc9269a"
+    },
+    "archive": {
+      "path": "D:\\RUST\\langmuier\\target\\delivery\\LangmuierProbeGroundControl-windows-x64.zip",
+      "bytes": 4210621,
+      "sha256": "0931228e43429f9b356d8286cea781aba33a26e00a1bc6769699903faf02cd93"
+    },
+    "readme": {
+      "path": "D:\\RUST\\langmuier\\docs\\WINDOWS_README.md",
+      "bytes": 3690,
+      "sha256": "9ff420fd95d80f5a84feef765c9b377543c2f125897b638e1b609e4bb164036a"
+    },
+    "delivered_readme": {
+      "path": "D:\\RUST\\langmuier\\target\\delivery\\windows-x64\\README.md",
+      "bytes": 3690,
+      "sha256": "9ff420fd95d80f5a84feef765c9b377543c2f125897b638e1b609e4bb164036a"
+    },
+    "zip_entries": [
+      "LangmuierProbeGroundControl.exe",
+      "README.md"
+    ],
+    "zip_crc_and_content_match": true,
+    "pe_machine": "0x8664",
+    "pe_format": "PE32+ Windows x64",
+    "imports": [
+      "advapi32.dll",
+      "api-ms-win-core-synch-l1-2-0.dll",
+      "bcryptprimitives.dll",
+      "cfgmgr32.dll",
+      "combase.dll",
+      "dwmapi.dll",
+      "gdi32.dll",
+      "imm32.dll",
+      "kernel32.dll",
+      "ntdll.dll",
+      "ole32.dll",
+      "opengl32.dll",
+      "setupapi.dll",
+      "shell32.dll",
+      "shlwapi.dll",
+      "user32.dll",
+      "uxtheme.dll",
+      "ws2_32.dll"
+    ],
+    "no_dynamic_msvc_crt_imports": true,
+    "build_command": "cargo +stable-x86_64-pc-windows-msvc build --release -p langmuir-desktop --target x86_64-pc-windows-msvc --target-dir target --no-default-features --locked",
+    "rustflags": "-C target-feature=+crt-static",
+    "mock_feature": false,
+    "hdf5_feature": false,
+    "native_ui_evidence": "separate current Windows GUI acceptance; this script verifies package bytes only"
+  },
+  "final_native_gui_process": {
+    "pid": 14844,
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\windows-x64\\LangmuierProbeGroundControl.exe",
+    "working_directory": "D:/RUST/langmuier",
+    "exe_sha256": "f2805c059a699b02164d00da77f9b335a371954474481180fe35e3426cc9269a",
+    "purpose": "Final post-fixture-correction non-Mock GUI acceptance"
+  },
+  "passing_evidence_files": [
+    {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\actual-voltage-data-audit.json",
+      "bytes": 19334,
+      "sha256": "843ae308dd955bc96d2e0baab5ca5a7187391f59e838ae2904712723dca63737"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\existing-storage-independent-readback.json",
+      "bytes": 2682,
+      "sha256": "a5b76e809edc85678647a372c20006306c353f1fb664f8b670c153315bedbe04"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\existing-txt-pcap-provenance-check.json",
+      "bytes": 890,
+      "sha256": "c0921588813712029e700313bc2bef5fb00c28e3592d7f4d74482b21e0d94f2f"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\new-gui-storage-independent-readback.json",
+      "bytes": 2682,
+      "sha256": "a9026565db845cd455a54b2fc9165a5b3af3ac2e5ff7f23d7bac9c1d3cb17080"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\new-vs-existing-storage-byte-identity.json",
+      "bytes": 1145,
+      "sha256": "b12a40e62b6c4e4d407c22d8971e63141e5264807094c5655fef09efb44f9b71"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\gui-cursor-independent-readback.json",
+      "bytes": 1161,
+      "sha256": "9f0e11033cf782472e5321dd7290d17d1fa581b71f4095dea3f1a30e019d38bd"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\history-cursor-independent-readback.json",
+      "bytes": 2232,
+      "sha256": "44f4c443ea567d6e8fdbb7814307c48b20e743f3f75cea43e0bae8346bdf9b57"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\txt-positive-cursor-independent-readback.json",
+      "bytes": 1109,
+      "sha256": "0caa4c0dee8034960e72da89fcb01fb63cbedef21485531947e638a5ae201412"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\final-gui-storage-independent-readback.json",
+      "bytes": 2682,
+      "sha256": "f38caf72f08c523b233912e0771179d7a3347f12448fb5d17d05d823cfc5d123"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\final-gui-cursor-independent-readback.json",
+      "bytes": 1669,
+      "sha256": "dee94f42af4a1540802f4ea60d5f497971c53f80c7158d45e34a7789bb09db2e"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\final-vs-existing-storage-byte-identity.json",
+      "bytes": 1885,
+      "sha256": "8386d29dfda265c605e18684dd2d00264dda1f347f80cb17e90c199b31a239ef"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\final-normalized-cursor-independent-readback.json",
+      "bytes": 1412,
+      "sha256": "cef733f619088a1256e9ac08445f6e6eca0987e1e88590061dc8f45030a3f4c6"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\final-txt-positive-cursor-independent-readback.json",
+      "bytes": 1288,
+      "sha256": "aacdb91dfdbb29e14f6a23fdb8315920dd41dd6d3ffabc67313d0dc21e5b91bc"
+    }
+  ],
+  "pe_comparison": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\pe-fixture-correction-comparison.json",
+    "bytes": 10537,
+    "sha256": "f2ef3eb458095d896ce1fe53c3a79ff94623a7c077577dcae2d8675558aa3e90"
+  },
+  "source_or_scientific_data_modified_by_this_script": false
+}

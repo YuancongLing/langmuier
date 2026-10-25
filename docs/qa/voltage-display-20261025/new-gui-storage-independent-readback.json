@@ -1,0 +1,71 @@
+{
+  "status": "PASS",
+  "generated_utc": "2026-10-25T03:54:02.369321+00:00",
+  "scope": "actual existing exports checked against independent real-PCAP selected prefixes",
+  "scientific_data_generated": false,
+  "crc_integrity": "CRC_NOT_CHECKED; independent reference CRC is not an admission gate",
+  "checks": {
+    "csv": {
+      "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-115147.359.csv",
+      "bytes": 1636896,
+      "sha256": "33ea097d21848a631618bb29b02b2de5685184ea47d818135234ad0da20ff97e",
+      "status": "PASS",
+      "data_rows": 23700,
+      "columns_checked": 260700,
+      "frames": 237,
+      "codes_checked": 47400
+    },
+    "lpd_v3": {
+      "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-115147.359.lpd",
+      "bytes": 96973,
+      "sha256": "befe6135c42c27f20bb492d5bb60e2ecf6f86a8bb965f19bbe3a4c6636714d10",
+      "status": "PASS",
+      "version": 3,
+      "file_bytes": 96973,
+      "records": 237,
+      "codes_checked": 47400,
+      "integrity_limit": "LPD v3 contains codes/time/seq8, not a CRC or quality field"
+    }
+  },
+  "verifier": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\actual_gui_science_verify.py",
+    "bytes": 13804,
+    "sha256": "b12d95c2c157dca6abdac68231ce958e3a2e111281f775372f35045edf20de6b"
+  },
+  "independent_readback_helper": {
+    "path": "D:\\RUST\\langmuier\\tools\\qa\\lvds_txt_reference.py",
+    "bytes": 11375,
+    "sha256": "8c6e3c5557294239dfc645cbebdcf41a6ef52696fb1500fa56224a3fa2f1b09d"
+  },
+  "reference_jsonl": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\voltage-20261025\\actual-pcap-reference-frames.jsonl",
+    "bytes": 2837628,
+    "sha256": "f6c22ae9eb8849b967ba26d85df85d22546f236875fc937a22d2591e137797b9"
+  },
+  "requested_existing_exports": {
+    "csv": {
+      "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-115147.359.csv",
+      "bytes": 1636896,
+      "sha256": "33ea097d21848a631618bb29b02b2de5685184ea47d818135234ad0da20ff97e"
+    },
+    "lpd_v3": {
+      "path": "D:\\RUST\\langmuier\\data\\scientific-20261025-115147.359.lpd",
+      "bytes": 96973,
+      "sha256": "befe6135c42c27f20bb492d5bb60e2ecf6f86a8bb965f19bbe3a4c6636714d10"
+    }
+  },
+  "reference": {
+    "udp_records": 467,
+    "quality_counts": {
+      "NATIVE": 237,
+      "RECOVERY_CANDIDATE": 229,
+      "REJECTED": 1
+    },
+    "native_frames": 237,
+    "native_sample_rows": 23700,
+    "native_plus_candidate_frames": 466,
+    "native_plus_candidate_sample_rows": 46600,
+    "record_id_mapping": "raw_record_id = zero-based independent JSONL record_id + 1",
+    "expected_values": "independent selected seconds/microseconds/seq8/code10; ADC=code10*64-32768; dt=500us"
+  }
+}

@@ -1,0 +1,7 @@
+﻿{
+    "command":  "cargo +stable-x86_64-pc-windows-msvc build --release -p langmuir-desktop --target x86_64-pc-windows-msvc --target-dir target --no-default-features --locked",
+    "started":  "2026-10-25T12:14:24.4863036+08:00",
+    "ended":  "2026-10-25T12:14:54.7168293+08:00",
+    "exit_code":  0,
+    "rustflags":  "-C target-feature=+crt-static"
+}

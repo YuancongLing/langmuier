@@ -1,0 +1,75 @@
+{
+  "supersedes": "reference-test-evidence.json",
+  "red_evidence_source": "Observed executions in this Codex task; phase summaries, not reconstructed raw failure logs",
+  "red_phases": [
+    {
+      "stage": "before independent auditor implementation",
+      "tests": 11,
+      "failures": 11
+    },
+    {
+      "stage": "before raw-reader implementation",
+      "tests": 14,
+      "errors": 6
+    },
+    {
+      "stage": "before strict complete-ID/unsupported packet-block fix",
+      "tests": 16,
+      "failures": 2
+    },
+    {
+      "stage": "before invalid-field classification/partial CRC-prefix evidence",
+      "tests": 17,
+      "failures": 2,
+      "errors": 1
+    },
+    {
+      "stage": "before phase7 reverse-one-bit/search-resource-boundary fix",
+      "tests": 18,
+      "failures": 1
+    }
+  ],
+  "green_tests": 18,
+  "green_exit_code": 0,
+  "green_command": [
+    "C:\\Users\\Administrator\\miniconda3\\python.exe",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tools/qa",
+    "-p",
+    "test_lvds_raw_recovery_reference.py",
+    "-v"
+  ],
+  "green_log": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\raw-history-20261025\\reference-tests-18-green.log",
+    "bytes": 3427,
+    "sha256": "502079f2919c433aeef3512501037ba8065123ed9445b3d1725d4fdf35fc1bd1"
+  },
+  "script": {
+    "path": "D:\\RUST\\langmuier\\tools\\qa\\lvds_raw_recovery_reference.py",
+    "bytes": 29817,
+    "sha256": "e83d04f25432854916854e2bcaceec8bd89bcfd6806a3672db4f6d43d4f60eba"
+  },
+  "tests": {
+    "path": "D:\\RUST\\langmuier\\tools\\qa\\test_lvds_raw_recovery_reference.py",
+    "bytes": 14968,
+    "sha256": "827015e85126911076972a8525cb094c8dce375d7db98828c4cc8a7c106c4f6e"
+  },
+  "rust_real_acceptance": {
+    "path": "D:\\RUST\\langmuier\\apps\\desktop\\src\\backend_raw_history_real_tests.rs",
+    "bytes": 11916,
+    "sha256": "a15d0e66b5a7c4021d818b79ad3f351288a727f91f770d296e447f0df48c0a8b"
+  },
+  "input_pcap_unchanged": {
+    "path": "D:\\RUST\\2026102401.pcapng",
+    "bytes": 172292,
+    "sha256": "1bfe2ff956ad4e372bb15c2da04910c3d6a469b85d772ccbf83e4da4e48cca07"
+  },
+  "lvds_txt_unchanged": {
+    "path": "D:\\RUST\\langmuier\\lvds.txt",
+    "bytes": 10780,
+    "sha256": "b5a2eee986fbe4f26da33da67bfeab17b8f9185f72ed0c6f81f232f3c2f15add"
+  }
+}

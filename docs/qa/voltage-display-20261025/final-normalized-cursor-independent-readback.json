@@ -1,0 +1,66 @@
+{
+  "status": "PASS",
+  "scope": "final non-Mock EXE LPD normalized screenshot literal lookup from original actual PCAP",
+  "exe_sha256": "f2805c059a699b02164d00da77f9b335a371954474481180fe35e3426cc9269a",
+  "top": {
+    "pointer_time_us": 350090011,
+    "delta_us": 46,
+    "nearest_sample": {
+      "time_us": 350089965,
+      "seq8": 89,
+      "sample_index": 80,
+      "code10": [
+        273,
+        274
+      ],
+      "adc16": [
+        -15296,
+        -15232
+      ],
+      "volts": [
+        -2.39,
+        -2.38
+      ],
+      "display": [
+        "-2.39 V",
+        "-2.38 V"
+      ]
+    }
+  },
+  "hover": {
+    "pointer_time_us": 350099964,
+    "delta_us": 0,
+    "nearest_sample": {
+      "time_us": 350099964,
+      "seq8": 90,
+      "sample_index": 0,
+      "code10": [
+        243,
+        243
+      ],
+      "adc16": [
+        -17216,
+        -17216
+      ],
+      "volts": [
+        -2.69,
+        -2.69
+      ],
+      "display": [
+        "-2.69 V",
+        "-2.69 V"
+      ]
+    },
+    "channel": 2,
+    "min_voltage_v": -3.45,
+    "max_voltage_v": -1.91,
+    "normalized_value": 0.49350649350649356,
+    "normalized_display": "0.49",
+    "normalized_unit": "dimensionless"
+  },
+  "screenshot": {
+    "path": "D:\\RUST\\langmuier\\docs\\qa\\LVDS_VOLTAGE_FINAL_NORMALIZED_CURSOR.jpg",
+    "bytes": 209610,
+    "sha256": "17e6dc28fc7f0bd14d695f9328c56b6c1830cb64275cfddb727d8a59c3069392"
+  }
+}

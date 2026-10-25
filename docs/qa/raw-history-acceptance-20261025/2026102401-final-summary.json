@@ -1,0 +1,50 @@
+{
+  "udp_records": 467,
+  "quality_counts": {
+    "NATIVE": 237,
+    "REJECTED": 1,
+    "RECOVERY_CANDIDATE": 229
+  },
+  "confirmed_recovered": 0,
+  "source_counts": {
+    "192.168.1.128:1534": 467
+  },
+  "inner_length_counts": {
+    "269": 466,
+    "268": 1
+  },
+  "outer_sequence_first": 3584,
+  "outer_sequence_last": 4050,
+  "outer_sequence_step_counts": {
+    "1": 466
+  },
+  "candidate_shift_counts": {
+    "0": 1,
+    "4": 228,
+    "1": 1
+  },
+  "candidate_missing_tail_bit_counts": {
+    "8": 1,
+    "4": 228,
+    "1": 1
+  },
+  "complete_same_record_candidates": 0,
+  "reference_crc_status_counts": {
+    "MATCH": 237,
+    "NOT_EVALUATED": 230
+  },
+  "partial_crc_prefix_match_counts": {
+    "False": 1,
+    "True": 229
+  },
+  "cross_record_bits_used": false,
+  "scope": "Independent offline evidence; no scientific admission or hardware fault claim",
+  "capture": {
+    "path": "D:\\RUST\\2026102401.pcapng",
+    "bytes": 172292,
+    "sha256": "1bfe2ff956ad4e372bb15c2da04910c3d6a469b85d772ccbf83e4da4e48cca07"
+  },
+  "packets": 467,
+  "packet_diagnostics": [],
+  "clean_pcap_eof": true
+}

@@ -1,0 +1,29 @@
+{
+  "status": "PASS",
+  "scope": "existing derived input, not a network capture",
+  "scientific_inputs_generated": false,
+  "existing_txt": {
+    "path": "D:\\RUST\\langmuier\\lvds.txt",
+    "bytes": 10780,
+    "sha256": "b5a2eee986fbe4f26da33da67bfeab17b8f9185f72ed0c6f81f232f3c2f15add"
+  },
+  "existing_derived_pcap": {
+    "path": "D:\\RUST\\langmuier\\lvds.pcapng",
+    "bytes": 7516,
+    "sha256": "e082a83fd079df35484f42b891b59e294849b747874be7410aedc8fee5c42813"
+  },
+  "pcap_readback": {
+    "packets": 20,
+    "udp_records": 20,
+    "packet_diagnostics": [],
+    "clean_pcap_eof": true
+  },
+  "inner_frames_checked": 20,
+  "inner_bytes_checked": 5380,
+  "bytes_and_order_equal": true,
+  "existing_provenance": {
+    "path": "D:\\RUST\\langmuier\\lvds.pcapng.provenance.json",
+    "bytes": 915,
+    "sha256": "bf976fc7f9960254ba0a3a33fb8eeeb19be893f5c2d568881cd9b090f33cbca5"
+  }
+}

@@ -34,7 +34,7 @@ if ($LASTEXITCODE -ne 0) { throw "Release 构建失败，请勿打包旧产物" 
 ```powershell
 New-Item -ItemType Directory -Force .\target\delivery\windows-x64 | Out-Null
 Copy-Item .\target\x86_64-pc-windows-msvc\release\langmuier.exe .\target\delivery\windows-x64\LangmuierProbeGroundControl.exe -Force -ErrorAction Stop
-Copy-Item .\docs\WINDOWS_BUILD.md .\target\delivery\windows-x64\README.md -Force -ErrorAction Stop
+Copy-Item .\docs\WINDOWS_README.md .\target\delivery\windows-x64\README.md -Force -ErrorAction Stop
 Compress-Archive -Path .\target\delivery\windows-x64\LangmuierProbeGroundControl.exe, .\target\delivery\windows-x64\README.md -DestinationPath .\target\delivery\LangmuierProbeGroundControl-windows-x64.zip -Force -ErrorAction Stop
 ```
 
@@ -48,7 +48,17 @@ Compress-Archive -Path .\target\delivery\windows-x64\LangmuierProbeGroundControl
 
 当前版本只接受内层 SRC `55`、DST `AA`；错误地址 `04/FF` 会拒收，不自动猜测协议版本。原 24B UDP 外层封装不变，其中 `55 AA` magic 与内层地址分别维护。当前版本不使用 CRC16 作为接收、绘图或保存门禁，也没有 CRC 模式开关。结构、设备时间及双通道解包合法并通过原去重门禁的帧直接绘图；用户开启保存后进入正式写入链。**科学数据未经 CRC 完整性验证**。监听地址须是 Windows 本机实际配置的 IP，程序不会自动改为其他地址；离线回放不需要修改本机绑定地址或连接串口。
 
-## LVDS 科学 CSV 保存
+## 原始录制与历史波形
+
+1. 在中央操作区点击“打开历史数据”（窄窗口显示“历史”）。在“历史与原始数据”窗口选择 LVDSRAW、LPD v3 或 PCAPNG 文件，点击“打开”。可直接填写完整路径，无需连接串口或启动 UDP 监听。
+2. 主界面进入“历史模式”，使用“播放 / 暂停”“起点”、进度条及“退出历史”控制。图表继续支持双通道叠加 / 分屏、左键平移、滚轮缩放、跟随、冻结与重置；设置窗口可指定最多 60 秒的时间窗。
+3. 原始 UDP 保存使用独立的“开始原始录制 / 停止原始录制”。实时接收时保存当前 Socket 实际收到的全部 UDP Payload，包括来源不匹配和解码失败数据；PCAP 历史模式下导出整个抓包中的 UDP 记录。自动文件名位于 `data/`，也可在设置窗口指定新文件路径；同名文件不会覆盖。
+4. 记录状态分别显示收到、入队、写入、丢失及关闭 / 错误。应用接收前的网卡或系统丢包无法由归档统计证明；异常退出、队列溢出或写盘失败会使归档标记为不完整。
+5. “尝试恢复异常帧”默认关闭。启用后可选择显示原生、原生加已确认恢复，或明确标识的诊断候选。恢复只使用同一报文内实际存在的位；缺失尾部不会填造。恢复和候选不进入普通 LPD v3 / 11 列 CSV；需要时从历史窗口导出带版本、质量及来源信息的独立 CSV。
+
+原始格式及验收结果见 [LVDSRAW 格式](LVDSRAW_FORMAT.md) 和 [本轮 QA 报告](LVDS_RAW_CAPTURE_RECOVERY_HISTORY_QA.md)。正式 EXE 不生成模拟科学数据，也不会自动连接或向硬件发送指令。
+
+## 科学数据保存操作
 
 在科学数据保存区的“保存格式”选择 `CSV`、`LPD` 或 `LPD + CSV`。窄窗口中通过原“更多”菜单设置。一次保存期间格式固定；停止保存后可以重新选择。`LPD + CSV` 使用同一 Accepted 科学帧流和保存区间，但两个文件没有原子事务保证。任何输出写入失败都会停止当前保存、显示错误并标记捕获不完整；已写入的文件保留。
 

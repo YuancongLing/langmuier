@@ -1,0 +1,91 @@
+{
+  "udp_records": 467,
+  "quality_counts": {
+    "NATIVE": 237,
+    "REJECTED": 1,
+    "RECOVERY_CANDIDATE": 229
+  },
+  "confirmed_recovered": 0,
+  "source_counts": {
+    "192.168.1.128:1534": 467
+  },
+  "inner_length_counts": {
+    "269": 466,
+    "268": 1
+  },
+  "outer_sequence_first": 3584,
+  "outer_sequence_last": 4050,
+  "outer_sequence_step_counts": {
+    "1": 466
+  },
+  "candidate_shift_counts": {
+    "0": 1,
+    "4": 228,
+    "1": 1
+  },
+  "candidate_missing_tail_bit_counts": {
+    "8": 1,
+    "4": 228,
+    "1": 1
+  },
+  "complete_same_record_candidates": 0,
+  "reference_crc_status_counts": {
+    "MATCH": 237,
+    "NOT_EVALUATED": 230
+  },
+  "partial_crc_prefix_match_counts": {
+    "False": 1,
+    "True": 229
+  },
+  "cross_record_bits_used": false,
+  "scope": "Independent offline evidence; no scientific admission or hardware fault claim",
+  "capture": {
+    "path": "D:\\RUST\\2026102401.pcapng",
+    "bytes": 172292,
+    "sha256": "1bfe2ff956ad4e372bb15c2da04910c3d6a469b85d772ccbf83e4da4e48cca07"
+  },
+  "packets": 467,
+  "packet_diagnostics": [],
+  "clean_pcap_eof": true,
+  "raw_archive": {
+    "path": "D:\\RUST\\langmuier\\data\\raw-20261025-024836-232.lvdsraw",
+    "bytes": 183750,
+    "sha256": "57abd6087247ed4307f087ec7d4eb10f0a6b17c54131ecae54ee3cc910f0b73b",
+    "raw_header": {
+      "version": 1,
+      "header_bytes": 128,
+      "origin": "PCAP_REPLAY",
+      "created_at_ns": 1792867716232499500,
+      "session_id_hex": "2cd14d5bb08be1180000000000000000",
+      "expected_source": "192.168.1.128:1534",
+      "binding": "0.0.0.0:0"
+    },
+    "footer": {
+      "observed": 467,
+      "enqueued": 467,
+      "written": 467,
+      "dropped": 0,
+      "payload_bytes": 136830,
+      "last_observed_id": 467,
+      "status": 1,
+      "reason": 1,
+      "last_written_id": 467
+    },
+    "clean_raw_eof": true,
+    "comparison": {
+      "status": "PASS",
+      "records": 467,
+      "udp_payload_bytes": 136830,
+      "fields_checked": [
+        "payload length/order/bytes",
+        "source",
+        "captured destination",
+        "timestamp_ns",
+        "origin_packet_index",
+        "record_id",
+        "source_matches"
+      ],
+      "clean_raw_eof": true
+    }
+  }
+}
