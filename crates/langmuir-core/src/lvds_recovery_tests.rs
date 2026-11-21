@@ -179,3 +179,85 @@ fn raw_and_normalized_hashes_use_standard_sha256() {
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     );
 }
+
+#[test]
+fn synthetic_auxiliary_frames_never_offer_embedded_science_recovery_candidates() {
+    for packet_type in [0xAB, 0xAC, 0xAD] {
+        let mut auxiliary = [0xCC; 269];
+        auxiliary[..7].copy_from_slice(&[0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07, packet_type]);
+        let embedded_header = received_bits(&valid_frame()[..7], 1);
+        auxiliary[7..15].copy_from_slice(&embedded_header);
+        let result = LvdsBitAlignmentRecoverer::inspect(&auxiliary, true, context());
+        assert_eq!(
+            result.quality,
+            FrameQuality::Rejected,
+            "TYPE {packet_type:02X}"
+        );
+        assert!(result.frame.is_none());
+        assert_eq!(result.candidate_count, 0);
+    }
+}
+
+#[test]
+fn synthetic_common_byte_sync_rejects_mixed_science_auxiliary_ambiguity() {
+    let mut auxiliary = [0xCC; 269];
+    auxiliary[..7].copy_from_slice(&[0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07, 0xAB]);
+    let mut payload = valid_frame().to_vec();
+    payload.extend(auxiliary);
+    for enabled in [false, true] {
+        let result = LvdsBitAlignmentRecoverer::inspect(&payload, enabled, context());
+        assert_eq!(result.quality, FrameQuality::Rejected);
+        assert!(result.frame.is_none());
+        assert_eq!(result.candidate_count, 2);
+    }
+}
+
+#[test]
+fn synthetic_malformed_auxiliary_frames_never_enter_science_bit_recovery() {
+    for packet_type in [0xAB, 0xAC] {
+        let mut auxiliary = [0xCC; 269];
+        auxiliary[..7].copy_from_slice(&[0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07, packet_type]);
+        auxiliary[7..15].copy_from_slice(&received_bits(&valid_frame()[..7], 1));
+        for index in [2, 3, 4, 5] {
+            let mut malformed = auxiliary;
+            malformed[index] ^= 1;
+            let result = LvdsBitAlignmentRecoverer::inspect(&malformed, true, context());
+            assert_eq!(
+                result.quality,
+                FrameQuality::Rejected,
+                "TYPE {packet_type:02X} offset {index}"
+            );
+            assert!(result.frame.is_none());
+            assert_eq!(result.candidate_count, 0);
+        }
+        let result = LvdsBitAlignmentRecoverer::inspect(&auxiliary[..268], true, context());
+        assert_eq!(result.quality, FrameQuality::Rejected);
+        assert!(result.frame.is_none());
+        assert_eq!(result.candidate_count, 0);
+    }
+}
+
+#[test]
+fn synthetic_prefixed_auxiliary_frames_never_offer_science_bit_candidates() {
+    for packet_type in [0xAB, 0xAC] {
+        let mut auxiliary = [0xCC; 269];
+        auxiliary[..7].copy_from_slice(&[0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07, packet_type]);
+        auxiliary[7..15].copy_from_slice(&received_bits(&valid_frame()[..7], 1));
+        let mut payload = vec![0x11, 0x22];
+        payload.extend(auxiliary);
+        let result = LvdsBitAlignmentRecoverer::inspect(&payload, true, context());
+        assert_eq!(result.quality, FrameQuality::Rejected);
+        assert!(result.frame.is_none());
+        assert_eq!(result.candidate_count, 0);
+    }
+}
+
+#[test]
+fn synthetic_malformed_auxiliary_prefix_does_not_hide_a_complete_byte_aligned_science_frame() {
+    let mut payload = vec![0xEB, 0x90, 0x04, 0xAA, 0x01, 0x07, 0xAB];
+    payload.extend(valid_frame().as_ref());
+    let result = LvdsBitAlignmentRecoverer::inspect(&payload, true, context());
+    assert_eq!(result.quality, FrameQuality::Native);
+    assert_eq!(result.bit_offset, Some(56));
+    assert_eq!(result.bytes, valid_frame().as_ref());
+}

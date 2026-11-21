@@ -1,4 +1,14 @@
 //! Bounded history I/O. Raw/PCAP seek safely rescans from the beginning.
+#[cfg(test)]
+#[path = "backend_excitation_history_tests.rs"]
+mod excitation_tests;
+#[cfg(test)]
+#[path = "backend_multitype_history_tests.rs"]
+mod multitype_tests;
+
+#[path = "backend_excitation_history.rs"]
+mod excitation;
+
 use super::{DEPLOYED_LVDS_UDP_SOURCE, UdpLvdsIngress};
 use crate::bridge::{
     BackendEvent, HistoryFileKind, HistoryFrameInfo, HistoryPoint, HistoryStatus, HistoryWindow,
@@ -10,7 +20,7 @@ use langmuir_storage::{
 };
 use langmuir_transport::PcapNgReader;
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicU64, Ordering},
 };
 use std::{
@@ -84,11 +94,14 @@ impl HistoryReader {
         let mut ingress = UdpLvdsIngress::new(expected);
         ingress.recovery_enabled = recovery;
         ingress.audit_context["source_file"] = serde_json::json!(path.to_string_lossy());
+        ingress.audit_context["protocol_session"] =
+            serde_json::json!(format!("history:{}", path.to_string_lossy()));
         if kind == HistoryFileKind::LvdsRaw {
             ingress.audit_context["raw_archive"] = serde_json::json!(path.to_string_lossy());
             if let Input::Raw(reader) = &input {
-                ingress.audit_context["raw_session_id"] =
-                    serde_json::json!(super::hex_bytes(&reader.header().session_id));
+                let session = super::hex_bytes(&reader.header().session_id);
+                ingress.audit_context["raw_session_id"] = serde_json::json!(session);
+                ingress.audit_context["protocol_session"] = serde_json::json!(session);
             }
         }
         Ok(Self {
@@ -132,6 +145,11 @@ impl HistoryReader {
                     return Ok(None);
                 };
                 self.records += 1;
+                // LPD contains AA science records only. It cannot establish
+                // UDP counts or reconstruct absent auxiliary/raw frames.
+                self.ingress.receive_stats.science_frames += 1;
+                self.ingress.receive_stats.parsed_frames += 1;
+                self.ingress.receive_stats.accepted_frames += 1;
                 return Ok(Some(vec![Entry {
                     info: HistoryFrameInfo {
                         record_id: self.records,
@@ -207,7 +225,7 @@ impl HistoryReader {
             .checked_add(timestamp.saturating_sub(epoch))
             .ok_or("History timestamp exceeds the supported range")?;
         self.ingress
-            .push_observed_at(source, destination, &payload, at, id, |_| {});
+            .push_observed_at(source, destination, &payload, at, timestamp, id, |_| {});
         let mut entries = Vec::new();
         for observation in self.ingress.observations.drain(..) {
             let result = observation.result;
@@ -241,6 +259,10 @@ pub(super) enum HistoryCommand {
     Play(bool),
     Seek(f64),
     Window(f64, f64),
+    ExcitationFrame(u64),
+    ExportExcitation {
+        path: String,
+    },
     Export {
         path: String,
         recovered: bool,
@@ -252,8 +274,9 @@ pub(super) enum HistoryCommand {
 pub(super) struct HistorySession {
     pub(super) path: PathBuf,
     pub(super) events: Receiver<BackendEvent>,
-    commands: Sender<(u64, HistoryCommand)>,
+    commands: Mutex<Sender<(u64, HistoryCommand)>>,
     selection_epoch: Arc<AtomicU64>,
+    excitation_epoch: Arc<AtomicU64>,
     cancel: Sender<()>,
     join: Option<JoinHandle<()>>,
 }
@@ -266,6 +289,8 @@ impl HistorySession {
         let worker_path = path.clone();
         let selection_epoch = Arc::new(AtomicU64::new(0));
         let worker_epoch = selection_epoch.clone();
+        let excitation_epoch = Arc::new(AtomicU64::new(0));
+        let worker_excitation_epoch = excitation_epoch.clone();
         let join = std::thread::Builder::new()
             .name("lvds-history".to_owned())
             .spawn(move || {
@@ -277,24 +302,40 @@ impl HistorySession {
                     &requests,
                     &cancelled,
                     &worker_epoch,
+                    &worker_excitation_epoch,
                 );
             })?;
         Ok(Self {
             path,
             events,
-            commands,
+            commands: Mutex::new(commands),
             selection_epoch,
+            excitation_epoch,
             cancel,
             join: Some(join),
         })
     }
     pub(super) fn command(&self, command: HistoryCommand) -> Result<(), String> {
-        let revision = if matches!(&command, HistoryCommand::Export { .. }) {
-            self.selection_epoch.load(Ordering::Acquire)
-        } else {
-            self.selection_epoch.fetch_add(1, Ordering::AcqRel) + 1
+        let commands = self
+            .commands
+            .lock()
+            .map_err(|_| "History request queue lock is poisoned".to_owned())?;
+        // While this sole sender is locked, only the reader can change queue
+        // capacity, by freeing it. Reject a full queue before cancelling any
+        // admitted selection through its epoch.
+        if commands.is_full() {
+            return Err("History request queue is full".to_owned());
+        }
+        let revision = match &command {
+            HistoryCommand::Export { .. } | HistoryCommand::ExportExcitation { .. } => {
+                self.selection_epoch.load(Ordering::Acquire)
+            }
+            HistoryCommand::ExcitationFrame(_) => {
+                self.excitation_epoch.fetch_add(1, Ordering::AcqRel) + 1
+            }
+            _ => self.selection_epoch.fetch_add(1, Ordering::AcqRel) + 1,
         };
-        self.commands
+        commands
             .try_send((revision, command))
             .map_err(|e| format!("History request queue: {e}"))
     }
@@ -370,7 +411,7 @@ fn send(tx: &Sender<BackendEvent>, cancel: &Receiver<()>, mut event: BackendEven
 }
 
 // This loop owns one history session's cancellable scan, navigation and export.
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn worker(
     path: &Path,
     generation: u64,
@@ -379,6 +420,7 @@ fn worker(
     requests: &Receiver<(u64, HistoryCommand)>,
     cancel: &Receiver<()>,
     selection_epoch: &AtomicU64,
+    excitation_epoch: &Arc<AtomicU64>,
 ) {
     let mut status = HistoryStatus {
         generation,
@@ -435,6 +477,14 @@ fn worker(
                 }
             }
             status.read_records = reader.records;
+            status.receive_stats = reader.ingress.receive_stats;
+            excitation::consume(&mut reader.ingress, &mut status.excitation);
+            for observation in reader.ingress.packet_observations.drain(..) {
+                if status.auxiliary_frames.len() >= MAX_ANOMALIES {
+                    status.auxiliary_frames.remove(0);
+                }
+                status.auxiliary_frames.push(observation);
+            }
             for entry in entries {
                 count(&mut status, &entry);
                 if let Some(time) = entry.info.device_time_seconds {
@@ -520,16 +570,25 @@ fn worker(
         let mut revision = 1_u64;
         let mut last_tick = Instant::now();
         let mut pending_export: Option<HistoryExport> = None;
+        let mut excitation_export: Option<excitation::CsvExport> = None;
+        let mut excitation_selection: Option<excitation::FrameSelection> = None;
         while cancel.is_empty() {
             let command = match requests.recv_timeout(Duration::from_millis(100)) {
                 Ok(command) => Some(command),
                 Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
                 Err(crossbeam_channel::RecvTimeoutError::Timeout) => None,
             };
-            let read_revision = command.as_ref().map_or_else(
+            let command_revision = command.as_ref().map_or_else(
                 || selection_epoch.load(Ordering::Acquire),
                 |(revision, _)| *revision,
             );
+            let read_revision = match &command {
+                Some((
+                    _,
+                    HistoryCommand::ExcitationFrame(_) | HistoryCommand::ExportExcitation { .. },
+                )) => selection_epoch.load(Ordering::Acquire),
+                _ => command_revision,
+            };
             let command = command.map(|(_, command)| command);
             let mut range = None;
             let had_command = command.is_some();
@@ -552,6 +611,43 @@ fn worker(
                 Some(HistoryCommand::Window(start, end)) => {
                     if start.is_finite() && end.is_finite() && end > start {
                         range = Some([start, end.min(start + 60.0)]);
+                    }
+                }
+                Some(HistoryCommand::ExcitationFrame(index)) => {
+                    if status.excitation.frames > 0 {
+                        excitation_selection = None;
+                        let index = index.min(status.excitation.frames - 1);
+                        match excitation::FrameSelection::start(
+                            path,
+                            recovery,
+                            index,
+                            command_revision,
+                            excitation_epoch.clone(),
+                        ) {
+                            Ok(task) => {
+                                status.excitation.loading = true;
+                                excitation_selection = Some(task);
+                            }
+                            Err(error) => status.error = Some(error.to_string()),
+                        }
+                    }
+                }
+                Some(HistoryCommand::ExportExcitation { path: output }) => {
+                    if excitation_export.is_some() {
+                        status.excitation.export_error =
+                            Some("An AB history export is already active".to_owned());
+                    } else {
+                        match excitation::CsvExport::start(path, output.clone(), recovery) {
+                            Ok(task) => {
+                                status.excitation.exporting = true;
+                                status.excitation.export_path = Some(output);
+                                status.excitation.export_error = None;
+                                excitation_export = Some(task);
+                            }
+                            Err(error) => {
+                                status.excitation.export_error = Some(error.to_string());
+                            }
+                        }
                     }
                 }
                 Some(HistoryCommand::Export {
@@ -672,6 +768,46 @@ fn worker(
                 );
             }
 
+            if let Some(result) = excitation_selection
+                .as_ref()
+                .and_then(|task| task.result.try_recv().ok())
+            {
+                let task = excitation_selection
+                    .take()
+                    .expect("AB selection task exists");
+                if excitation_epoch.load(Ordering::Acquire) == task.revision {
+                    status.excitation.loading = false;
+                    match result {
+                        Ok(Some(record)) => {
+                            status.excitation.selected_index = Some(task.index);
+                            status.excitation.selected = Some(record);
+                        }
+                        Ok(None) => {}
+                        Err(error) => status.error = Some(error),
+                    }
+                    let _ = send(
+                        tx,
+                        cancel,
+                        BackendEvent::HistoryStatus(Box::new(status.clone())),
+                    );
+                }
+            }
+            if let Some(result) = excitation_export
+                .as_ref()
+                .and_then(|task| task.result.try_recv().ok())
+            {
+                let _task = excitation_export.take().expect("AB export task exists");
+                status.excitation.exporting = false;
+                if let Err(error) = result {
+                    status.excitation.export_error = Some(error);
+                }
+                let _ = send(
+                    tx,
+                    cancel,
+                    BackendEvent::HistoryStatus(Box::new(status.clone())),
+                );
+            }
+
             if had_command || range.is_some() {
                 let _ = send(
                     tx,
@@ -776,6 +912,7 @@ fn read_window(
             return Ok(None);
         }
         reader.ingress.audit_rows.clear();
+        excitation::discard(&mut reader.ingress);
         for entry in entries {
             if let Some(time) = entry.info.device_time_seconds {
                 if reliable(&entry) {
@@ -856,6 +993,7 @@ fn export(
             return Err("Export cancelled; the output is incomplete".to_owned());
         }
         reader.ingress.audit_rows.clear();
+        excitation::discard(&mut reader.ingress);
         for entry in entries {
             let Some(frame) = entry.frame else { continue };
             let selected = entry.info.quality == FrameQuality::Native
@@ -974,6 +1112,7 @@ fn scan_history_for_test(path: &Path) -> Result<TestScan, String> {
             }
         }
         reader.ingress.audit_rows.clear();
+        excitation::discard(&mut reader.ingress);
     }
     Ok(TestScan {
         format: reader.kind,

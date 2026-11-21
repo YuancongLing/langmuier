@@ -1,0 +1,33 @@
+{
+  "result": "PASS",
+  "exe": {
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s02-20261118\\LangmuierProbeGroundControl.exe",
+    "bytes": 10787328,
+    "sha256": "8ab70f1d12991deedcea554e0f20f749160046ec1074a5e637fb7b79b29ec419"
+  },
+  "architecture": "PE32+ Windows AMD64",
+  "imports": [
+    "advapi32.dll",
+    "api-ms-win-core-synch-l1-2-0.dll",
+    "bcryptprimitives.dll",
+    "cfgmgr32.dll",
+    "combase.dll",
+    "dwmapi.dll",
+    "gdi32.dll",
+    "imm32.dll",
+    "kernel32.dll",
+    "ntdll.dll",
+    "ole32.dll",
+    "opengl32.dll",
+    "setupapi.dll",
+    "shell32.dll",
+    "shlwapi.dll",
+    "user32.dll",
+    "uxtheme.dll",
+    "ws2_32.dll"
+  ],
+  "no_dynamic_crt_imports": true,
+  "matches_release_build": true,
+  "zip_created": false,
+  "native_gui": "NOT_RUN"
+}

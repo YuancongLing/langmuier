@@ -1,0 +1,43 @@
+[
+  {
+    "name": "cargo-fmt-final-02",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.8650496006011963
+  },
+  {
+    "name": "cargo-test-workspace-final",
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--features",
+      "langmuir-desktop/mock",
+      "--locked",
+      "-j1"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 39.31924486160278
+  },
+  {
+    "name": "cargo-clippy-final",
+    "command": [
+      "cargo",
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--locked",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 12.243205785751343
+  }
+]

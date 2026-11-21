@@ -1,0 +1,40 @@
+{
+  "scope": "Original input and frozen independent baseline artifacts, before production output read-back",
+  "identities": [
+    {
+      "path": "D:\\RUST\\langmuier\\202611212141.pcapng",
+      "bytes": 1416044,
+      "sha256": "9a5d9a73aa46fb2fb24962b2e2b7d4081646477ae5d1f62ee2ee46c375b53907"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\lvds-multitype-s02-real-02\\independent-AB-AA-association.csv",
+      "bytes": 11751,
+      "sha256": "6089356a4d9ccdac5e4c4a8e23c50d913f58b0ea8f430deaf83a00d1c5019704"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\lvds-multitype-s02-real-02\\independent-AB-stages.csv",
+      "bytes": 1250,
+      "sha256": "9fb7570791ec4f38e1c389c0d7ec3bcb813d2fda4b8a1b2ac3eeaa26b839e61b"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\lvds-multitype-s02-real-02\\independent-manifest.json",
+      "bytes": 22335425,
+      "sha256": "b7bd25bdc1cfa875ee4defc5ba257ccc555ab698e216ee927d58d90fa4d3ff89"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\lvds-multitype-s02-real-02\\independent-pcap-audit.json",
+      "bytes": 13076,
+      "sha256": "260a9f75ff7ba5747f270c5396ea663cbd88c03abee9e50d1860be08f4aacede"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\lvds-multitype-s02-real-02\\independent-pcap-audit.txt",
+      "bytes": 13076,
+      "sha256": "260a9f75ff7ba5747f270c5396ea663cbd88c03abee9e50d1860be08f4aacede"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\docs\\qa\\lvds-multitype-s02-real-02\\independent-workbook-evidence.json",
+      "bytes": 6502,
+      "sha256": "99f1937700abac616af49891144716b69d33fbfea3d79b7f86bff54b82ad56f7"
+    }
+  ]
+}

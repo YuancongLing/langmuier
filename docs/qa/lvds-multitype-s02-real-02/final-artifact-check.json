@@ -1,0 +1,14 @@
+{
+  "result": "PASS",
+  "report": "D:\\RUST\\langmuier\\docs\\LVDS_MULTITYPE_S02_REAL_202611212141_ACCEPTANCE.md",
+  "report_bytes": 19632,
+  "report_sha256": "97d3fb1527e73456d64bf507bda6a6692ff9eec5f54d7b2d478e080cb993d087",
+  "checked_local_links": 34,
+  "missing_links": [],
+  "chinese_encoding_verified": true,
+  "readme_version_and_zero_state": true,
+  "protected_files_unchanged": true,
+  "old_baseline_sources_unchanged": 160,
+  "release_sha256": "c0f0cbdf7dd515de182ec96f0cd7b3f9a43cf2932ca005f48f49a2ba114cb38c",
+  "zip_created": false
+}

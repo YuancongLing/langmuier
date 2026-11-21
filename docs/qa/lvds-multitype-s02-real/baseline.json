@@ -1,0 +1,29 @@
+{
+  "created_utc": "2026-11-21T13:41:27.043657+00:00",
+  "input": {
+    "path": "C:\\Users\\Administrator\\Downloads\\2026112101.pcapng",
+    "bytes": 461444,
+    "sha256": "22ec9d91789eb674f6b3cddf9bf5935bd81ea7d92030c0a1941e8f2becec4b77",
+    "mtime_ns": 1795266705608601300
+  },
+  "existing_processes": [
+    {
+      "Id": 43960,
+      "ProcessName": "LangmuierProbeGroundControl",
+      "Path": "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s02-20261118\\LangmuierProbeGroundControl.exe"
+    },
+    {
+      "Id": 44796,
+      "ProcessName": "LangmuierProbeGroundControl",
+      "Path": "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s01-20261118\\LangmuierProbeGroundControl.exe"
+    }
+  ],
+  "native_gui": {
+    "status": "NOT_RUN",
+    "reason": "No node_repl or @oai/sky callable tool in the session tool catalog",
+    "tool_discovery": "Filtered ALL_TOOLS by node_repl|computer|sky|search; no native GUI tools returned",
+    "screenshots": []
+  },
+  "workdir": "D:\\RUST\\langmuier",
+  "git_head": "9155ea0ea8d4ea903959eadd967ca0d706f25a2e"
+}

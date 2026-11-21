@@ -150,7 +150,10 @@ fn e1_e5_e6_real_file_round_trip_keeps_only_decodable_deduplicated_science() {
         (3, 1, 1)
     );
     assert_eq!(ingress.metrics.checksum_failures, 0);
-    assert_eq!(ingress.metrics.udp_sequence.observed_frames, 3);
+    assert_eq!(
+        ingress.metrics.udp_sequence.observed_frames, 5,
+        "common-valid AA with bad business fields still belongs to the outer stream"
+    );
     assert_eq!(ingress.metrics.scientific_frames_delivered, 3);
 
     let events: Vec<_> = display.try_iter().collect();
@@ -291,7 +294,15 @@ fn e3_science_acceptance_requires_structure_time_and_reserved_byte() {
             now,
         );
         assert!(display.is_empty(), "malformed fixed field at {offset}");
-        assert!(ingress.last_parse_error.is_some());
+        if offset == 6 {
+            assert_eq!(ingress.receive_stats.excitation_frames, 1);
+            assert!(
+                ingress.last_parse_error.is_none(),
+                "AA XOR 1 is the legal AB type"
+            );
+        } else {
+            assert!(ingress.last_parse_error.is_some());
+        }
     }
     let mut bad_time = golden();
     bad_time[11..15].copy_from_slice(&u32::MAX.to_be_bytes());
@@ -311,13 +322,13 @@ fn e3_science_acceptance_requires_structure_time_and_reserved_byte() {
     }
     assert_eq!(ingress.receive_stats.header_errors, 1);
     assert_eq!(ingress.receive_stats.length_errors, 1);
-    assert_eq!(ingress.receive_stats.field_errors, 5);
+    assert_eq!(ingress.receive_stats.field_errors, 4);
     assert_eq!(ingress.receive_stats.timestamp_errors, 1);
     assert_eq!(ingress.receive_stats.adc_errors, 0);
     assert_eq!(ingress.receive_stats.parsed_frames, 0);
-    assert_eq!(ingress.receive_stats.parse_failures, 8);
+    assert_eq!(ingress.receive_stats.parse_failures, 7);
     assert_eq!(ingress.metrics.scientific_frames_delivered, 0);
-    assert_eq!(ingress.metrics.udp_sequence.observed_frames, 0);
+    assert_eq!(ingress.metrics.udp_sequence.observed_frames, 4);
 }
 
 #[test]
@@ -771,11 +782,32 @@ fn independently_count_capture(capture: &Path) -> CaptureCensus {
         // This particular external fixture contains complete single-datagram
         // frames. The application still uses its production reassembler.
         assert_eq!(
-            (parsed.header.segment_count, parsed.header.byte_offset),
-            (1, 0)
+            (
+                parsed.header.segment_count,
+                parsed.header.segment_index,
+                parsed.header.byte_offset,
+            ),
+            (1, 0, 0)
         );
         let wire = parsed.payload;
-        assert_eq!(wire.len(), 269);
+        assert_eq!(
+            parsed.header.frame_length,
+            u32::try_from(wire.len()).unwrap()
+        );
+        assert_eq!(usize::from(parsed.header.segment_length), wire.len());
+        if wire.len() != 269 {
+            // Preserve the capture's actual short record. It is not a complete
+            // science frame and must never be padded into one by either path.
+            assert!(matches!(
+                langmuir_core::decode_scientific_frame(wire),
+                Err(langmuir_core::FrameError::UnexpectedLength {
+                    expected: 269,
+                    actual,
+                    ..
+                }) if actual == wire.len()
+            ));
+            continue;
+        }
         census.complete += 1;
         // Independent fixed-byte, integer-time and 40-bit packed-code oracle.
         // The trailing two bytes never participate in validity.

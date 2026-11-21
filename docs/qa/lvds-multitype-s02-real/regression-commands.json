@@ -1,0 +1,71 @@
+[
+  {
+    "name": "fmt-check",
+    "command": "cargo fmt --all -- --check",
+    "exit_code": 0,
+    "elapsed_seconds": 1.756,
+    "pid": 28228
+  },
+  {
+    "name": "workspace-check",
+    "command": "cargo check --workspace --locked",
+    "exit_code": 0,
+    "elapsed_seconds": 1.663,
+    "pid": 39672
+  },
+  {
+    "name": "workspace-test",
+    "command": "cargo test --workspace --features langmuir-desktop/mock --locked",
+    "exit_code": 0,
+    "elapsed_seconds": 25.247,
+    "pid": 22348,
+    "totals": {
+      "passed": 470,
+      "failed": 0,
+      "ignored": 9
+    }
+  },
+  {
+    "name": "workspace-clippy",
+    "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "exit_code": 0,
+    "elapsed_seconds": 11.011,
+    "pid": 38588
+  },
+  {
+    "name": "legacy-AA-science",
+    "command": "cargo test -p langmuir-desktop --features mock --locked user_capture_ -- --ignored --nocapture",
+    "exit_code": 0,
+    "elapsed_seconds": 19.759,
+    "pid": 37128,
+    "totals": {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "legacy-AA-raw",
+    "command": "cargo test -p langmuir-desktop --features mock --locked real_capture_ -- --ignored --nocapture",
+    "exit_code": 0,
+    "elapsed_seconds": 0.85,
+    "pid": 54852,
+    "totals": {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "legacy-AA-txt",
+    "command": "cargo test -p langmuir-desktop --features mock --locked final55_original_txt_decoder_and_address_gate_contract -- --ignored --nocapture",
+    "exit_code": 0,
+    "elapsed_seconds": 0.614,
+    "pid": 26776,
+    "totals": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    }
+  }
+]

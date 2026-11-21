@@ -1,0 +1,17 @@
+{
+  "pid": 35268,
+  "exe": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01-tests.exe",
+  "exe_sha256": "b95428da2c679eaa7ed2f9a2fad7ec896de201732920221f71e7103b47f85683",
+  "cwd": "D:\\RUST\\langmuier",
+  "command": [
+    "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01-tests.exe",
+    "backend::s02_real02_tests::s02_real02_nonmock_paced_production_full_storage_and_history",
+    "--exact",
+    "--ignored",
+    "--nocapture",
+    "--test-threads=1"
+  ],
+  "input": "D:\\RUST\\langmuier\\202611212141.pcapng",
+  "output": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01",
+  "started_unix_ns": 1795273471905375900
+}

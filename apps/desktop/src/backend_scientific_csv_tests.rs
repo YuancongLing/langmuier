@@ -122,19 +122,26 @@ fn independently_decode_adc(capture: &Path) -> Vec<ScientificFrame> {
         // the envelope directly so the oracle does not reuse its parser.
         let envelope = &udp.payload;
         assert!(envelope.len() >= 24);
+        let wire = &envelope[24..];
         assert_eq!(&envelope[..4], &[0x55, 0xAA, 1, 0xA5]);
-        assert_eq!(u32::from_be_bytes(envelope[8..12].try_into().unwrap()), 269);
+        assert_eq!(
+            u32::from_be_bytes(envelope[8..12].try_into().unwrap()),
+            u32::try_from(wire.len()).unwrap()
+        );
         assert_eq!(u16::from_be_bytes(envelope[12..14].try_into().unwrap()), 0);
         assert_eq!(u16::from_be_bytes(envelope[14..16].try_into().unwrap()), 1);
         assert_eq!(u32::from_be_bytes(envelope[16..20].try_into().unwrap()), 0);
         assert_eq!(
-            u16::from_be_bytes(envelope[20..22].try_into().unwrap()),
-            269
+            usize::from(u16::from_be_bytes(envelope[20..22].try_into().unwrap())),
+            wire.len()
         );
         let transport_sequence = u32::from_be_bytes(envelope[4..8].try_into().unwrap());
-        let wire = &envelope[24..];
-        if wire.len() != 269
-            || wire[..7] != [0xEB, 0x90, 0x55, 0xAA, 1, 7, 0xAA]
+        if wire.len() != 269 {
+            // This independent oracle rejects the original record by length;
+            // it does not synthesize the absent final byte or any ADC samples.
+            continue;
+        }
+        if wire[..7] != [0xEB, 0x90, 0x55, 0xAA, 1, 7, 0xAA]
             || u32::from_be_bytes(wire[11..15].try_into().unwrap()) >= 1_000_000
             || wire[266] != 0
         {

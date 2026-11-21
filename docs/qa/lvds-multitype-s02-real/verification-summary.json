@@ -1,0 +1,116 @@
+{
+  "date": "2026-11-21",
+  "conclusions": {
+    "AA_SOFTWARE": "PASS",
+    "AB_SOFTWARE": "PASS",
+    "AC_INVALID_STATUS": "PASS",
+    "RAW_ARCHIVE": "PASS",
+    "SCIENCE_STORAGE": "PASS",
+    "EXCITATION_STORAGE": "PASS"
+  },
+  "WINDOWS_GUI": "NOT_RUN",
+  "DELIVERY": "BLOCKED: native Windows GUI acceptance not run; verified single EXE supplied",
+  "BINARY_BUILD_AND_IDENTITY": "PASS",
+  "REAL_HARDWARE_LIVE": "NOT_RUN",
+  "workspace": {
+    "passed": 470,
+    "failed": 0,
+    "ignored": 9
+  },
+  "legacy_original_input_tests": {
+    "passed": 5,
+    "failed": 0
+  },
+  "new_real_acceptance_tests": {
+    "unique_passed": 2,
+    "failed": 0,
+    "default_workspace_ignored": true,
+    "repeat_paced_performance_run_is_not_an_extra_unique_test": true
+  },
+  "commands": [
+    {
+      "name": "fmt-check",
+      "command": "cargo fmt --all -- --check",
+      "exit_code": 0,
+      "elapsed_seconds": 1.756,
+      "pid": 28228
+    },
+    {
+      "name": "workspace-check",
+      "command": "cargo check --workspace --locked",
+      "exit_code": 0,
+      "elapsed_seconds": 1.663,
+      "pid": 39672
+    },
+    {
+      "name": "workspace-test",
+      "command": "cargo test --workspace --features langmuir-desktop/mock --locked",
+      "exit_code": 0,
+      "elapsed_seconds": 25.247,
+      "pid": 22348,
+      "totals": {
+        "passed": 470,
+        "failed": 0,
+        "ignored": 9
+      }
+    },
+    {
+      "name": "workspace-clippy",
+      "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+      "exit_code": 0,
+      "elapsed_seconds": 11.011,
+      "pid": 38588
+    },
+    {
+      "name": "legacy-AA-science",
+      "command": "cargo test -p langmuir-desktop --features mock --locked user_capture_ -- --ignored --nocapture",
+      "exit_code": 0,
+      "elapsed_seconds": 19.759,
+      "pid": 37128,
+      "totals": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "name": "legacy-AA-raw",
+      "command": "cargo test -p langmuir-desktop --features mock --locked real_capture_ -- --ignored --nocapture",
+      "exit_code": 0,
+      "elapsed_seconds": 0.85,
+      "pid": 54852,
+      "totals": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "name": "legacy-AA-txt",
+      "command": "cargo test -p langmuir-desktop --features mock --locked final55_original_txt_decoder_and_address_gate_contract -- --ignored --nocapture",
+      "exit_code": 0,
+      "elapsed_seconds": 0.614,
+      "pid": 26776,
+      "totals": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      }
+    }
+  ],
+  "production_summary": "production-summary-final.json",
+  "independent_storage_readback": "independent-full-storage-readback-final.json",
+  "input": {
+    "path": "C:\\Users\\Administrator\\Downloads\\2026112101.pcapng",
+    "bytes": 461444,
+    "sha256": "22ec9d91789eb674f6b3cddf9bf5935bd81ea7d92030c0a1941e8f2becec4b77",
+    "mtime_ns": 1795266705608601300
+  },
+  "delivery": {
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s02-real-20261121\\LangmuierProbeGroundControl.exe",
+    "bytes": 10786304,
+    "sha256": "a9f87471646dea0af2bed44d6758925652ab6ba0485bde123b963b016a31479b"
+  },
+  "normal_paced_replay_seconds": 56.7559717,
+  "gui_screenshots": []
+}

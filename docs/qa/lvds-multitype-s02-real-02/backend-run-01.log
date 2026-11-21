@@ -1,0 +1,62 @@
+
+running 1 test
+test backend::s02_real02_tests::s02_real02_nonmock_paced_production_full_storage_and_history ... S02_REAL02_PACED_BEGIN pid=35268 unix_ns=1795273472424590300 output=D:\RUST\langmuier\target\qa\lvds-multitype-s02-real-02\backend-run-01 writers_ready_before_first_frame=true
+S02_REAL02_PROGRESS elapsed_s=5.001 source_udp=111 AA=101 AB=5 raw_written=108 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=10.002 source_udp=221 AA=201 AB=10 raw_written=217 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=15.001 source_udp=331 AA=301 AB=15 raw_written=333 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=20.001 source_udp=441 AA=401 AB=20 raw_written=441 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=25.001 source_udp=551 AA=501 AB=25 raw_written=555 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=30.002 source_udp=661 AA=601 AB=30 raw_written=665 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=35.000 source_udp=771 AA=701 AB=35 raw_written=773 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=40.002 source_udp=881 AA=801 AB=40 raw_written=886 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=45.002 source_udp=991 AA=901 AB=45 raw_written=996 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=50.002 source_udp=1101 AA=1001 AB=50 raw_written=1110 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=55.000 source_udp=1211 AA=1101 AB=55 raw_written=1219 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=60.000 source_udp=1321 AA=1201 AB=60 raw_written=1329 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=65.002 source_udp=1431 AA=1301 AB=65 raw_written=1438 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=70.001 source_udp=1541 AA=1401 AB=70 raw_written=1552 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=75.002 source_udp=1651 AA=1501 AB=75 raw_written=1662 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=80.002 source_udp=1761 AA=1601 AB=80 raw_written=1771 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=85.002 source_udp=1871 AA=1701 AB=85 raw_written=1885 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=90.000 source_udp=1981 AA=1801 AB=90 raw_written=1995 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=95.000 source_udp=2091 AA=1901 AB=95 raw_written=2108 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=100.001 source_udp=2201 AA=2001 AB=100 raw_written=2218 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=105.001 source_udp=2311 AA=2101 AB=105 raw_written=2328 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=110.002 source_udp=2421 AA=2201 AB=110 raw_written=2441 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=115.001 source_udp=2531 AA=2301 AB=115 raw_written=2550 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=120.002 source_udp=2641 AA=2401 AB=120 raw_written=2665 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=125.003 source_udp=2751 AA=2501 AB=125 raw_written=2772 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=130.002 source_udp=2861 AA=2601 AB=130 raw_written=2881 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=135.002 source_udp=2971 AA=2701 AB=135 raw_written=2996 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=140.001 source_udp=3081 AA=2801 AB=140 raw_written=3104 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=145.001 source_udp=3191 AA=2901 AB=145 raw_written=3214 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=150.001 source_udp=3301 AA=3001 AB=150 raw_written=3328 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=155.000 source_udp=3411 AA=3101 AB=155 raw_written=3437 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=160.001 source_udp=3521 AA=3201 AB=160 raw_written=3550 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=165.000 source_udp=3631 AA=3301 AB=165 raw_written=3660 display_unconsumed=8
+S02_REAL02_PROGRESS elapsed_s=170.002 source_udp=3741 AA=3401 AB=170 raw_written=3773 display_unconsumed=8
+S02_REAL02_PACED_END pid=35268 elapsed_s=174.500797 all_writers_closed=true
+S02_REAL02_HISTORY_BEGIN PCAPNG
+S02_REAL02_HISTORY path=\\?\D:\RUST\langmuier\202611212141.pcapng selected_AB_index=0
+S02_REAL02_HISTORY path=\\?\D:\RUST\langmuier\202611212141.pcapng selected_AB_index=0
+S02_REAL02_HISTORY path=\\?\D:\RUST\langmuier\202611212141.pcapng selected_AB_index=25
+S02_REAL02_HISTORY path=\\?\D:\RUST\langmuier\202611212141.pcapng selected_AB_index=50
+S02_REAL02_HISTORY path=\\?\D:\RUST\langmuier\202611212141.pcapng selected_AB_index=75
+S02_REAL02_HISTORY path=\\?\D:\RUST\langmuier\202611212141.pcapng selected_AB_index=100
+S02_REAL02_HISTORY path=\\?\D:\RUST\langmuier\202611212141.pcapng selected_AB_index=125
+S02_REAL02_HISTORY path=\\?\D:\RUST\langmuier\202611212141.pcapng selected_AB_index=150
+S02_REAL02_HISTORY_BEGIN LVDSRAW
+S02_REAL02_HISTORY path=D:\RUST\langmuier\target\qa\lvds-multitype-s02-real-02\backend-run-01\capture.lvdsraw selected_AB_index=0
+S02_REAL02_HISTORY path=D:\RUST\langmuier\target\qa\lvds-multitype-s02-real-02\backend-run-01\capture.lvdsraw selected_AB_index=0
+S02_REAL02_HISTORY path=D:\RUST\langmuier\target\qa\lvds-multitype-s02-real-02\backend-run-01\capture.lvdsraw selected_AB_index=25
+S02_REAL02_HISTORY path=D:\RUST\langmuier\target\qa\lvds-multitype-s02-real-02\backend-run-01\capture.lvdsraw selected_AB_index=50
+S02_REAL02_HISTORY path=D:\RUST\langmuier\target\qa\lvds-multitype-s02-real-02\backend-run-01\capture.lvdsraw selected_AB_index=75
+S02_REAL02_HISTORY path=D:\RUST\langmuier\target\qa\lvds-multitype-s02-real-02\backend-run-01\capture.lvdsraw selected_AB_index=100
+S02_REAL02_HISTORY path=D:\RUST\langmuier\target\qa\lvds-multitype-s02-real-02\backend-run-01\capture.lvdsraw selected_AB_index=125
+S02_REAL02_HISTORY path=D:\RUST\langmuier\target\qa\lvds-multitype-s02-real-02\backend-run-01\capture.lvdsraw selected_AB_index=150
+S02_REAL02_HISTORY_BEGIN LPD
+S02_REAL02_PRODUCTION_SUMMARY D:\RUST\langmuier\target\qa\lvds-multitype-s02-real-02\backend-run-01\production-summary.json
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 260 filtered out; finished in 400.27s
+

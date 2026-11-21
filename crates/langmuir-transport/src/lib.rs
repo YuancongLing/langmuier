@@ -30,6 +30,6 @@ pub use serial::{SerialConfig, SerialConnector, SerialTransport, available_seria
 pub use transport::{Connector, Transport};
 pub use udp::{UdpConfig, UdpConnector, UdpTransport};
 pub use worker::{
-    BackpressurePolicy, ReaderConfig, ReaderEvent, ReaderStatusSnapshot, ReaderWorker, StopReason,
-    StreamDecoder, WorkerExit, WriteReceipt, WriteTicket,
+    BackpressurePolicy, BroadcastCancellation, ReaderConfig, ReaderEvent, ReaderStatusSnapshot,
+    ReaderWorker, StopReason, StreamDecoder, WorkerExit, WriteReceipt, WriteTicket,
 };

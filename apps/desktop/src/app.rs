@@ -29,6 +29,24 @@ use crate::{
 #[path = "app_history.rs"]
 mod history_ui;
 
+#[path = "app_excitation.rs"]
+mod excitation_ui;
+
+#[cfg(test)]
+#[path = "app_excitation_tests.rs"]
+mod excitation_tests;
+
+#[cfg(test)]
+#[path = "app_s02_real_tests.rs"]
+mod s02_real_tests;
+
+#[cfg(test)]
+#[path = "app_s02_real02_tests.rs"]
+mod s02_real02_tests;
+
+#[path = "app_star_simulator.rs"]
+mod star_simulator_ui;
+
 // UI history: 2 kHz × 60 s, plus one complete scientific frame.
 // Scientific file storage is independent of this bounded display history.
 const PLOT_CAPACITY: usize = 60 * 1_000_000 / SAMPLE_INTERVAL_MICROS as usize + SAMPLE_COUNT;
@@ -164,12 +182,15 @@ enum PlotLayout {
 #[derive(Debug, Default)]
 struct LvdsView {
     status: Option<LvdsStatusSnapshot>,
+    last_auxiliary: Option<Box<crate::bridge::LvdsPacketObservation>>,
     replay_dialog_open: bool,
     plotted_frames: u64,
     replay_path: String,
     replay_save_science: bool,
     save_format: ScientificSaveFormat,
     history: history_ui::HistoryView,
+    waveform: excitation_ui::WaveformView,
+    excitation: excitation_ui::ExcitationView,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -364,6 +385,7 @@ pub struct LangmuirDesktopApp {
     rs422: ConnectionPanelState,
     lvds: LvdsUdpPanelState,
     lvds_view: LvdsView,
+    star_view: star_simulator_ui::StarSimulatorView,
     acquisition_running: bool,
     telemetry_polling: TelemetryPollingState,
     telemetry_polling_edit_millis: u32,
@@ -422,6 +444,7 @@ impl LangmuirDesktopApp {
             rs422: ConnectionPanelState::default(),
             lvds: LvdsUdpPanelState::default(),
             lvds_view: LvdsView::default(),
+            star_view: star_simulator_ui::StarSimulatorView::default(),
             acquisition_running: false,
             telemetry_polling: TelemetryPollingState::default(),
             telemetry_polling_edit_millis: TELEMETRY_POLL_INTERVAL_DEFAULT_MILLIS,
@@ -641,6 +664,7 @@ impl LangmuirDesktopApp {
             .as_ref()
             .is_some_and(|previous| previous.source != status.source);
         if source_changed {
+            self.reset_live_excitation();
             if self.lvds_view.history.status.active {
                 self.clear_live_quality_history();
                 self.channel_1.clear();
@@ -650,6 +674,9 @@ impl LangmuirDesktopApp {
                 self.clear_current_plot();
             }
             self.operator.last_scientific_update = None;
+        }
+        if let Some(record) = &status.excitation_latest {
+            self.remember_excitation_frame(record.clone());
         }
         self.lvds_view.status = Some(status);
     }
@@ -731,6 +758,11 @@ impl LangmuirDesktopApp {
 
     fn handle_backend_event(&mut self, event: BackendEvent) {
         match event {
+            BackendEvent::ExcitationFrame(record) => self.accept_excitation_display_frame(*record),
+            BackendEvent::StarSimulatorStatus(status) => self.apply_star_simulator_status(*status),
+            BackendEvent::LvdsAuxiliaryFrame(packet) => {
+                self.lvds_view.last_auxiliary = Some(packet);
+            }
             event @ (BackendEvent::RawCaptureStatus(_)
             | BackendEvent::RecoveryStatus(_)
             | BackendEvent::HistoryStatus(_)
@@ -769,7 +801,7 @@ impl LangmuirDesktopApp {
                 active,
                 interval_millis,
             } => self.apply_telemetry_polling_state(active, interval_millis),
-            BackendEvent::StateSnapshot(snapshot) => self.apply_state_snapshot(snapshot),
+            BackendEvent::StateSnapshot(snapshot) => self.apply_state_snapshot(*snapshot),
             BackendEvent::Telemetry(snapshot) => {
                 self.operator.last_telemetry_update = Some(Instant::now());
                 self.record_telemetry_anomalies(&snapshot);
@@ -782,6 +814,9 @@ impl LangmuirDesktopApp {
             } => match link {
                 LinkKind::Rs422 => {
                     self.rs422.connected = connected;
+                    if !connected {
+                        self.star_view.status.active = false;
+                    }
                     self.rs422.metrics = Some(*metrics);
                 }
                 LinkKind::Lvds => {
@@ -821,6 +856,10 @@ impl LangmuirDesktopApp {
         match link {
             LinkKind::Rs422 => {
                 self.rs422.connected = connected;
+                if !connected {
+                    self.star_view.status.active = false;
+                    self.star_view.status.queue_depth = 0;
+                }
                 detail.clone_into(&mut self.rs422.detail);
             }
             LinkKind::Lvds => {
@@ -873,6 +912,7 @@ impl LangmuirDesktopApp {
         self.acquisition_running = snapshot.acquisition_running;
         self.telemetry_polling = snapshot.telemetry_polling;
         self.telemetry_polling_edit_millis = snapshot.telemetry_polling.interval_millis;
+        self.apply_star_simulator_status(snapshot.star_simulator);
     }
 
     fn apply_telemetry_polling_state(&mut self, active: bool, interval_millis: u32) {
@@ -1466,7 +1506,9 @@ impl LangmuirDesktopApp {
                     .show_value(false)
                     .logarithmic(true)
                     .trailing_fill(true)
-                    .step_by(f64::from(self.parameter_steps.telemetry_interval)),
+                    // Slider quantization also runs without input. One-ms
+                    // steps preserve exact presets and backend intervals.
+                    .step_by(1.0),
                 )
             })
             .inner;
@@ -1814,13 +1856,6 @@ impl LangmuirDesktopApp {
         }
     }
 
-    fn plot_toolbar_channels_menu(&mut self, ui: &mut Ui) {
-        ui.menu_button("通道", |ui| {
-            ui.checkbox(&mut self.show_channels[0], "通道 1");
-            ui.checkbox(&mut self.show_channels[1], "通道 2");
-        });
-    }
-
     fn plot_toolbar_actions(&mut self, ui: &mut Ui, menu: bool) {
         let frozen = self.operator.frozen_plot.is_some();
         let freeze_label = if frozen {
@@ -1829,7 +1864,12 @@ impl LangmuirDesktopApp {
             "冻结画面"
         };
         if menu {
-            ui.menu_button("图表操作", |ui| {
+            let label = if ui.available_width() < 300.0 {
+                "图表"
+            } else {
+                "图表操作"
+            };
+            ui.menu_button(label, |ui| {
                 if ui.button("跟随最新").clicked() {
                     self.follow_latest();
                     ui.close();
@@ -1877,9 +1917,13 @@ impl LangmuirDesktopApp {
     }
 
     fn plot_toolbar(&mut self, ui: &mut Ui) {
+        if self.lvds_view.waveform == excitation_ui::WaveformView::Excitation {
+            self.excitation_toolbar(ui);
+            return;
+        }
         let width = ui.available_width();
-        let compact = width < 560.0;
         let ultra_compact = width < 360.0;
+        let mut request = None;
         let range = self.plot_range();
         let (one, two) = self.display_histories();
         let cache = format!(
@@ -1892,26 +1936,32 @@ impl LangmuirDesktopApp {
         central_control_style(ui);
         ui.spacing_mut().item_spacing.y = 8.0;
         central_control_row(ui, |ui| {
-            if ultra_compact {
-                ui.strong("波形");
-                self.plot_toolbar_channels_menu(ui);
-                self.plot_toolbar_modes(ui, true);
-            } else {
-                if compact {
-                    ui.strong("波形");
-                }
-                self.plot_toolbar_channels(ui, compact, !compact);
-                self.plot_toolbar_modes(ui, compact);
+            self.waveform_selector(ui);
+            self.history_open_button(ui, width < 480.0);
+            if width >= 340.0 {
+                self.excitation_csv_menu(ui, &mut request);
             }
         });
         central_control_row(ui, |ui| {
             self.plot_toolbar_actions(ui, ultra_compact);
-            ui.add_sized(
+            ui.menu_button("显示", |ui| {
+                self.plot_toolbar_channels(ui, false, false);
+                self.plot_toolbar_modes(ui, false);
+            });
+            if width < 340.0 {
+                self.excitation_csv_menu(ui, &mut request);
+            }
+            if width >= 560.0 {
+                ui.add_sized(
                     [ui.available_width().max(0.0), CENTRAL_CONTROL_HEIGHT],
                     egui::Label::new(RichText::new(&cache).small().color(theme::TEXT_MUTED))
                         .truncate(),
                 ).on_hover_text(format!("{cache}\n左键拖动平移 · 滚轮围绕鼠标缩放 · 移动鼠标查看电压 (V)\n手动视图不会被新数据抢回；跟随最新恢复实时窗口。"));
+            }
         });
+        if let Some(request) = request {
+            self.submit(request);
+        }
     }
 
     #[expect(
@@ -1919,6 +1969,10 @@ impl LangmuirDesktopApp {
         reason = "overlay and split plots share rendering logic"
     )]
     fn plot_panel(&mut self, ui: &mut Ui) {
+        if self.lvds_view.waveform == excitation_ui::WaveformView::Excitation {
+            self.excitation_plot_panel(ui);
+            return;
+        }
         let prepare_start = Instant::now();
         debug_ui_rect("central.plot_body_inner", ui.available_rect_before_wrap());
         let mut range = self.plot_range();
@@ -2391,6 +2445,39 @@ impl LangmuirDesktopApp {
             }
             ui.separator();
             self.raw_record_button(ui, request, true);
+            ui.collapsing("接收详情", |ui| {
+                let stats = self
+                    .lvds_view
+                    .status
+                    .as_ref()
+                    .map(|status| status.stats)
+                    .unwrap_or_default();
+                lvds_type_details(ui, &stats);
+                let raw = &self.lvds_view.history.raw;
+                ui.label(format!(
+                    "原始录制：写入 {} / 丢失 {} / {}",
+                    raw.written,
+                    raw.dropped,
+                    if raw.error.is_some() {
+                        "文件错误"
+                    } else if raw.active {
+                        "录制中"
+                    } else if raw.closed {
+                        "已关闭"
+                    } else {
+                        "未录制"
+                    }
+                ));
+                if let Some(packet) = &self.lvds_view.last_auxiliary {
+                    ui.label(format!(
+                        "最近类型 0x{:02X}，UDP序号 {}，原始记录 {}，{}",
+                        packet.frame.packet_type().code(),
+                        packet.outer_sequence,
+                        packet.record_id,
+                        packet.source
+                    ));
+                }
+            });
             self.recovery_controls(ui, request);
             if ui.button("历史与原始数据设置").clicked() {
                 self.lvds_view.history.dialog_open = true;
@@ -2502,7 +2589,7 @@ impl LangmuirDesktopApp {
                     let text = if is_value { RichText::new(value.to_string()).monospace().color(theme::TEXT_SECONDARY) }
                         else { RichText::new(label).small().color(theme::TEXT_MUTED) };
                     let response = ui.add_sized([cell, if is_value { 22.0 } else { 16.0 }], egui::Label::new(text).truncate());
-                    response.on_hover_text(format!("{label}：{value}\n接收为匹配来源的数据包数；解析成功为解码帧数；保存为实际写入帧数。"));
+                    response.on_hover_text(format!("{label}：{value}\n接收为匹配来源UDP数据报数；解析成功为AA解码帧数；保存为AA实际写入帧数。UDP总数与类型统计见更多中的接收详情。"));
                 }
             });
         }
@@ -2683,7 +2770,7 @@ impl LangmuirDesktopApp {
                             .color(theme::TEXT),
                     );
                     ui.label(
-                        RichText::new(crate::APP_NAME)
+                        RichText::new(crate::APP_VERSION)
                             .size(10.0)
                             .color(theme::TEXT_MUTED),
                     );
@@ -2902,7 +2989,7 @@ impl eframe::App for LangmuirDesktopApp {
                             self.submit(request);
                         }
                         ui.add_space(6.0);
-                        self.command_panel(ui);
+                        self.rs422_control_panel(ui);
                     });
             });
 
@@ -3080,12 +3167,11 @@ fn show_scientific_plot(
     let bounds = response.transform.bounds();
     debug_ui_rect(config.id, response.response.rect);
     debug_ui_rect(
-        if config.id == "scientific_plot_overlay" {
-            "plot.overlay.frame"
-        } else if config.id == "scientific_plot_channel_1" {
-            "plot.channel_1.frame"
-        } else {
-            "plot.channel_2.frame"
+        match config.id {
+            "scientific_plot_overlay" => "plot.overlay.frame",
+            "scientific_plot_channel_1" => "plot.channel_1.frame",
+            "excitation_plot_ab" => "plot.excitation.frame",
+            _ => "plot.channel_2.frame",
         },
         *response.transform.frame(),
     );
@@ -3327,6 +3413,40 @@ fn central_control_row<R>(ui: &mut Ui, contents: impl FnOnce(&mut Ui) -> R) -> R
 }
 
 /// Presentation only: retain the complete socket error in the status tooltip.
+fn lvds_type_details(ui: &mut Ui, stats: &crate::bridge::LvdsReceiveStats) {
+    ui.label(format!(
+        "UDP：{}（来源拒绝 {}） / 完整帧 {}",
+        stats
+            .udp_packets
+            .saturating_add(stats.source_rejected_packets),
+        stats.source_rejected_packets,
+        stats.complete_frames
+    ));
+    ui.label(format!(
+        "AA 完整公共帧 {} / 科学解码成功 {} / 解析失败 {}",
+        stats.science_frames, stats.parsed_frames, stats.parse_failures
+    ));
+    ui.weak("AA完整帧计数含原生/字节同步；科学解码统计另含确认位恢复。");
+    ui.label(format!("辅助事件队列丢失：{}", stats.type_events_dropped));
+    ui.label(format!(
+        "AB 激励：接收 {} / 解码 {} / 错误 {}",
+        stats.excitation_frames, stats.excitation_decoded, stats.excitation_decode_errors
+    ));
+    ui.label(format!(
+        "AC 星务：{}，已接收，待解码",
+        stats.gnss_attitude_frames
+    ));
+    ui.label(format!(
+        "未知类型：{} / 结构异常：{}",
+        stats.unknown_type_frames, stats.structure_errors
+    ));
+    ui.label(format!(
+        "辅助重复：{} / 辅助序号冲突：{}",
+        stats.auxiliary_duplicates, stats.auxiliary_conflicts
+    ));
+    ui.weak("CRC_NOT_CHECKED：科学数据未经 CRC 验证");
+}
+
 fn lvds_receive_summary(raw: &str, connected: bool) -> &str {
     let address_code = if cfg!(target_os = "macos") {
         "(os error 49)"
@@ -3988,6 +4108,10 @@ fn format_plot_timestamp(seconds: f64, visible_seconds: f64) -> String {
 #[cfg(test)]
 #[path = "app_parameter_tests.rs"]
 mod parameter_tests;
+
+#[cfg(test)]
+#[path = "app_star_simulator_tests.rs"]
+mod star_simulator_tests;
 
 #[cfg(test)]
 mod tests {

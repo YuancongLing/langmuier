@@ -1,13 +1,16 @@
 use std::fmt;
 
-use langmuir_core::{FrameQuality, UdpLvdsSequenceMetrics};
+use crate::star_simulator::{StarSimulatorConfig, StarSimulatorStatus};
+use langmuir_core::{
+    ExcitationRecord, FrameQuality, LvdsCommonFrame, UdpLvdsDisposition, UdpLvdsSequenceMetrics,
+};
 
 #[cfg(test)]
 use crossbeam_channel::{Receiver, Sender, TrySendError, bounded};
 
 pub const TELEMETRY_POLL_INTERVAL_MIN_MILLIS: u32 = 100;
 pub const TELEMETRY_POLL_INTERVAL_MAX_MILLIS: u32 = 60_000;
-pub const TELEMETRY_POLL_INTERVAL_DEFAULT_MILLIS: u32 = 1_000;
+pub const TELEMETRY_POLL_INTERVAL_DEFAULT_MILLIS: u32 = 5_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TelemetryPollingState {
@@ -104,7 +107,7 @@ pub struct LinkMetricsSnapshot {
     pub ui_display_events_dropped: u64,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct BackendStateSnapshot {
     pub revision: u64,
     pub rs422_connected: bool,
@@ -113,14 +116,32 @@ pub struct BackendStateSnapshot {
     pub lvds_detail: String,
     pub acquisition_running: bool,
     pub telemetry_polling: TelemetryPollingState,
+    pub star_simulator: StarSimulatorStatus,
 }
 
 /// Counts candidates at the production UDP ingress, independently of saving.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct LvdsReceiveStats {
     pub udp_packets: u64,
+    pub source_rejected_packets: u64,
     pub outer_valid: u64,
     pub complete_frames: u64,
+    /// Common-structure-valid frames of each type, including duplicate arrivals.
+    pub science_frames: u64,
+    pub excitation_frames: u64,
+    pub excitation_decoded: u64,
+    pub excitation_decode_errors: u64,
+    pub excitation_duplicates: u64,
+    pub excitation_conflicts: u64,
+    pub excitation_business_dropped: u64,
+    pub gnss_attitude_frames: u64,
+    pub unknown_type_frames: u64,
+    pub structure_errors: u64,
+    pub auxiliary_duplicates: u64,
+    pub auxiliary_conflicts: u64,
+    /// Auxiliary events evicted before controller delivery; raw storage has
+    /// its own independent written/dropped accounting.
+    pub type_events_dropped: u64,
     /// Candidates passing framing, declared length and fixed fields, before
     /// timestamp and ADC checks. This is not a science acceptance count.
     pub structure_valid_frames: u64,
@@ -136,6 +157,52 @@ pub struct LvdsReceiveStats {
     pub accepted_frames: u64,
     pub duplicates: u64,
     pub conflicts: u64,
+}
+
+/// A complete auxiliary/unknown frame, retaining original bytes and provenance.
+/// CRC is retained without validation. This is never a decoded science frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LvdsPacketObservation {
+    pub frame: LvdsCommonFrame,
+    pub outer_sequence: u32,
+    pub record_id: u64,
+    pub raw_record_dependencies: Vec<u64>,
+    pub received_unix_nanos: u64,
+    pub source: String,
+    pub destination: String,
+    pub byte_offset: usize,
+    pub disposition: UdpLvdsDisposition,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExcitationDecodeFailure {
+    pub raw_record_id: u64,
+    pub outer_sequence: u32,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExcitationStorageStatus {
+    pub active: bool,
+    pub path: Option<String>,
+    pub enqueued: u64,
+    pub written: u64,
+    pub rows_written: u64,
+    pub dropped: u64,
+    pub closed: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExcitationHistoryStatus {
+    pub frames: u64,
+    pub errors: Vec<ExcitationDecodeFailure>,
+    pub selected_index: Option<u64>,
+    pub selected: Option<ExcitationRecord>,
+    pub loading: bool,
+    pub exporting: bool,
+    pub export_path: Option<String>,
+    pub export_error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -243,6 +310,11 @@ pub struct HistoryStatus {
     pub recovered: u64,
     pub candidates: u64,
     pub rejected: u64,
+    pub receive_stats: LvdsReceiveStats,
+    /// Bounded recent complete auxiliary/unknown frames; the input file and
+    /// history audit retain full provenance beyond this display page.
+    pub auxiliary_frames: Vec<LvdsPacketObservation>,
+    pub excitation: ExcitationHistoryStatus,
     /// Bounded recent anomaly page; complete provenance remains in the audit.
     pub anomalies: Vec<HistoryFrameInfo>,
     pub error: Option<String>,
@@ -311,10 +383,19 @@ pub struct LvdsStatusSnapshot {
     pub stats: LvdsReceiveStats,
     pub replay: Option<ReplayProgress>,
     pub storage: ScientificStorageStatus,
+    pub excitation_latest: Option<ExcitationRecord>,
+    pub excitation_storage: ExcitationStorageStatus,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UiRequest {
+    ConfigureStarSimulator(StarSimulatorConfig),
+    StartStarSimulator(StarSimulatorConfig),
+    StopStarSimulator,
+    SendStarBroadcast {
+        kind: langmuir_core::BroadcastKind,
+        point: langmuir_core::GnssPoint,
+    },
     RefreshPorts,
     Connect {
         link: LinkKind,
@@ -344,6 +425,10 @@ pub enum UiRequest {
         path: String,
     },
     StopRawRecording,
+    StartExcitationCsv {
+        path: String,
+    },
+    StopExcitationCsv,
     SetRecoveryEnabled {
         enabled: bool,
     },
@@ -361,6 +446,12 @@ pub enum UiRequest {
         end_seconds: f64,
     },
     CloseHistory,
+    LoadHistoryExcitationFrame {
+        index: u64,
+    },
+    ExportHistoryExcitationCsv {
+        path: String,
+    },
     ExportHistoryCsv {
         path: String,
         include_recovered: bool,
@@ -381,6 +472,9 @@ pub enum UiRequest {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BackendEvent {
+    ExcitationFrame(Box<ExcitationRecord>),
+    LvdsAuxiliaryFrame(Box<LvdsPacketObservation>),
+    StarSimulatorStatus(Box<StarSimulatorStatus>),
     RawCaptureStatus(Box<RawRecordingStatus>),
     RecoveryStatus(Box<RecoveryStatus>),
     HistoryStatus(Box<HistoryStatus>),
@@ -409,7 +503,7 @@ pub enum BackendEvent {
     },
     /// Reliable, coalesced state published outside the bounded critical-event
     /// history. It repairs UI state after old critical events are evicted.
-    StateSnapshot(BackendStateSnapshot),
+    StateSnapshot(Box<BackendStateSnapshot>),
     Telemetry(TelemetrySnapshot),
     LinkMetrics {
         link: LinkKind,

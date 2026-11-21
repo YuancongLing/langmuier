@@ -1,0 +1,175 @@
+ M apps/desktop/src/app.rs
+ M apps/desktop/src/app_history.rs
+ M apps/desktop/src/app_layout_tests.rs
+ M apps/desktop/src/app_parameter_tests.rs
+ M apps/desktop/src/backend.rs
+ M apps/desktop/src/backend_capture_history_tests.rs
+ M apps/desktop/src/backend_e2e_tests.rs
+ M apps/desktop/src/backend_history.rs
+ M apps/desktop/src/backend_raw_storage.rs
+ M apps/desktop/src/backend_scientific_csv_tests.rs
+ M apps/desktop/src/bridge.rs
+ M apps/desktop/src/main.rs
+ M apps/desktop/src/mock.rs
+ M crates/langmuir-core/src/lib.rs
+ M crates/langmuir-core/src/lvds_recovery.rs
+ M crates/langmuir-core/src/lvds_recovery_tests.rs
+ M crates/langmuir-core/src/udp_lvds_sequence.rs
+ M crates/langmuir-storage/src/lib.rs
+ M crates/langmuir-transport/src/error.rs
+ M crates/langmuir-transport/src/lib.rs
+ M crates/langmuir-transport/src/worker.rs
+ M docs/WINDOWS_README.md
+ D "\346\230\237\345\212\241\344\270\216\347\255\211\347\246\273\345\255\220\344\275\223\345\257\206\345\272\246\346\216\242\351\222\210\345\215\225\346\234\272RS422\344\270\262\350\241\214\351\200\232\344\277\241\345\215\217\350\256\256-20260724\357\274\210\345\205\254\345\274\200\357\274\211.doc"
+?? apps/desktop/src/app_excitation.rs
+?? apps/desktop/src/app_excitation_tests.rs
+?? apps/desktop/src/app_s02_real_tests.rs
+?? apps/desktop/src/app_star_simulator.rs
+?? apps/desktop/src/app_star_simulator_tests.rs
+?? apps/desktop/src/backend_excitation.rs
+?? apps/desktop/src/backend_excitation_history.rs
+?? apps/desktop/src/backend_excitation_history_tests.rs
+?? apps/desktop/src/backend_excitation_tests.rs
+?? apps/desktop/src/backend_multitype_history_tests.rs
+?? apps/desktop/src/backend_multitype_tests.rs
+?? apps/desktop/src/backend_s02_real_tests.rs
+?? apps/desktop/src/backend_star_simulator.rs
+?? apps/desktop/src/backend_star_simulator_tests.rs
+?? apps/desktop/src/star_simulator.rs
+?? crates/langmuir-core/src/excitation.rs
+?? crates/langmuir-core/src/lvds_common.rs
+?? crates/langmuir-core/src/star_broadcast.rs
+?? crates/langmuir-core/src/udp_lvds_frame_gate.rs
+?? crates/langmuir-core/tests/excitation_vectors.rs
+?? crates/langmuir-core/tests/fixtures/excitation/SYNTHETIC-ab-all_zero.bin
+?? crates/langmuir-core/tests/fixtures/excitation/SYNTHETIC-ab-dc.bin
+?? crates/langmuir-core/tests/fixtures/excitation/SYNTHETIC-ab-expected.csv
+?? crates/langmuir-core/tests/fixtures/excitation/SYNTHETIC-ab-manifest.json
+?? crates/langmuir-core/tests/fixtures/excitation/SYNTHETIC-ab-sine.bin
+?? crates/langmuir-core/tests/fixtures/excitation/SYNTHETIC-ab-triangle.bin
+?? crates/langmuir-core/tests/lvds_multitype.rs
+?? crates/langmuir-core/tests/star_broadcast_vectors.rs
+?? crates/langmuir-storage/src/excitation_csv.rs
+?? crates/langmuir-transport/src/worker_broadcast_tests.rs
+?? docs/LVDS_MULTITYPE_S01_ACCEPTANCE.md
+?? docs/LVDS_MULTITYPE_S02_DEVELOPMENT_REPORT.md
+?? docs/LVDS_MULTITYPE_S02_EXCITATION_ACCEPTANCE.md
+?? docs/LVDS_MULTITYPE_S02_REAL_PCAP_ACCEPTANCE.md
+?? docs/RS422_STAR_COMPUTER_SIMULATOR_QA.md
+?? docs/qa/lvds-multitype-s01/SYNTHETIC-mixed-pcap-independent-audit.json
+?? docs/qa/lvds-multitype-s01/cargo-check.log
+?? docs/qa/lvds-multitype-s01/cargo-clippy.log
+?? docs/qa/lvds-multitype-s01/cargo-fmt.log
+?? docs/qa/lvds-multitype-s01/cargo-test.log
+?? docs/qa/lvds-multitype-s01/original-pcap-independent-audit.json
+?? docs/qa/lvds-multitype-s01/original-pcap-raw-independent-readback.json
+?? docs/qa/lvds-multitype-s01/python-qa-suite.log
+?? docs/qa/lvds-multitype-s01/real-aa-capture-tests.log
+?? docs/qa/lvds-multitype-s01/real-aa-storage-tests.log
+?? docs/qa/lvds-multitype-s01/real-aa-txt-tests.log
+?? docs/qa/lvds-multitype-s01/release-SYNTHETIC-mixed-audit.log
+?? docs/qa/lvds-multitype-s01/release-nonmock-guard.log
+?? docs/qa/lvds-multitype-s01/release-real-aa-audit.log
+?? docs/qa/lvds-multitype-s01/verification-summary.json
+?? docs/qa/lvds-multitype-s01/windows-package-verification.json
+?? docs/qa/lvds-multitype-s01/windows-release-build.log
+?? docs/qa/lvds-multitype-s02-real-02/baseline.json
+?? docs/qa/lvds-multitype-s02-real/baseline.json
+?? docs/qa/lvds-multitype-s02-real/delivery-identity.json
+?? docs/qa/lvds-multitype-s02-real/final-artifact-check.json
+?? docs/qa/lvds-multitype-s02-real/final-protection-check.json
+?? docs/qa/lvds-multitype-s02-real/fmt-check-initial.log
+?? docs/qa/lvds-multitype-s02-real/fmt-check.log
+?? docs/qa/lvds-multitype-s02-real/git-diff-stat-after.txt
+?? docs/qa/lvds-multitype-s02-real/git-diff-stat-before.txt
+?? docs/qa/lvds-multitype-s02-real/git-status-after.txt
+?? docs/qa/lvds-multitype-s02-real/git-status-before.txt
+?? docs/qa/lvds-multitype-s02-real/independent-AB-AA-association.csv
+?? docs/qa/lvds-multitype-s02-real/independent-full-storage-readback-20261121-215654331.json
+?? docs/qa/lvds-multitype-s02-real/independent-full-storage-readback-final.json
+?? docs/qa/lvds-multitype-s02-real/independent-manifest.json
+?? docs/qa/lvds-multitype-s02-real/independent-pcap-audit.json
+?? docs/qa/lvds-multitype-s02-real/independent-workbook-evidence.json
+?? docs/qa/lvds-multitype-s02-real/legacy-AA-raw.log
+?? docs/qa/lvds-multitype-s02-real/legacy-AA-science.log
+?? docs/qa/lvds-multitype-s02-real/legacy-AA-txt.log
+?? docs/qa/lvds-multitype-s02-real/paced-process-performance.json
+?? docs/qa/lvds-multitype-s02-real/performance-summary.json
+?? docs/qa/lvds-multitype-s02-real/production-paced-20261121-215216578.log
+?? docs/qa/lvds-multitype-s02-real/production-paced-20261121-215654331.log
+?? docs/qa/lvds-multitype-s02-real/production-performance-final.log
+?? docs/qa/lvds-multitype-s02-real/production-summary-final.json
+?? docs/qa/lvds-multitype-s02-real/regression-commands-initial.json
+?? docs/qa/lvds-multitype-s02-real/regression-commands.json
+?? docs/qa/lvds-multitype-s02-real/release-build.json
+?? docs/qa/lvds-multitype-s02-real/release-build.log
+?? docs/qa/lvds-multitype-s02-real/release-cli-process.json
+?? docs/qa/lvds-multitype-s02-real/release-real-pcap-audit.json
+?? docs/qa/lvds-multitype-s02-real/release-real-pcap-audit.log
+?? docs/qa/lvds-multitype-s02-real/source-identity.json
+?? docs/qa/lvds-multitype-s02-real/ui-real-data-evidence.json
+?? docs/qa/lvds-multitype-s02-real/verification-summary.json
+?? docs/qa/lvds-multitype-s02-real/workspace-check-initial.log
+?? docs/qa/lvds-multitype-s02-real/workspace-check.log
+?? docs/qa/lvds-multitype-s02-real/workspace-clippy-initial.log
+?? docs/qa/lvds-multitype-s02-real/workspace-clippy.log
+?? docs/qa/lvds-multitype-s02-real/workspace-test-initial.log
+?? docs/qa/lvds-multitype-s02-real/workspace-test.log
+?? docs/qa/lvds-multitype-s02/SYNTHETIC-20AA-1AB-1AC.pcapng
+?? docs/qa/lvds-multitype-s02/SYNTHETIC-AB-modes.pcapng
+?? docs/qa/lvds-multitype-s02/ab-csv-final-independent-readback.json
+?? docs/qa/lvds-multitype-s02/ab-csv-independent-readback.json
+?? docs/qa/lvds-multitype-s02/ab-csv-provenance.json
+?? docs/qa/lvds-multitype-s02/cargo-check.log
+?? docs/qa/lvds-multitype-s02/cargo-clippy.log
+?? docs/qa/lvds-multitype-s02/cargo-fmt.log
+?? docs/qa/lvds-multitype-s02/cargo-test.log
+?? docs/qa/lvds-multitype-s02/git-diff-stat.txt
+?? docs/qa/lvds-multitype-s02/git-status.txt
+?? docs/qa/lvds-multitype-s02/nonmock-mixed-replay-final.log
+?? docs/qa/lvds-multitype-s02/nonmock-mixed-replay.log
+?? docs/qa/lvds-multitype-s02/original-AA-TXT-tests.log
+?? docs/qa/lvds-multitype-s02/protocol-cells.json
+?? docs/qa/lvds-multitype-s02/real-AA-raw-tests.log
+?? docs/qa/lvds-multitype-s02/real-AA-science-tests.log
+?? docs/qa/lvds-multitype-s02/release-mixed-pcap-audit.log
+?? docs/qa/lvds-multitype-s02/release-nonmock-guard.log
+?? docs/qa/lvds-multitype-s02/release-real-AA-audit.log
+?? docs/qa/lvds-multitype-s02/verification-summary.json
+?? docs/qa/lvds-multitype-s02/windows-exe-verification.json
+?? docs/qa/lvds-multitype-s02/windows-release-build.log
+?? docs/qa/star-simulator/attitude.hex
+?? docs/qa/star-simulator/controlled-lifecycle.json
+?? docs/qa/star-simulator/controlled-transport.json
+?? docs/qa/star-simulator/gnss-0.hex
+?? docs/qa/star-simulator/gnss-1.hex
+?? docs/qa/star-simulator/gnss-2.hex
+?? docs/qa/star-simulator/golden-vectors.json
+?? docs/qa/star-simulator/gui-compact-125-windows.png
+?? docs/qa/star-simulator/gui-default-windows.png
+?? docs/qa/star-simulator/gui-hex-windows.png
+?? docs/qa/star-simulator/gui-star-disabled-windows.png
+?? docs/qa/star-simulator/gui-synthetic-c-windows.png
+?? docs/qa/star-simulator/independent-capture-validation.json
+?? docs/qa/star-simulator/protocol-20260728-audit.md
+?? docs/qa/star-simulator/protocol-20260728-readable.txt
+?? docs/qa/star-simulator/protocol-20260728-source.txt
+?? docs/qa/star-simulator/protocol-audit.md
+?? docs/qa/star-simulator/protocol-readable.txt
+?? docs/qa/star-simulator/protocol-source.txt
+?? docs/qa/star-simulator/time.hex
+?? docs/qa/star-simulator/windows-package-verification.json
+?? docs/superpowers/plans/2026-11-16-rs422-star-computer-simulator.md
+?? docs/superpowers/plans/2026-11-18-lvds-multitype-s01.md
+?? docs/superpowers/plans/2026-11-18-lvds-multitype-s02.md
+?? docs/superpowers/plans/2026-11-21-lvds-multitype-s02-real.md
+?? tools/qa/lvds_excitation_reference.py
+?? tools/qa/lvds_excitation_workbook_audit.py
+?? tools/qa/lvds_multitype_s01_fixture.py
+?? tools/qa/lvds_multitype_s01_verify.py
+?? tools/qa/lvds_s02_real_reference.py
+?? tools/qa/rs422_star_reference.py
+?? tools/qa/rs422_star_validate_capture.py
+?? tools/qa/test_lvds_multitype_s01_verify.py
+?? "\345\215\217\350\256\256 (PH20261115).xlsx"
+?? "\346\230\237\345\212\241\344\270\216\347\255\211\347\246\273\345\255\220\344\275\223\345\257\206\345\272\246\346\216\242\351\222\210\345\215\225\346\234\272RS422\344\270\262\350\241\214\351\200\232\344\277\241\345\215\217\350\256\256-513\345\217\215\351\246\210-20260728\357\274\210\345\205\254\345\274\200\357\274\211.doc"

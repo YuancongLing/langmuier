@@ -1,0 +1,77 @@
+COMMAND: cargo clippy --workspace --all-targets --locked -- -D warnings
+    Checking langmuir-desktop v0.1.0 (D:\RUST\langmuier\apps\desktop)
+error: binding's name is too similar to existing binding
+   --> apps\desktop\src\backend_s02_real_tests.rs:469:9
+    |
+469 |     let aa_status = controller.storage_status.clone();
+    |         ^^^^^^^^^
+    |
+note: existing binding defined here
+   --> apps\desktop\src\backend_s02_real_tests.rs:452:9
+    |
+452 |     let ab_status = controller.excitation_storage_status();
+    |         ^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#similar_names
+    = note: `-D clippy::similar-names` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::similar_names)]`
+
+error: called `map(<f>).unwrap_or_else(<g>)` on an `Option` value
+  --> apps\desktop\src\backend_s02_real_tests.rs:12:5
+   |
+12 | /     std::env::var_os(name)
+13 | |         .map(PathBuf::from)
+14 | |         .unwrap_or_else(|| {
+15 | |             panic!("real acceptance requires explicit {name}; no generated fallback")
+16 | |         })
+   | |__________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#map_unwrap_or
+   = note: `-D clippy::map-unwrap-or` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::map_unwrap_or)]`
+help: try
+   |
+12 ~     std::env::var_os(name).map_or_else(|| {
+13 +             panic!("real acceptance requires explicit {name}; no generated fallback")
+14 +         }, PathBuf::from)
+   |
+
+error: used `assert!` to check that a value is empty
+   --> apps\desktop\src\backend_s02_real_tests.rs:237:9
+    |
+237 |         assert!(status.excitation.errors.is_empty());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+    = note: `-D clippy::assert-is-empty` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::assert_is_empty)]`
+help: use `assert_eq!` to show the value on failure
+    |
+237 -         assert!(status.excitation.errors.is_empty());
+237 +         assert_eq!(status.excitation.errors, [] as [bridge::ExcitationDecodeFailure; 0]);
+    |
+
+error: this assertion has a constant value
+   --> apps\desktop\src\backend_s02_real_tests.rs:288:5
+    |
+288 | /     assert!(
+289 | |         !cfg!(feature = "mock"),
+290 | |         "run with --no-default-features, never a mock backend"
+291 | |     );
+    | |_____^
+    |
+    = help: consider moving this into a const block: `const { assert!(..) }`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assertions_on_constants
+    = note: `-D clippy::assertions-on-constants` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::assertions_on_constants)]`
+
+error: unchecked subtraction of a `Duration`
+   --> apps\desktop\src\backend_s02_real_tests.rs:443:24
+    |
+443 |     let capture_span = replay.last_timestamp.unwrap() - replay.first_timestamp.unwrap();
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `replay.last_timestamp.unwrap().checked_sub(replay.first_timestamp.unwrap()).unwrap()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unchecked_time_subtraction
+    = note: `-D clippy::unchecked-time-subtraction` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::unchecked_time_subtraction)]`
+
+error: could not compile `langmuir-desktop` (bin "langmuier" test) due to 5 previous errors

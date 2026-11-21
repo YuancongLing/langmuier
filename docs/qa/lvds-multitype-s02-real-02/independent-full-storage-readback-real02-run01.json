@@ -1,0 +1,280 @@
+{
+  "result": "PASS",
+  "input": {
+    "path": "D:\\RUST\\langmuier\\202611212141.pcapng",
+    "bytes": 1416044,
+    "sha256": "9a5d9a73aa46fb2fb24962b2e2b7d4081646477ae5d1f62ee2ee46c375b53907"
+  },
+  "manifest": {
+    "path": "D:\\RUST\\langmuier\\docs\\qa\\lvds-multitype-s02-real-02\\independent-manifest.json",
+    "bytes": 22335425,
+    "sha256": "b7bd25bdc1cfa875ee4defc5ba257ccc555ab698e216ee927d58d90fa4d3ff89"
+  },
+  "production_summary": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01\\production-summary.json",
+    "bytes": 6276,
+    "sha256": "d0518ab57d56534001b910fa788a72022548da773b36721a789c971758ab8468"
+  },
+  "frozen_manifest_schema_version": 2,
+  "csv_version": 2,
+  "expected_values_source": "Original PCAP bytes independently recomputed and compared with frozen manifest fields",
+  "raw": {
+    "status": "PASS",
+    "records": 3873,
+    "udp_payload_bytes": 1125099,
+    "fields_checked": [
+      "payload length/order/bytes",
+      "source",
+      "captured destination",
+      "timestamp_ns",
+      "origin_packet_index",
+      "record_id",
+      "source_matches"
+    ],
+    "clean_raw_eof": true,
+    "raw_header": {
+      "version": 1,
+      "header_bytes": 128,
+      "origin": "PCAP_REPLAY",
+      "created_at_ns": 1795273472424590300,
+      "session_id_hex": "dcbb8c1eb617ea180000000000000000",
+      "expected_source": "192.168.1.128:1534",
+      "binding": "0.0.0.0:0"
+    },
+    "footer": {
+      "observed": 3873,
+      "enqueued": 3873,
+      "written": 3873,
+      "dropped": 0,
+      "payload_bytes": 1125099,
+      "last_observed_id": 3873,
+      "status": 1,
+      "reason": 1,
+      "last_written_id": 3873
+    },
+    "identity": {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01\\capture.lvdsraw",
+      "bytes": 1512619,
+      "sha256": "06859d85b391fb4ebba8fdb462f1b0c9f79437d50f5b0da16412184d7a2aa38e"
+    }
+  },
+  "science_csv": {
+    "result": "PASS",
+    "identity": {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01\\science.csv",
+      "bytes": 21205769,
+      "sha256": "e49190aee633bfd1510838db17c1f2c53abe905ddc7144e4a51244f5efeb2b36"
+    },
+    "frames": 3489,
+    "data_rows": 348900,
+    "columns_checked": [
+      "frame_index",
+      "frame_seconds",
+      "frame_microseconds",
+      "frame_seq_u8",
+      "sample_index",
+      "sample_time_us",
+      "ch1_code10",
+      "ch2_code10",
+      "ch1_adc16_reconstructed",
+      "ch2_adc16_reconstructed",
+      "integrity"
+    ],
+    "all_values_order_and_exact_csv_eof": true
+  },
+  "science_lpd": {
+    "result": "PASS",
+    "identity": {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01\\science.lpd",
+      "bytes": 1427041,
+      "sha256": "2ce6049466de98efc80a77419ebbbb0e78e55f6cdafa3f8bf1f4e414df1ee88c"
+    },
+    "frames": 3489,
+    "all_sample_values_checked": 697800,
+    "header_bytes": 40,
+    "record_bytes": 409,
+    "exact_eof": true
+  },
+  "excitation_csv": {
+    "result": "PASS",
+    "identity": {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01\\excitation.csv",
+      "bytes": 3104158,
+      "sha256": "2e3aaf5fa118883a3b6b002b2e75f06fe15e11a75ee9cf54095b26f8d59cdae2"
+    },
+    "csv_version": 2,
+    "frames": 175,
+    "data_rows": 17500,
+    "total_csv_rows": 17501,
+    "columns_checked": [
+      "ab_frame_index",
+      "raw_record_id",
+      "udp_sequence_u32",
+      "pa0_seq",
+      "sci_frame_seq",
+      "frame_seconds",
+      "frame_microseconds",
+      "sample_index",
+      "sample_time_us",
+      "wave_mV",
+      "wave_V",
+      "f_act_mHz",
+      "f_act_Hz",
+      "work_mode",
+      "scan_freq",
+      "scan_voltage_mV",
+      "ad9833_status",
+      "dac8563_status",
+      "integrity",
+      "source",
+      "session",
+      "received_unix_nanos",
+      "interval_us",
+      "points",
+      "waveform_status"
+    ],
+    "timed_sample_slots": 9300,
+    "no_sample_time_slots": 8200,
+    "session_expectation_source": "Explicit production session metadata, never CSV-derived",
+    "expected_protocol_session": "35268-1795273472426328200",
+    "all_fields_and_exact_csv_eof": true
+  },
+  "history_exports": [
+    {
+      "input_kind": "pcapng",
+      "input_path": "\\\\?\\D:\\RUST\\langmuier\\202611212141.pcapng",
+      "result": "PASS",
+      "identity": {
+        "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01\\history-pcap-ab.csv",
+        "bytes": 3524158,
+        "sha256": "407c354c728f89e3c1eea36ed6ea63ad6db1071f8021bd596558aadc6d5b070e"
+      },
+      "csv_version": 2,
+      "frames": 175,
+      "data_rows": 17500,
+      "total_csv_rows": 17501,
+      "columns_checked": [
+        "ab_frame_index",
+        "raw_record_id",
+        "udp_sequence_u32",
+        "pa0_seq",
+        "sci_frame_seq",
+        "frame_seconds",
+        "frame_microseconds",
+        "sample_index",
+        "sample_time_us",
+        "wave_mV",
+        "wave_V",
+        "f_act_mHz",
+        "f_act_Hz",
+        "work_mode",
+        "scan_freq",
+        "scan_voltage_mV",
+        "ad9833_status",
+        "dac8563_status",
+        "integrity",
+        "source",
+        "session",
+        "received_unix_nanos",
+        "interval_us",
+        "points",
+        "waveform_status"
+      ],
+      "timed_sample_slots": 9300,
+      "no_sample_time_slots": 8200,
+      "session_expectation_source": "Explicit production session metadata, never CSV-derived",
+      "expected_protocol_session": "history:\\\\?\\D:\\RUST\\langmuier\\202611212141.pcapng",
+      "all_fields_and_exact_csv_eof": true
+    },
+    {
+      "input_kind": "lvdsraw",
+      "input_path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01\\capture.lvdsraw",
+      "result": "PASS",
+      "identity": {
+        "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01\\history-raw-ab.csv",
+        "bytes": 3226658,
+        "sha256": "f46e9af30c9ac0887872ed338d2c6c5eec32c75eddb6c96d81ad6fddb06746c1"
+      },
+      "csv_version": 2,
+      "frames": 175,
+      "data_rows": 17500,
+      "total_csv_rows": 17501,
+      "columns_checked": [
+        "ab_frame_index",
+        "raw_record_id",
+        "udp_sequence_u32",
+        "pa0_seq",
+        "sci_frame_seq",
+        "frame_seconds",
+        "frame_microseconds",
+        "sample_index",
+        "sample_time_us",
+        "wave_mV",
+        "wave_V",
+        "f_act_mHz",
+        "f_act_Hz",
+        "work_mode",
+        "scan_freq",
+        "scan_voltage_mV",
+        "ad9833_status",
+        "dac8563_status",
+        "integrity",
+        "source",
+        "session",
+        "received_unix_nanos",
+        "interval_us",
+        "points",
+        "waveform_status"
+      ],
+      "timed_sample_slots": 9300,
+      "no_sample_time_slots": 8200,
+      "session_expectation_source": "Explicit production session metadata, never CSV-derived",
+      "expected_protocol_session": "DCBB8C1EB617EA180000000000000000",
+      "all_fields_and_exact_csv_eof": true
+    }
+  ],
+  "original_input_unchanged": true,
+  "native_gui": "WINDOWS_GUI_NOT_RUN",
+  "live_hardware": "REAL_HARDWARE_LIVE_NOT_RUN",
+  "ui_entry_raw": {
+    "status": "PASS",
+    "records": 3873,
+    "udp_payload_bytes": 1125099,
+    "fields_checked": [
+      "payload length/order/bytes",
+      "source",
+      "captured destination",
+      "timestamp_ns",
+      "origin_packet_index",
+      "record_id",
+      "source_matches"
+    ],
+    "clean_raw_eof": true,
+    "raw_header": {
+      "version": 1,
+      "header_bytes": 128,
+      "origin": "PCAP_REPLAY",
+      "created_at_ns": 1795273647949791300,
+      "session_id_hex": "44c0aafcde17ea180000000000000000",
+      "expected_source": "192.168.1.128:1534",
+      "binding": "0.0.0.0:0"
+    },
+    "footer": {
+      "observed": 3873,
+      "enqueued": 3873,
+      "written": 3873,
+      "dropped": 0,
+      "payload_bytes": 1125099,
+      "last_observed_id": 3873,
+      "status": 1,
+      "reason": 1,
+      "last_written_id": 3873
+    },
+    "identity": {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01\\ui-entry-full.lvdsraw",
+      "bytes": 1512619,
+      "sha256": "5c168cc11f2b1b7499b971ddb2f732aa412ea2b2bb55440f11bf649605e2fe39"
+    }
+  },
+  "history_csv_scope": "FULL_PCAP_AND_RAW_EXPORTS"
+}

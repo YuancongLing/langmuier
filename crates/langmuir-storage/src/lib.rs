@@ -3,6 +3,7 @@
 mod binary;
 mod binary_v3;
 mod error;
+mod excitation_csv;
 #[cfg(feature = "hdf5")]
 mod hdf5;
 mod legacy;
@@ -24,6 +25,9 @@ pub use binary_v3::{
     V3_SEQUENCE_BITS, V3_VERSION,
 };
 pub use error::{StorageError, SubmitError};
+pub use excitation_csv::{
+    EXCITATION_CSV_HEADER, ExcitationCsvConfig, ExcitationCsvError, ExcitationCsvSink,
+};
 #[cfg(feature = "hdf5")]
 pub use hdf5::{Hdf5Config, Hdf5Error, Hdf5Sink};
 pub use legacy::{

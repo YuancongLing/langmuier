@@ -1,0 +1,76 @@
+{
+  "source": "SYNTHETIC independent Python reference; not hardware transmission",
+  "protocol": "513-feedback 2026-07-28 tables 2-5 through 2-9",
+  "time_policy": "UTC since 2018; zero inserted leap seconds since epoch as of 2026-11-16; floor 25us",
+  "ancillary_test_defaults": "W20-23 uptime=0; W91-94 local time=star seconds (unit/epoch not specified in source); SNR=45, GDOP=2, versions=0, counters=0; static points and zero velocity",
+  "utc": "2026-11-16T00:00:00.999999+00:00",
+  "seconds": 280022400,
+  "microseconds": 999999,
+  "time": "EB90F0550008FF10B0CD809C3FE7",
+  "attitude": "EB90F055003DFF10B0CD800F423F004E20FF63C000EA6003E8F8300BB84045DAC0003A83126F424E666641A0000041F00000422000000001FFFE0003FFFC0005FFFA73",
+  "points": [
+    {
+      "latitude_deg": 0.0,
+      "longitude_deg": 0.0,
+      "height_m": 400000.0,
+      "ecef_m": [
+        6778137.0,
+        0.0,
+        0.0
+      ],
+      "ecef_centimeters": [
+        677813700,
+        0,
+        0
+      ],
+      "latitude_rad_1e7": 0,
+      "longitude_rad_1e7": 0,
+      "height_centimeters": 40000000,
+      "internal_sum": 238,
+      "outer_sum": 68,
+      "frame": "EB90F0550074FF09F5FFFF006B03FF62C12D2D888800000000000000000010B0CD80FF000028669DC4000000000000000000000000000000000000000028669DC40000000000000000000000000000000000000000000000000000000002625A0010B0CD8000001217000001000080000000000000000002EE44"
+    },
+    {
+      "latitude_deg": 35.0,
+      "longitude_deg": 116.0,
+      "height_m": 450000.0,
+      "ecef_m": [
+        -2454459.891607315,
+        5032388.544764779,
+        3895976.305736066
+      ],
+      "ecef_centimeters": [
+        -245445989,
+        503238854,
+        389597631
+      ],
+      "latitude_rad_1e7": 6108652,
+      "longitude_rad_1e7": 20245819,
+      "height_centimeters": 45000000,
+      "internal_sum": 58,
+      "outer_sum": 220,
+      "frame": "EB90F0550074FF09F5FFFF006B03FF62C12D2D888800000000000000000010B0CD80FF0000F15ECA9B1DFED0C61738C9BF000000000000000000000000F15ECA9B1DFED0C61738C9BF000000000000000000000000005D35EC0134ED3B02AEA54010B0CD80000012170000010000800000000000000000023ADC"
+    },
+    {
+      "latitude_deg": -35.0,
+      "longitude_deg": -70.0,
+      "height_m": 500000.0,
+      "ecef_m": [
+        1928994.5873363696,
+        -5299869.070956861,
+        -3924655.127553618
+      ],
+      "ecef_centimeters": [
+        192899459,
+        -529986907,
+        -392465513
+      ],
+      "latitude_rad_1e7": -6108652,
+      "longitude_rad_1e7": -12217305,
+      "height_centimeters": 50000000,
+      "internal_sum": 50,
+      "outer_sum": 204,
+      "frame": "EB90F0550074FF09F5FFFF006B03FF62C12D2D888800000000000000000010B0CD80FF00000B7F6983E0690AA5E89B73970000000000000000000000000B7F6983E0690AA5E89B7397000000000000000000000000FFA2CA14FF45942702FAF08010B0CD800000121700000100008000000000000000000232CC"
+    }
+  ]
+}

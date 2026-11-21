@@ -1,0 +1,154 @@
+{
+  "AA": {
+    "all_code10_and_times_equal": true,
+    "closed": true,
+    "csv_rows": 113600,
+    "enqueued": 1136,
+    "error": null,
+    "frames": 1136,
+    "sink_written": 1136
+  },
+  "AB": {
+    "all_fields_100_samples_each_equal": true,
+    "closed": true,
+    "csv_rows": 5700,
+    "dropped": 0,
+    "enqueued": 57,
+    "error": null,
+    "frames": 57,
+    "written": 57
+  },
+  "additional_Controller_start_raw_recording_full_export": {
+    "all_payload_and_metadata_equal": true,
+    "closed": true,
+    "complete": true,
+    "complete_END_exact_EOF": true,
+    "dropped": 0,
+    "enqueued": 1262,
+    "error": null,
+    "payload_bytes": 366346,
+    "received": 1262,
+    "records": 1262,
+    "session_id_hex": "94EF97864B14EA180000000000000000",
+    "written": 1262
+  },
+  "counter_scope": {
+    "all_observed_UDP": 1262,
+    "source_admitted_UDP": 1250,
+    "source_rejected_UDP": 12,
+    "udp_packets_means_source_admitted": true
+  },
+  "display": {
+    "business_storage_depends_on_display": false,
+    "dropped": 1185,
+    "events_consumed": 0,
+    "queue_retained": 8
+  },
+  "files": {
+    "excitation_csv": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real\\production-performance-final\\excitation.csv",
+    "raw": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real\\production-performance-final\\capture.lvdsraw",
+    "science_csv": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real\\production-performance-final\\science.csv",
+    "science_lpd": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real\\production-performance-final\\science.lpd",
+    "ui_entry_raw": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real\\production-performance-final\\ui-entry-full.lvdsraw"
+  },
+  "history": [
+    {
+      "AA_frames": 1136,
+      "AA_samples_each_channel": 113600,
+      "AB_frames": 57,
+      "AB_previous_next_checked": true,
+      "index_entries": 1262,
+      "native_GUI": false,
+      "path": "\\\\?\\C:\\Users\\Administrator\\Downloads\\2026112101.pcapng",
+      "read_records": 1262
+    },
+    {
+      "AA_frames": 1136,
+      "AA_samples_each_channel": 113600,
+      "AB_frames": 57,
+      "AB_previous_next_checked": true,
+      "index_entries": 1262,
+      "native_GUI": false,
+      "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real\\production-performance-final\\capture.lvdsraw",
+      "read_records": 1262
+    },
+    {
+      "AA_frames": 1136,
+      "AA_samples_each_channel": 113600,
+      "AB_frames": 0,
+      "AB_previous_next_checked": false,
+      "index_entries": 1136,
+      "native_GUI": false,
+      "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real\\production-performance-final\\science.lpd",
+      "read_records": 1136
+    }
+  ],
+  "input": {
+    "bytes": 461444,
+    "path": "C:\\Users\\Administrator\\Downloads\\2026112101.pcapng",
+    "sha256": "22ec9d91789eb674f6b3cddf9bf5935bd81ea7d92030c0a1941e8f2becec4b77"
+  },
+  "input_sha256_after": "22ec9d91789eb674f6b3cddf9bf5935bd81ea7d92030c0a1941e8f2becec4b77",
+  "metadata": {
+    "excitation_protocol_session": "40596-1795269659185584300",
+    "pcap_path": "\\\\?\\C:\\Users\\Administrator\\Downloads\\2026112101.pcapng",
+    "raw_header": {
+      "binding": "0.0.0.0:0",
+      "created_at_ns": 1795269659182750900,
+      "expected_source": "192.168.1.128:1534",
+      "origin": "PCAP_REPLAY",
+      "session_id_hex": "B4DC9F473E14EA180000000000000000"
+    }
+  },
+  "outer_u32": {
+    "gap_candidates": 0,
+    "observed_frames": 1250,
+    "sequence_anomalies": 0
+  },
+  "paced_replay": {
+    "capture_span_ns": 56747293000,
+    "normal_pace": true,
+    "pid": 40596,
+    "source": "production PcapReplay / Controller::drain_replay",
+    "wall_seconds": 56.7559717
+  },
+  "raw": {
+    "all_payload_and_metadata_equal": true,
+    "closed": true,
+    "complete": true,
+    "complete_END_exact_EOF": true,
+    "dropped": 0,
+    "enqueued": 1262,
+    "error": null,
+    "payload_bytes": 366346,
+    "received": 1262,
+    "records": 1262,
+    "session_id_hex": "B4DC9F473E14EA180000000000000000",
+    "written": 1262
+  },
+  "real_hardware_live": "NOT_RUN",
+  "schema_version": 1,
+  "stats": {
+    "accepted_frames": 1136,
+    "all_counters_debug": "LvdsReceiveStats { udp_packets: 1250, source_rejected_packets: 12, outer_valid: 1250, complete_frames: 1250, science_frames: 1136, excitation_frames: 57, excitation_decoded: 57, excitation_decode_errors: 0, excitation_duplicates: 0, excitation_conflicts: 0, excitation_business_dropped: 0, gnss_attitude_frames: 57, unknown_type_frames: 0, structure_errors: 0, auxiliary_duplicates: 0, auxiliary_conflicts: 0, type_events_dropped: 0, structure_valid_frames: 1250, parsed_frames: 1136, parse_failures: 0, header_errors: 0, length_errors: 0, field_errors: 0, timestamp_errors: 0, adc_errors: 0, accepted_frames: 1136, duplicates: 0, conflicts: 0 }",
+    "auxiliary_conflicts": 0,
+    "auxiliary_duplicates": 0,
+    "complete_frames": 1250,
+    "conflicts": 0,
+    "duplicates": 0,
+    "excitation_business_dropped": 0,
+    "excitation_decode_errors": 0,
+    "excitation_decoded": 57,
+    "excitation_frames": 57,
+    "gnss_attitude_frames": 57,
+    "outer_valid": 1250,
+    "parse_failures": 0,
+    "science_frames": 1136,
+    "source_rejected_packets": 12,
+    "structure_errors": 0,
+    "udp_packets": 1250
+  },
+  "status": "PASS",
+  "windows_native_GUI": "NOT_RUN_BY_THIS_TEST",
+  "writers_ready_before_first_frame": true
+}

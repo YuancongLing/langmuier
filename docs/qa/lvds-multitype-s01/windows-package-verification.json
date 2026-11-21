@@ -1,0 +1,43 @@
+{
+  "result": "PASS",
+  "exe": {
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s01-20261118\\LangmuierProbeGroundControl.exe",
+    "bytes": 10399232,
+    "sha256": "eab542618f88a4a3fa21b34b23a2b89ddfdfef665075aac91b32e540c6566f70"
+  },
+  "package": {
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s01-20261118\\LangmuierProbeGroundControl-windows-x64.zip",
+    "bytes": 4292992,
+    "sha256": "c41c2d28060218a5ec5345190a12f46a60e06c2cfa22cd4defd2d0d25b17f8df"
+  },
+  "readme": {
+    "path": "D:\\RUST\\langmuier\\docs\\WINDOWS_README.md",
+    "bytes": 6192,
+    "sha256": "71bf824f84703c9c64fef73466e208a2db374bceaccaf7293b1e4830c099d440"
+  },
+  "architecture": "PE32+ Windows x64",
+  "imports": [
+    "advapi32.dll",
+    "api-ms-win-core-synch-l1-2-0.dll",
+    "bcryptprimitives.dll",
+    "cfgmgr32.dll",
+    "combase.dll",
+    "dwmapi.dll",
+    "gdi32.dll",
+    "imm32.dll",
+    "kernel32.dll",
+    "ntdll.dll",
+    "ole32.dll",
+    "opengl32.dll",
+    "setupapi.dll",
+    "shell32.dll",
+    "shlwapi.dll",
+    "user32.dll",
+    "uxtheme.dll",
+    "ws2_32.dll"
+  ],
+  "no_dynamic_crt_imports": true,
+  "zip_crc_and_content_match": true,
+  "cargo_feature_verification": "NOT_RUN: requires separate build evidence",
+  "native_gui_verification": "NOT_RUN: package byte inspection does not launch the app"
+}

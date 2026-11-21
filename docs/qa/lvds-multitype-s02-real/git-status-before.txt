@@ -1,0 +1,64 @@
+ M apps/desktop/src/app.rs
+ M apps/desktop/src/app_history.rs
+ M apps/desktop/src/app_layout_tests.rs
+ M apps/desktop/src/app_parameter_tests.rs
+ M apps/desktop/src/backend.rs
+ M apps/desktop/src/backend_capture_history_tests.rs
+ M apps/desktop/src/backend_e2e_tests.rs
+ M apps/desktop/src/backend_history.rs
+ M apps/desktop/src/backend_raw_storage.rs
+ M apps/desktop/src/backend_scientific_csv_tests.rs
+ M apps/desktop/src/bridge.rs
+ M apps/desktop/src/main.rs
+ M apps/desktop/src/mock.rs
+ M crates/langmuir-core/src/lib.rs
+ M crates/langmuir-core/src/lvds_recovery.rs
+ M crates/langmuir-core/src/lvds_recovery_tests.rs
+ M crates/langmuir-core/src/udp_lvds_sequence.rs
+ M crates/langmuir-storage/src/lib.rs
+ M crates/langmuir-transport/src/error.rs
+ M crates/langmuir-transport/src/lib.rs
+ M crates/langmuir-transport/src/worker.rs
+ M docs/WINDOWS_README.md
+ D "\346\230\237\345\212\241\344\270\216\347\255\211\347\246\273\345\255\220\344\275\223\345\257\206\345\272\246\346\216\242\351\222\210\345\215\225\346\234\272RS422\344\270\262\350\241\214\351\200\232\344\277\241\345\215\217\350\256\256-20260724\357\274\210\345\205\254\345\274\200\357\274\211.doc"
+?? apps/desktop/src/app_excitation.rs
+?? apps/desktop/src/app_excitation_tests.rs
+?? apps/desktop/src/app_star_simulator.rs
+?? apps/desktop/src/app_star_simulator_tests.rs
+?? apps/desktop/src/backend_excitation.rs
+?? apps/desktop/src/backend_excitation_history.rs
+?? apps/desktop/src/backend_excitation_history_tests.rs
+?? apps/desktop/src/backend_excitation_tests.rs
+?? apps/desktop/src/backend_multitype_history_tests.rs
+?? apps/desktop/src/backend_multitype_tests.rs
+?? apps/desktop/src/backend_star_simulator.rs
+?? apps/desktop/src/backend_star_simulator_tests.rs
+?? apps/desktop/src/star_simulator.rs
+?? crates/langmuir-core/src/excitation.rs
+?? crates/langmuir-core/src/lvds_common.rs
+?? crates/langmuir-core/src/star_broadcast.rs
+?? crates/langmuir-core/src/udp_lvds_frame_gate.rs
+?? crates/langmuir-core/tests/
+?? crates/langmuir-storage/src/excitation_csv.rs
+?? crates/langmuir-transport/src/worker_broadcast_tests.rs
+?? docs/LVDS_MULTITYPE_S01_ACCEPTANCE.md
+?? docs/LVDS_MULTITYPE_S02_DEVELOPMENT_REPORT.md
+?? docs/LVDS_MULTITYPE_S02_EXCITATION_ACCEPTANCE.md
+?? docs/RS422_STAR_COMPUTER_SIMULATOR_QA.md
+?? docs/qa/lvds-multitype-s01/
+?? docs/qa/lvds-multitype-s02-real/
+?? docs/qa/lvds-multitype-s02/
+?? docs/qa/star-simulator/
+?? docs/superpowers/plans/2026-11-16-rs422-star-computer-simulator.md
+?? docs/superpowers/plans/2026-11-18-lvds-multitype-s01.md
+?? docs/superpowers/plans/2026-11-18-lvds-multitype-s02.md
+?? docs/superpowers/plans/2026-11-21-lvds-multitype-s02-real.md
+?? tools/qa/lvds_excitation_reference.py
+?? tools/qa/lvds_excitation_workbook_audit.py
+?? tools/qa/lvds_multitype_s01_fixture.py
+?? tools/qa/lvds_multitype_s01_verify.py
+?? tools/qa/rs422_star_reference.py
+?? tools/qa/rs422_star_validate_capture.py
+?? tools/qa/test_lvds_multitype_s01_verify.py
+?? "\345\215\217\350\256\256 (PH20261115).xlsx"
+?? "\346\230\237\345\212\241\344\270\216\347\255\211\347\246\273\345\255\220\344\275\223\345\257\206\345\272\246\346\216\242\351\222\210\345\215\225\346\234\272RS422\344\270\262\350\241\214\351\200\232\344\277\241\345\215\217\350\256\256-513\345\217\215\351\246\210-20260728\357\274\210\345\205\254\345\274\200\357\274\211.doc"

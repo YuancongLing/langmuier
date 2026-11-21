@@ -1,0 +1,127 @@
+ M apps/desktop/src/app.rs
+ M apps/desktop/src/app_history.rs
+ M apps/desktop/src/app_layout_tests.rs
+ M apps/desktop/src/app_parameter_tests.rs
+ M apps/desktop/src/backend.rs
+ M apps/desktop/src/backend_capture_history_tests.rs
+ M apps/desktop/src/backend_e2e_tests.rs
+ M apps/desktop/src/backend_history.rs
+ M apps/desktop/src/backend_raw_storage.rs
+ M apps/desktop/src/backend_scientific_csv_tests.rs
+ M apps/desktop/src/bridge.rs
+ M apps/desktop/src/main.rs
+ M apps/desktop/src/mock.rs
+ M crates/langmuir-core/src/lib.rs
+ M crates/langmuir-core/src/lvds_recovery.rs
+ M crates/langmuir-core/src/lvds_recovery_tests.rs
+ M crates/langmuir-core/src/udp_lvds_sequence.rs
+ M crates/langmuir-storage/src/lib.rs
+ M crates/langmuir-transport/src/error.rs
+ M crates/langmuir-transport/src/lib.rs
+ M crates/langmuir-transport/src/worker.rs
+ M docs/WINDOWS_README.md
+ D 星务与等离子体密度探针单机RS422串行通信协议-20260724（公开）.doc
+?? apps/desktop/src/app_excitation.rs
+?? apps/desktop/src/app_excitation_tests.rs
+?? apps/desktop/src/app_star_simulator.rs
+?? apps/desktop/src/app_star_simulator_tests.rs
+?? apps/desktop/src/backend_excitation.rs
+?? apps/desktop/src/backend_excitation_history.rs
+?? apps/desktop/src/backend_excitation_history_tests.rs
+?? apps/desktop/src/backend_excitation_tests.rs
+?? apps/desktop/src/backend_multitype_history_tests.rs
+?? apps/desktop/src/backend_multitype_tests.rs
+?? apps/desktop/src/backend_star_simulator.rs
+?? apps/desktop/src/backend_star_simulator_tests.rs
+?? apps/desktop/src/star_simulator.rs
+?? crates/langmuir-core/src/excitation.rs
+?? crates/langmuir-core/src/lvds_common.rs
+?? crates/langmuir-core/src/star_broadcast.rs
+?? crates/langmuir-core/src/udp_lvds_frame_gate.rs
+?? crates/langmuir-core/tests/excitation_vectors.rs
+?? crates/langmuir-core/tests/fixtures/excitation/SYNTHETIC-ab-all_zero.bin
+?? crates/langmuir-core/tests/fixtures/excitation/SYNTHETIC-ab-dc.bin
+?? crates/langmuir-core/tests/fixtures/excitation/SYNTHETIC-ab-expected.csv
+?? crates/langmuir-core/tests/fixtures/excitation/SYNTHETIC-ab-manifest.json
+?? crates/langmuir-core/tests/fixtures/excitation/SYNTHETIC-ab-sine.bin
+?? crates/langmuir-core/tests/fixtures/excitation/SYNTHETIC-ab-triangle.bin
+?? crates/langmuir-core/tests/lvds_multitype.rs
+?? crates/langmuir-core/tests/star_broadcast_vectors.rs
+?? crates/langmuir-storage/src/excitation_csv.rs
+?? crates/langmuir-transport/src/worker_broadcast_tests.rs
+?? docs/LVDS_MULTITYPE_S01_ACCEPTANCE.md
+?? docs/LVDS_MULTITYPE_S02_EXCITATION_ACCEPTANCE.md
+?? docs/RS422_STAR_COMPUTER_SIMULATOR_QA.md
+?? docs/qa/lvds-multitype-s01/SYNTHETIC-mixed-pcap-independent-audit.json
+?? docs/qa/lvds-multitype-s01/cargo-check.log
+?? docs/qa/lvds-multitype-s01/cargo-clippy.log
+?? docs/qa/lvds-multitype-s01/cargo-fmt.log
+?? docs/qa/lvds-multitype-s01/cargo-test.log
+?? docs/qa/lvds-multitype-s01/original-pcap-independent-audit.json
+?? docs/qa/lvds-multitype-s01/original-pcap-raw-independent-readback.json
+?? docs/qa/lvds-multitype-s01/python-qa-suite.log
+?? docs/qa/lvds-multitype-s01/real-aa-capture-tests.log
+?? docs/qa/lvds-multitype-s01/real-aa-storage-tests.log
+?? docs/qa/lvds-multitype-s01/real-aa-txt-tests.log
+?? docs/qa/lvds-multitype-s01/release-SYNTHETIC-mixed-audit.log
+?? docs/qa/lvds-multitype-s01/release-nonmock-guard.log
+?? docs/qa/lvds-multitype-s01/release-real-aa-audit.log
+?? docs/qa/lvds-multitype-s01/verification-summary.json
+?? docs/qa/lvds-multitype-s01/windows-package-verification.json
+?? docs/qa/lvds-multitype-s01/windows-release-build.log
+?? docs/qa/lvds-multitype-s02/SYNTHETIC-20AA-1AB-1AC.pcapng
+?? docs/qa/lvds-multitype-s02/SYNTHETIC-AB-modes.pcapng
+?? docs/qa/lvds-multitype-s02/ab-csv-final-independent-readback.json
+?? docs/qa/lvds-multitype-s02/ab-csv-independent-readback.json
+?? docs/qa/lvds-multitype-s02/ab-csv-provenance.json
+?? docs/qa/lvds-multitype-s02/cargo-check.log
+?? docs/qa/lvds-multitype-s02/cargo-clippy.log
+?? docs/qa/lvds-multitype-s02/cargo-fmt.log
+?? docs/qa/lvds-multitype-s02/cargo-test.log
+?? docs/qa/lvds-multitype-s02/git-diff-stat.txt
+?? docs/qa/lvds-multitype-s02/git-status.txt
+?? docs/qa/lvds-multitype-s02/nonmock-mixed-replay-final.log
+?? docs/qa/lvds-multitype-s02/nonmock-mixed-replay.log
+?? docs/qa/lvds-multitype-s02/original-AA-TXT-tests.log
+?? docs/qa/lvds-multitype-s02/protocol-cells.json
+?? docs/qa/lvds-multitype-s02/real-AA-raw-tests.log
+?? docs/qa/lvds-multitype-s02/real-AA-science-tests.log
+?? docs/qa/lvds-multitype-s02/release-mixed-pcap-audit.log
+?? docs/qa/lvds-multitype-s02/release-nonmock-guard.log
+?? docs/qa/lvds-multitype-s02/release-real-AA-audit.log
+?? docs/qa/lvds-multitype-s02/verification-summary.json
+?? docs/qa/lvds-multitype-s02/windows-exe-verification.json
+?? docs/qa/lvds-multitype-s02/windows-release-build.log
+?? docs/qa/star-simulator/attitude.hex
+?? docs/qa/star-simulator/controlled-lifecycle.json
+?? docs/qa/star-simulator/controlled-transport.json
+?? docs/qa/star-simulator/gnss-0.hex
+?? docs/qa/star-simulator/gnss-1.hex
+?? docs/qa/star-simulator/gnss-2.hex
+?? docs/qa/star-simulator/golden-vectors.json
+?? docs/qa/star-simulator/gui-compact-125-windows.png
+?? docs/qa/star-simulator/gui-default-windows.png
+?? docs/qa/star-simulator/gui-hex-windows.png
+?? docs/qa/star-simulator/gui-star-disabled-windows.png
+?? docs/qa/star-simulator/gui-synthetic-c-windows.png
+?? docs/qa/star-simulator/independent-capture-validation.json
+?? docs/qa/star-simulator/protocol-20260728-audit.md
+?? docs/qa/star-simulator/protocol-20260728-readable.txt
+?? docs/qa/star-simulator/protocol-20260728-source.txt
+?? docs/qa/star-simulator/protocol-audit.md
+?? docs/qa/star-simulator/protocol-readable.txt
+?? docs/qa/star-simulator/protocol-source.txt
+?? docs/qa/star-simulator/time.hex
+?? docs/qa/star-simulator/windows-package-verification.json
+?? docs/superpowers/plans/2026-11-16-rs422-star-computer-simulator.md
+?? docs/superpowers/plans/2026-11-18-lvds-multitype-s01.md
+?? docs/superpowers/plans/2026-11-18-lvds-multitype-s02.md
+?? tools/qa/lvds_excitation_reference.py
+?? tools/qa/lvds_excitation_workbook_audit.py
+?? tools/qa/lvds_multitype_s01_fixture.py
+?? tools/qa/lvds_multitype_s01_verify.py
+?? tools/qa/rs422_star_reference.py
+?? tools/qa/rs422_star_validate_capture.py
+?? tools/qa/test_lvds_multitype_s01_verify.py
+?? "协议 (PH20261115).xlsx"
+?? 星务与等离子体密度探针单机RS422串行通信协议-513反馈-20260728（公开）.doc

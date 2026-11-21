@@ -1,0 +1,22 @@
+﻿[
+    {
+        "command":  "cargo fmt --all -- --check",
+        "log":  "docs\\qa\\lvds-multitype-s01\\cargo-fmt.log",
+        "exit_code":  0
+    },
+    {
+        "command":  "cargo check --workspace --locked",
+        "log":  "docs\\qa\\lvds-multitype-s01\\cargo-check.log",
+        "exit_code":  0
+    },
+    {
+        "command":  "cargo test --workspace --features langmuir-desktop/mock --locked",
+        "log":  "docs\\qa\\lvds-multitype-s01\\cargo-test.log",
+        "exit_code":  0
+    },
+    {
+        "command":  "cargo clippy --workspace --all-targets --locked -- -D warnings",
+        "log":  "docs\\qa\\lvds-multitype-s01\\cargo-clippy.log",
+        "exit_code":  0
+    }
+]

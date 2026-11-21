@@ -6,13 +6,17 @@
 mod checksum;
 mod command;
 mod error;
+mod excitation;
 mod framing;
 mod lvds;
+mod lvds_common;
 mod lvds_recovery;
 mod model;
 mod rs422;
+mod star_broadcast;
 mod udp_lvds;
 mod udp_lvds_dedup;
+mod udp_lvds_frame_gate;
 mod udp_lvds_sequence;
 
 pub use checksum::{additive_checksum, crc16_ccitt_false};
@@ -21,6 +25,10 @@ pub use command::{
     ScanFrequency, command_checksum, validate_command_frame,
 };
 pub use error::{FrameError, Protocol};
+pub use excitation::{
+    EXCITATION_SAMPLE_COUNT, ExcitationError, ExcitationFrame, ExcitationRecord,
+    decode_excitation_frame,
+};
 pub use framing::{DecodeBatch, LvdsStreamDecoder, Rs422StreamDecoder, StreamMetrics};
 pub use lvds::{
     LVDS_CRC_CALC_END, LVDS_CRC_CALC_START, LVDS_CRC_FIELD_OFFSET, LVDS_CRC_INPUT_LEN,
@@ -29,6 +37,7 @@ pub use lvds::{
     ScientificFrameDiagnosis, Timestamp, UnverifiedScientificFrame, decode_scientific_frame,
     diagnose_scientific_frame, reconstruct_adc16, unpack_4x10, validate_scientific_frame_crc16,
 };
+pub use lvds_common::{LvdsCommonFrame, LvdsPacketType, find_common_frame, parse_common_frame};
 pub use lvds_recovery::{
     FrameQuality, LvdsBitAlignmentRecoverer, MAX_RECOVERY_PAYLOAD_BYTES, RecoveryAnchor,
     RecoveryContext, RecoveryResult, RecoveryValidation, ReferenceCrc, ReferenceCrcStatus,
@@ -41,6 +50,11 @@ pub use rs422::{
     RS422_DEVICE_ID, RS422_FRAME_LEN, RS422_PAYLOAD_LEN, RS422_RECEIVER_ADDRESS,
     RS422_SENDER_ADDRESS, RS422_TELEMETRY_TYPE, Rs422Telemetry, decode_rs422_telemetry,
 };
+pub use star_broadcast::{
+    AttitudeData, BroadcastError, BroadcastKind, GNSS_GPS_MINUS_UTC, GNSS_PRESETS, GnssFix,
+    GnssMode, GnssPoint, STAR_EPOCH_UNIX_SECONDS, StarTime, encode_attitude_broadcast,
+    encode_broadcast, encode_gnss_broadcast, encode_time_broadcast, next_gnss_sequence, wgs84_ecef,
+};
 pub use udp_lvds::{
     DEFAULT_UDP_LVDS_REASSEMBLY_TTL, DEPLOYED_LVDS_RAW_FRAME_LEN, ReassembledLvdsFrame,
     UDP_LVDS_HEADER_LEN, UDP_LVDS_MAGIC, UDP_LVDS_TYPE, UDP_LVDS_VERSION, UdpLvdsDatagram,
@@ -51,6 +65,7 @@ pub use udp_lvds_dedup::{
     DEFAULT_UDP_LVDS_DEDUP_CAPACITY, DEFAULT_UDP_LVDS_DEDUP_TTL, UdpLvdsDedupMetrics,
     UdpLvdsDisposition, UdpLvdsScienceGate, UdpLvdsScienceResult,
 };
+pub use udp_lvds_frame_gate::UdpLvdsFrameGate;
 pub use udp_lvds_sequence::{
     DEFAULT_UDP_SEQUENCE_CAPACITY, DEFAULT_UDP_SEQUENCE_EXPIRED_HISTORY,
     DEFAULT_UDP_SEQUENCE_GAP_WAIT, DEFAULT_UDP_SEQUENCE_MAX_ADVANCE, UdpLvdsSequenceMetrics,

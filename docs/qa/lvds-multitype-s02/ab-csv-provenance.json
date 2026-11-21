@@ -1,0 +1,11 @@
+{
+  "result": "PASS",
+  "raw_record_id": 21,
+  "outer_u32": 305463308,
+  "source": "192.168.1.128:1534",
+  "session": "39424-1794976658353467900",
+  "first_sample_us": 8180800,
+  "latest_sample_us": 9250000,
+  "rows": 100,
+  "sha256": "fdc7c298242b1953e99c7f7ffd9e651cad54ab5612c1b4e152c628f6f90ccb61"
+}

@@ -1,0 +1,35 @@
+[
+  {
+    "name": "fmt-check",
+    "command": "cargo fmt --all -- --check",
+    "exit_code": 0,
+    "elapsed_seconds": 0.96,
+    "pid": 47820
+  },
+  {
+    "name": "workspace-check",
+    "command": "cargo check --workspace --locked",
+    "exit_code": 0,
+    "elapsed_seconds": 9.401,
+    "pid": 23408
+  },
+  {
+    "name": "workspace-test",
+    "command": "cargo test --workspace --features langmuir-desktop/mock --locked",
+    "exit_code": 0,
+    "elapsed_seconds": 42.803,
+    "pid": 9084,
+    "totals": {
+      "passed": 470,
+      "failed": 0,
+      "ignored": 9
+    }
+  },
+  {
+    "name": "workspace-clippy",
+    "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "exit_code": 101,
+    "elapsed_seconds": 7.094,
+    "pid": 54468
+  }
+]

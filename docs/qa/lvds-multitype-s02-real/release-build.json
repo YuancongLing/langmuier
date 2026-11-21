@@ -1,0 +1,10 @@
+{
+  "command": "cargo +stable-x86_64-pc-windows-msvc build --release -p langmuir-desktop --target x86_64-pc-windows-msvc --target-dir target --no-default-features --locked",
+  "RUSTFLAGS": "-C target-feature=+crt-static",
+  "exit_code": 0,
+  "elapsed_seconds": 35.14416570030153,
+  "pid": 25356,
+  "mock": false,
+  "target": "x86_64-pc-windows-msvc",
+  "working_directory": "D:\\RUST\\langmuier"
+}

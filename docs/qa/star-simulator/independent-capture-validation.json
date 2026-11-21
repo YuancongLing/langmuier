@@ -1,0 +1,210 @@
+{
+  "source": "CONTROLLED_TRANSPORT_SYNTHETIC",
+  "results": [
+    {
+      "capture": "docs\\qa\\star-simulator\\controlled-transport.json",
+      "source": "CONTROLLED_TRANSPORT_SYNTHETIC",
+      "real_com_port": false,
+      "verified": true,
+      "bytes": 1457,
+      "frames": 24,
+      "raw_wire_matched": true,
+      "counts": {
+        "telemetry": 2,
+        "control": 1,
+        "time": 7,
+        "attitude": 7,
+        "gnss": 7
+      },
+      "gnss_points": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "gnss_sequences": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "min_frame_gap_us": 39,
+      "timing": {
+        "telemetry": {
+          "frames": 2,
+          "intervals_ms": [
+            5001.206
+          ],
+          "min_ms": 5001.206,
+          "max_ms": 5001.206,
+          "mean_ms": 5001.206,
+          "expected_period_ms": 5000,
+          "mean_error_ms": 1.206000000000131,
+          "max_abs_error_ms": 1.206000000000131,
+          "rms_error_ms": 1.206000000000131,
+          "stddev_ms": 0.0
+        },
+        "control": {
+          "frames": 1,
+          "intervals_ms": []
+        },
+        "time": {
+          "frames": 7,
+          "intervals_ms": [
+            1000.539,
+            1000.163,
+            1001.864,
+            1001.305,
+            1000.297,
+            1000.709
+          ],
+          "min_ms": 1000.163,
+          "max_ms": 1001.864,
+          "mean_ms": 1000.8128333333333,
+          "expected_period_ms": 1000,
+          "mean_error_ms": 0.8128333333333254,
+          "max_abs_error_ms": 1.8640000000000327,
+          "rms_error_ms": 1.0070998791910628,
+          "stddev_ms": 0.5946025049466983,
+          "timestamp_age_us": {
+            "min": 15,
+            "max": 28
+          }
+        },
+        "attitude": {
+          "frames": 7,
+          "intervals_ms": [
+            1000.035,
+            1000.687,
+            1001.805,
+            1000.884,
+            1000.286,
+            1001.157
+          ],
+          "min_ms": 1000.035,
+          "max_ms": 1001.805,
+          "mean_ms": 1000.809,
+          "expected_period_ms": 1000,
+          "mean_error_ms": 0.8089999999999881,
+          "max_abs_error_ms": 1.80499999999995,
+          "rms_error_ms": 0.9944110484770972,
+          "stddev_ms": 0.5782493695053537,
+          "timestamp_age_us": {
+            "min": 6,
+            "max": 8
+          }
+        },
+        "gnss": {
+          "frames": 7,
+          "intervals_ms": [
+            1000.033,
+            1000.724,
+            1001.765,
+            1000.901,
+            999.769,
+            1001.629
+          ],
+          "min_ms": 999.769,
+          "max_ms": 1001.765,
+          "mean_ms": 1000.8035,
+          "expected_period_ms": 1000,
+          "mean_error_ms": 0.8035000000000044,
+          "max_abs_error_ms": 1.7649999999999864,
+          "rms_error_ms": 1.09234403921109,
+          "stddev_ms": 0.7400021959426826,
+          "timestamp_age_us": {
+            "min": 640540,
+            "max": 645361
+          }
+        }
+      },
+      "lifecycle_test_assertions": {
+        "broadcast_intervals_ms": [
+          1000,
+          1000,
+          1000
+        ],
+        "control_dc_1000_written": true,
+        "duration_ms": 6250,
+        "markers": {
+          "observed_until_unix_micros": 1794816880008322,
+          "stop_requested_unix_micros": 1794816879887102,
+          "stop_unix_micros": 1794816879887117
+        },
+        "sent_after_stop": [
+          7,
+          7,
+          7
+        ],
+        "stop_no_new_broadcast": true,
+        "telemetry_interval_ms": 5000
+      },
+      "limits": "Lifecycle booleans and observation markers originate in Rust tests; byte stream, timestamp ordering, counts, sequences and coordinates are independently checked. This is not real COM/hardware QA."
+    },
+    {
+      "capture": "docs\\qa\\star-simulator\\controlled-lifecycle.json",
+      "source": "CONTROLLED_TRANSPORT_SYNTHETIC",
+      "real_com_port": false,
+      "verified": true,
+      "bytes": 378,
+      "frames": 4,
+      "raw_wire_matched": true,
+      "counts": {
+        "telemetry": 1,
+        "gnss": 3
+      },
+      "gnss_points": [
+        0,
+        2,
+        2
+      ],
+      "gnss_sequences": [
+        0,
+        1,
+        2
+      ],
+      "min_frame_gap_us": 537,
+      "timing": {
+        "telemetry": {
+          "frames": 1,
+          "intervals_ms": []
+        },
+        "gnss": {
+          "frames": 3,
+          "intervals_ms": [
+            100.49,
+            100.763
+          ],
+          "min_ms": 100.49,
+          "max_ms": 100.763,
+          "mean_ms": 100.6265,
+          "timestamp_age_us": {
+            "min": 636409,
+            "max": 837662
+          }
+        }
+      },
+      "lifecycle_test_assertions": {
+        "disconnect_stops_polling": true,
+        "disconnect_stops_scheduler": true,
+        "following_point": "SYNTHETIC C",
+        "initial_point": "SYNTHETIC A",
+        "markers": {
+          "disconnect_unix_micros": 1794816873886421,
+          "observed_until_unix_micros": 1794816874038387,
+          "point_change_unix_micros": 1794816873636052,
+          "reconnect_unix_micros": 1794816873917390
+        },
+        "queued_point_snapshot_preserved": true,
+        "reconnected_state_does_not_resume": true
+      },
+      "limits": "Lifecycle booleans and observation markers originate in Rust tests; byte stream, timestamp ordering, counts, sequences and coordinates are independently checked. This is not real COM/hardware QA."
+    }
+  ]
+}

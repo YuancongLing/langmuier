@@ -1,0 +1,41 @@
+{
+  "path": "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s02-real-02-20261121\\LangmuierProbeGroundControl.exe",
+  "bytes": 10778112,
+  "sha256": "c0f0cbdf7dd515de182ec96f0cd7b3f9a43cf2932ca005f48f49a2ba114cb38c",
+  "architecture": "PE32+ AMD64 Windows x64",
+  "no_dynamic_crt_imports": true,
+  "imports": [
+    "advapi32.dll",
+    "api-ms-win-core-synch-l1-2-0.dll",
+    "bcryptprimitives.dll",
+    "cfgmgr32.dll",
+    "combase.dll",
+    "dwmapi.dll",
+    "gdi32.dll",
+    "imm32.dll",
+    "kernel32.dll",
+    "ntdll.dll",
+    "ole32.dll",
+    "opengl32.dll",
+    "setupapi.dll",
+    "shell32.dll",
+    "shlwapi.dll",
+    "user32.dll",
+    "uxtheme.dll",
+    "ws2_32.dll"
+  ],
+  "version": "S02-REAL-02 (20261121)",
+  "features": "--no-default-features; mock not enabled",
+  "build_command_evidence": "release-build-command.json",
+  "native_gui": "NOT_RUN",
+  "pid": 27904,
+  "cwd": "D:\\RUST\\langmuier",
+  "command": [
+    "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s02-real-02-20261121\\LangmuierProbeGroundControl.exe",
+    "--audit-pcap",
+    "D:\\RUST\\langmuier\\202611212141.pcapng"
+  ],
+  "started_unix_ns": 1795273688378263500,
+  "exit_code": 0,
+  "elapsed_seconds": 0.6775078000500798
+}

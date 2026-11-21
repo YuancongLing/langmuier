@@ -1,0 +1,13 @@
+{
+  "pid": 6700,
+  "command": [
+    "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01-tests.exe",
+    "backend::s02_real_tests::s02_real_nonmock_paced_production_full_storage_and_history",
+    "--exact",
+    "--ignored",
+    "--nocapture",
+    "--test-threads=1"
+  ],
+  "output": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\previous-real-run-01",
+  "cwd": "D:\\RUST\\langmuier"
+}

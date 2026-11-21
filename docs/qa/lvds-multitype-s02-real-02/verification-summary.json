@@ -1,0 +1,212 @@
+{
+  "task": "LVDS-MULTITYPE-S02-REAL-02",
+  "input": {
+    "path": "D:\\RUST\\langmuier\\202611212141.pcapng",
+    "bytes": 1416044,
+    "sha256": "9a5d9a73aa46fb2fb24962b2e2b7d4081646477ae5d1f62ee2ee46c375b53907"
+  },
+  "workspace_tests": {
+    "passed": 474,
+    "failed": 0,
+    "ignored": 12
+  },
+  "commands": [
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.7744870185852051
+    },
+    {
+      "name": "check",
+      "command": [
+        "cargo",
+        "check",
+        "--workspace",
+        "--locked"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.43693041801452637
+    },
+    {
+      "name": "test",
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--features",
+        "langmuir-desktop/mock",
+        "--locked",
+        "-j1"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 41.54193329811096
+    },
+    {
+      "name": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 3.1857407093048096
+    },
+    {
+      "name": "release-confirm",
+      "command": [
+        "cargo",
+        "+stable-x86_64-pc-windows-msvc",
+        "build",
+        "--release",
+        "-p",
+        "langmuir-desktop",
+        "--target",
+        "x86_64-pc-windows-msvc",
+        "--target-dir",
+        "target",
+        "--no-default-features",
+        "--locked",
+        "-j1"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.5772585868835449
+    }
+  ],
+  "explicit_real_tests": {
+    "new_multimode": {
+      "backend": 1,
+      "egui": 2,
+      "failures": 0
+    },
+    "previous_2026112101": {
+      "backend": 1,
+      "egui": 1,
+      "failures": 0
+    },
+    "legacy_capture_and_txt": {
+      "passed": 5,
+      "failures": 0
+    },
+    "not_added_to_default_unique_count": true
+  },
+  "verdicts": {
+    "LVDS_PUBLIC_FRAME": {
+      "status": "PASS",
+      "scope": "3839 FPGA, 34 other UDP, no structural or sequence errors"
+    },
+    "AA_SCIENCE_DECODE": {
+      "status": "PASS",
+      "scope": "3489 frames, 697800 channel values compared"
+    },
+    "AA_SCIENCE_PLOT": {
+      "status": "PASS",
+      "scope": "Automated production history to egui only; native gestures NOT_RUN"
+    },
+    "AB_EXCITATION_DECODE": {
+      "status": "PASS",
+      "scope": "All 175 AB, including 82 untimed states"
+    },
+    "AB_MODE_SWITCH": {
+      "status": "PASS",
+      "scope": "11 stages, automated egui selection and state transitions"
+    },
+    "AB_ZERO_STATE_HANDLING": {
+      "status": "PASS",
+      "scope": "82 frames preserved, no fabricated sample time or plot"
+    },
+    "AB_EXCITATION_PLOT": {
+      "status": "PASS",
+      "scope": "9300 timed points verified by automated egui; native GUI NOT_RUN"
+    },
+    "AC_PUBLIC_RECEIVE": {
+      "status": "PASS",
+      "scope": "175 public frames and raw bytes; no S03 business decoder"
+    },
+    "RAW_ARCHIVE": {
+      "status": "PASS",
+      "scope": "3873 records, both production archives independently read through exact EOF"
+    },
+    "AA_CSV_LPD_STORAGE": {
+      "status": "PASS",
+      "scope": "348900 CSV rows and 3489 LPD records independently checked"
+    },
+    "AB_CSV_STORAGE": {
+      "status": "PASS",
+      "scope": "17500 rows, 9300 timed / 8200 empty time; both history exports checked"
+    },
+    "HISTORY_REPLAY": {
+      "status": "PASS",
+      "scope": "Production PCAP/RAW/LPD workers and automated egui, all AA and AB covered"
+    },
+    "WINDOWS_NATIVE_GUI": {
+      "status": "NOT_RUN",
+      "scope": "No callable native Windows computer-use tools; no screenshots"
+    },
+    "WINDOWS_NONMOCK_RELEASE": {
+      "status": "PASS",
+      "scope": "MSVC x64 static CRT Release; actual EXE CLI audit; native interaction excluded"
+    },
+    "REAL_HARDWARE_LIVE": {
+      "status": "NOT_RUN",
+      "scope": "No hardware connection or control transmission"
+    }
+  },
+  "release": {
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s02-real-02-20261121\\LangmuierProbeGroundControl.exe",
+    "bytes": 10778112,
+    "sha256": "c0f0cbdf7dd515de182ec96f0cd7b3f9a43cf2932ca005f48f49a2ba114cb38c",
+    "architecture": "PE32+ AMD64 Windows x64",
+    "no_dynamic_crt_imports": true,
+    "imports": [
+      "advapi32.dll",
+      "api-ms-win-core-synch-l1-2-0.dll",
+      "bcryptprimitives.dll",
+      "cfgmgr32.dll",
+      "combase.dll",
+      "dwmapi.dll",
+      "gdi32.dll",
+      "imm32.dll",
+      "kernel32.dll",
+      "ntdll.dll",
+      "ole32.dll",
+      "opengl32.dll",
+      "setupapi.dll",
+      "shell32.dll",
+      "shlwapi.dll",
+      "user32.dll",
+      "uxtheme.dll",
+      "ws2_32.dll"
+    ],
+    "version": "S02-REAL-02 (20261121)",
+    "features": "--no-default-features; mock not enabled",
+    "build_command_evidence": "release-build-command.json",
+    "native_gui": "NOT_RUN",
+    "pid": 27904,
+    "cwd": "D:\\RUST\\langmuier",
+    "command": [
+      "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s02-real-02-20261121\\LangmuierProbeGroundControl.exe",
+      "--audit-pcap",
+      "D:\\RUST\\langmuier\\202611212141.pcapng"
+    ],
+    "started_unix_ns": 1795273688378263500,
+    "exit_code": 0,
+    "elapsed_seconds": 0.6775078000500798
+  },
+  "remaining_unrun_ignored": [
+    "native GUI-derived file acceptance",
+    "CPU benchmark"
+  ],
+  "scope_limit": "Native Windows GUI and real hardware acceptance are incomplete. Software/file verification PASS does not imply those projects PASS."
+}

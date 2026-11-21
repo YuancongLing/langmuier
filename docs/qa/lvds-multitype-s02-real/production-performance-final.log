@@ -1,0 +1,22 @@
+COMMAND: D:\RUST\langmuier\target\debug\deps\langmuier-1a191642797fb0ff.exe s02_real_nonmock_paced_production_full_storage_and_history --ignored --nocapture
+
+running 1 test
+S02_REAL_PACED_BEGIN pid=40596 unix_ns=1795269659182750900 output=D:\RUST\langmuier\target\qa\lvds-multitype-s02-real\production-performance-final writers_ready_before_first_frame=true
+S02_REAL_PROGRESS elapsed_s=5.001 source_udp=111 AA=101 AB=5 raw_written=109 display_unconsumed=8
+S02_REAL_PROGRESS elapsed_s=10.001 source_udp=221 AA=201 AB=10 raw_written=218 display_unconsumed=8
+S02_REAL_PROGRESS elapsed_s=15.002 source_udp=331 AA=301 AB=15 raw_written=332 display_unconsumed=8
+S02_REAL_PROGRESS elapsed_s=20.001 source_udp=441 AA=401 AB=20 raw_written=439 display_unconsumed=8
+S02_REAL_PROGRESS elapsed_s=25.007 source_udp=551 AA=501 AB=25 raw_written=555 display_unconsumed=8
+S02_REAL_PROGRESS elapsed_s=30.000 source_udp=661 AA=601 AB=30 raw_written=664 display_unconsumed=8
+S02_REAL_PROGRESS elapsed_s=35.002 source_udp=771 AA=701 AB=35 raw_written=772 display_unconsumed=8
+S02_REAL_PROGRESS elapsed_s=40.001 source_udp=881 AA=801 AB=40 raw_written=888 display_unconsumed=8
+S02_REAL_PROGRESS elapsed_s=45.001 source_udp=991 AA=901 AB=45 raw_written=997 display_unconsumed=8
+S02_REAL_PROGRESS elapsed_s=50.002 source_udp=1101 AA=1001 AB=50 raw_written=1109 display_unconsumed=8
+S02_REAL_PROGRESS elapsed_s=55.002 source_udp=1211 AA=1101 AB=55 raw_written=1219 display_unconsumed=8
+S02_REAL_PACED_END pid=40596 elapsed_s=56.755972 all_writers_closed=true
+test backend::s02_real_tests::s02_real_nonmock_paced_production_full_storage_and_history has been running for over 60 seconds
+S02_REAL_PRODUCTION_SUMMARY D:\RUST\langmuier\target\qa\lvds-multitype-s02-real\production-performance-final\production-summary.json
+test backend::s02_real_tests::s02_real_nonmock_paced_production_full_storage_and_history ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 257 filtered out; finished in 61.19s
+

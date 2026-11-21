@@ -1,0 +1,25 @@
+{
+  "result": "PASS",
+  "input_after": {
+    "path": "C:\\Users\\Administrator\\Downloads\\2026112101.pcapng",
+    "bytes": 461444,
+    "sha256": "22ec9d91789eb674f6b3cddf9bf5935bd81ea7d92030c0a1941e8f2becec4b77",
+    "mtime_ns": 1795266705608601300
+  },
+  "original_content_size_mtime_unchanged": true,
+  "existing_processes_preserved": true,
+  "running_processes_after": [
+    {
+      "Id": 43960,
+      "ProcessName": "LangmuierProbeGroundControl",
+      "Path": "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s02-20261118\\LangmuierProbeGroundControl.exe"
+    },
+    {
+      "Id": 44796,
+      "ProcessName": "LangmuierProbeGroundControl",
+      "Path": "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s01-20261118\\LangmuierProbeGroundControl.exe"
+    }
+  ],
+  "old_s02_sha256_unchanged": "8ab70f1d12991deedcea554e0f20f749160046ec1074a5e637fb7b79b29ec419",
+  "source_identity_unchanged_after_build": true
+}

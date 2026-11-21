@@ -14,7 +14,7 @@ pub const DEFAULT_UDP_SEQUENCE_CAPACITY: usize = 256;
 /// device reset or allocating a large range of sequence candidates.
 pub const DEFAULT_UDP_SEQUENCE_MAX_ADVANCE: u32 = 256;
 
-/// Accepted-science observations for one source endpoint and receiver session.
+/// Accepted whole-stream observations for one source endpoint and session.
 /// All event counters saturate. Only the two explicitly documented gauges can
 /// decrease; no counter represents confirmed network loss.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -62,7 +62,7 @@ struct SequenceGap {
 
 /// Observes full outer UDP `u32` sequences without sorting or withholding data.
 ///
-/// Call `observe_at` only for frames accepted by the strict science and recent
+/// Call `observe_at` for every type accepted by common framing and the recent
 /// duplicate gate. One instance belongs to one filtered source endpoint and
 /// receiver session; construct a fresh monitor when that session is recreated.
 /// It never reads the scientific model's independent inner `u8` sequence.
@@ -86,7 +86,7 @@ pub struct UdpLvdsSequenceMonitor {
 }
 
 impl UdpLvdsSequenceMonitor {
-    /// Observes one already validated and dedup-accepted scientific frame.
+    /// Observes one common-validated and dedup-accepted frame of any TYPE.
     /// Earlier injected time values cannot renew or un-expire gap records.
     pub fn observe_at(&mut self, sequence: u32, now: Instant) {
         self.expire_at(now);

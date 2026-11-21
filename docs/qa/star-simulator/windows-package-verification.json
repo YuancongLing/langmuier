@@ -1,0 +1,69 @@
+{
+  "result": "PASS",
+  "exe": {
+    "path": "target\\delivery\\windows-x64\\LangmuierProbeGroundControl.exe",
+    "bytes": 10287104,
+    "sha256": "636f55cc6cf14413dabf577488a7cac535561e5792e475c33d8d64b924b69536"
+  },
+  "archive": {
+    "path": "target\\delivery\\LangmuierProbeGroundControl-windows-x64.zip",
+    "bytes": 4244639,
+    "sha256": "03b82762a5957117618d61fcc960f377f055fa39325fc0bbb11f9318244a7fd0"
+  },
+  "source": {
+    "path": "target\\x86_64-pc-windows-msvc\\release\\langmuier.exe",
+    "bytes": 10287104,
+    "sha256": "636f55cc6cf14413dabf577488a7cac535561e5792e475c33d8d64b924b69536"
+  },
+  "readme": {
+    "path": "docs\\WINDOWS_README.md",
+    "bytes": 5304,
+    "sha256": "ecfe6d6377f4b537f87794a9bba32e99aae0b5b447847e33e7ac536da39c208f"
+  },
+  "architecture": "PE32+ Windows x64",
+  "static_crt": true,
+  "imports": [
+    "advapi32.dll",
+    "api-ms-win-core-synch-l1-2-0.dll",
+    "bcryptprimitives.dll",
+    "cfgmgr32.dll",
+    "combase.dll",
+    "dwmapi.dll",
+    "gdi32.dll",
+    "imm32.dll",
+    "kernel32.dll",
+    "ntdll.dll",
+    "ole32.dll",
+    "opengl32.dll",
+    "setupapi.dll",
+    "shell32.dll",
+    "shlwapi.dll",
+    "user32.dll",
+    "uxtheme.dll",
+    "ws2_32.dll"
+  ],
+  "mock_enabled": false,
+  "no_mock_cli_verified": true,
+  "zip_crc_and_content_match": true,
+  "source_manifest_unchanged": true,
+  "build": {
+    "command": [
+      "cargo",
+      "+stable-x86_64-pc-windows-msvc",
+      "build",
+      "--release",
+      "-p",
+      "langmuir-desktop",
+      "--target",
+      "x86_64-pc-windows-msvc",
+      "--target-dir",
+      "target",
+      "--no-default-features",
+      "--locked"
+    ],
+    "rustflags": "-C target-feature=+crt-static",
+    "exit_code": 0,
+    "elapsed_seconds": 11.696,
+    "mock": false
+  }
+}

@@ -1,0 +1,177 @@
+{
+  "result": "PASS",
+  "input": {
+    "path": "C:\\Users\\Administrator\\Downloads\\2026112101.pcapng",
+    "bytes": 461444,
+    "sha256": "22ec9d91789eb674f6b3cddf9bf5935bd81ea7d92030c0a1941e8f2becec4b77"
+  },
+  "manifest": {
+    "path": "D:\\RUST\\langmuier\\docs\\qa\\lvds-multitype-s02-real\\independent-manifest.json",
+    "bytes": 7482972,
+    "sha256": "61732f287d7b32378c4f313d3641501e874bf7be2f9aa243b5fa6b0fcf770f53"
+  },
+  "production_summary": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real\\production-20261121-215654331\\production-summary.json",
+    "bytes": 5436,
+    "sha256": "74a85e6110e469c613817b7f7565673c8ebda31139d15329fd2c096b8accef6c"
+  },
+  "raw": {
+    "status": "PASS",
+    "records": 1262,
+    "udp_payload_bytes": 366346,
+    "fields_checked": [
+      "payload length/order/bytes",
+      "source",
+      "captured destination",
+      "timestamp_ns",
+      "origin_packet_index",
+      "record_id",
+      "source_matches"
+    ],
+    "clean_raw_eof": true,
+    "raw_header": {
+      "version": 1,
+      "header_bytes": 128,
+      "origin": "PCAP_REPLAY",
+      "created_at_ns": 1795269433932658400,
+      "session_id_hex": "e036acd50914ea180000000000000000",
+      "expected_source": "192.168.1.128:1534",
+      "binding": "0.0.0.0:0"
+    },
+    "footer": {
+      "observed": 1262,
+      "enqueued": 1262,
+      "written": 1262,
+      "dropped": 0,
+      "payload_bytes": 366346,
+      "last_observed_id": 1262,
+      "status": 1,
+      "reason": 1,
+      "last_written_id": 1262
+    },
+    "identity": {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real\\production-20261121-215654331\\capture.lvdsraw",
+      "bytes": 492766,
+      "sha256": "d7d37a9a0de614e49d06c0d5a861b0f4da3b3dc20245af8cb3db3f845e551a37"
+    },
+    "all_record_metadata_and_bytes_checked": true
+  },
+  "science_csv": {
+    "result": "PASS",
+    "identity": {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real\\production-20261121-215654331\\science.csv",
+      "bytes": 6858337,
+      "sha256": "96d7c2435056a1310618294eb7c8446fc1ee46abce1522e4603586b9cd4a926e"
+    },
+    "frames": 1136,
+    "data_rows": 113600,
+    "columns_checked": [
+      "frame_index",
+      "frame_seconds",
+      "frame_microseconds",
+      "frame_seq_u8",
+      "sample_index",
+      "sample_time_us",
+      "ch1_code10",
+      "ch2_code10",
+      "ch1_adc16_reconstructed",
+      "ch2_adc16_reconstructed",
+      "integrity"
+    ],
+    "all_values_order_and_exact_csv_eof": true
+  },
+  "science_lpd": {
+    "result": "PASS",
+    "identity": {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real\\production-20261121-215654331\\science.lpd",
+      "bytes": 464664,
+      "sha256": "83625ab77b67af5fd8d56c22250c50fd9ee6144c53936078bb39f06959182781"
+    },
+    "frames": 1136,
+    "all_sample_values_checked": 227200,
+    "header_bytes": 40,
+    "record_bytes": 409,
+    "exact_eof": true
+  },
+  "excitation_csv": {
+    "result": "PASS",
+    "identity": {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real\\production-20261121-215654331\\excitation.csv",
+      "bytes": 897503,
+      "sha256": "96969678e8a08ef0e986028c7a4d0ba8bd3d655e1b0fe102513d6858032d63af"
+    },
+    "frames": 57,
+    "data_rows": 5700,
+    "columns_checked": [
+      "ab_frame_index",
+      "raw_record_id",
+      "udp_sequence_u32",
+      "pa0_seq",
+      "sci_frame_seq",
+      "frame_seconds",
+      "frame_microseconds",
+      "sample_index",
+      "sample_time_us",
+      "wave_mV",
+      "wave_V",
+      "f_act_mHz",
+      "f_act_Hz",
+      "work_mode",
+      "scan_freq",
+      "scan_voltage_mV",
+      "ad9833_status",
+      "dac8563_status",
+      "integrity",
+      "source",
+      "session",
+      "received_unix_nanos"
+    ],
+    "all_fields_and_exact_csv_eof": true,
+    "session_expectation_source": "production-summary.metadata.excitation_protocol_session (not CSV-derived)",
+    "expected_protocol_session": "20832-1795269433956367400"
+  },
+  "original_input_unchanged": true,
+  "native_gui": "WINDOWS_GUI_NOT_RUN",
+  "live_hardware": "REAL_HARDWARE_LIVE_NOT_RUN",
+  "ui_entry_raw": {
+    "status": "PASS",
+    "records": 1262,
+    "udp_payload_bytes": 366346,
+    "fields_checked": [
+      "payload length/order/bytes",
+      "source",
+      "captured destination",
+      "timestamp_ns",
+      "origin_packet_index",
+      "record_id",
+      "source_matches"
+    ],
+    "clean_raw_eof": true,
+    "raw_header": {
+      "version": 1,
+      "header_bytes": 128,
+      "origin": "PCAP_REPLAY",
+      "created_at_ns": 1795269491208050800,
+      "session_id_hex": "70588d2b1714ea180000000000000000",
+      "expected_source": "192.168.1.128:1534",
+      "binding": "0.0.0.0:0"
+    },
+    "footer": {
+      "observed": 1262,
+      "enqueued": 1262,
+      "written": 1262,
+      "dropped": 0,
+      "payload_bytes": 366346,
+      "last_observed_id": 1262,
+      "status": 1,
+      "reason": 1,
+      "last_written_id": 1262
+    },
+    "identity": {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real\\production-20261121-215654331\\ui-entry-full.lvdsraw",
+      "bytes": 492766,
+      "sha256": "022d6898ecd4eb4e0a5648a577d3e4344d86b6e52656d10b3ba7f18ae1e015d0"
+    },
+    "dynamic_header_semantics": "Container validated; separate UI export has its own opaque session ID"
+  }
+}

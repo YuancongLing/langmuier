@@ -100,6 +100,10 @@ impl std::error::Error for CommandQueueError {}
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum WriteAckError {
+    #[error("broadcast {id} was cancelled before writing")]
+    Cancelled { id: u64 },
+    #[error("broadcast {id} encoding failed: {message}")]
+    Encoding { id: u64, message: String },
     #[error("command {id} write failed: {fault:?}")]
     Failed { id: u64, fault: ReaderFault },
     #[error("command {id} acknowledgement timed out after {timeout:?}")]

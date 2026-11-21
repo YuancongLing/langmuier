@@ -1,0 +1,24 @@
+ apps/desktop/src/app.rs                            | 186 ++++++++--
+ apps/desktop/src/app_history.rs                    |  28 +-
+ apps/desktop/src/app_layout_tests.rs               |  52 ++-
+ apps/desktop/src/app_parameter_tests.rs            |  52 +++
+ apps/desktop/src/backend.rs                        | 379 +++++++++++++++++++--
+ apps/desktop/src/backend_capture_history_tests.rs  |  25 +-
+ apps/desktop/src/backend_e2e_tests.rs              |  48 ++-
+ apps/desktop/src/backend_history.rs                | 165 ++++++++-
+ apps/desktop/src/backend_raw_storage.rs            |   1 +
+ apps/desktop/src/backend_scientific_csv_tests.rs   |  19 +-
+ apps/desktop/src/bridge.rs                         | 102 +++++-
+ apps/desktop/src/main.rs                           |   4 +-
+ apps/desktop/src/mock.rs                           |  52 +++
+ crates/langmuir-core/src/lib.rs                    |  15 +
+ crates/langmuir-core/src/lvds_recovery.rs          |  64 +++-
+ crates/langmuir-core/src/lvds_recovery_tests.rs    |  82 +++++
+ crates/langmuir-core/src/udp_lvds_sequence.rs      |   6 +-
+ crates/langmuir-storage/src/lib.rs                 |   4 +
+ crates/langmuir-transport/src/error.rs             |   4 +
+ crates/langmuir-transport/src/lib.rs               |   4 +-
+ crates/langmuir-transport/src/worker.rs            | 256 +++++++++++---
+ docs/WINDOWS_README.md                             |  38 ++-
+ ...74\210\345\205\254\345\274\200\357\274\211.doc" | Bin 853105 -> 0 bytes
+ 23 files changed, 1393 insertions(+), 193 deletions(-)

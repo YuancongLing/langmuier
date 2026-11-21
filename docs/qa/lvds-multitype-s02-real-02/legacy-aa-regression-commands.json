@@ -1,0 +1,132 @@
+{
+  "scope": "Explicit legacy real AA and original TXT regressions using an exclusive copy of the latest mock-feature test binary; no Cargo compilation, GUI, sockets, or hardware session",
+  "requested_pcap_path_missing": "D:/RUST/2026102401.pcapng",
+  "actual_pcap_choice": "Original workspace PCAP verified against historical independent SHA256; no generated replacement",
+  "input_before": {
+    "pcap": {
+      "path": "D:\\RUST\\langmuier\\2026102401.pcapng",
+      "bytes": 172292,
+      "sha256": "1bfe2ff956ad4e372bb15c2da04910c3d6a469b85d772ccbf83e4da4e48cca07"
+    },
+    "txt": {
+      "path": "D:\\RUST\\langmuier\\lvds.txt",
+      "bytes": 10780,
+      "sha256": "b5a2eee986fbe4f26da33da67bfeab17b8f9185f72ed0c6f81f232f3c2f15add"
+    },
+    "reference_jsonl": {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\raw-history-20261025\\2026102401-final-frames.jsonl",
+      "bytes": 2838095,
+      "sha256": "10a54f32db5db39f10451ff309d6c649a7847ab2aa97372888d2fd9872746f78"
+    },
+    "reference_csv": {
+      "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-user\\expected.csv",
+      "bytes": 157266,
+      "sha256": "307b5501af8205f93ad08be0e7d08e432e2f2bdb9b33eb042c1d289f906ee1eb"
+    }
+  },
+  "test_binary_source": {
+    "path": "D:\\RUST\\langmuier\\target\\debug\\deps\\langmuier-a0a2119bee5495dc.exe",
+    "bytes": 39041024,
+    "sha256": "7dd090095d0fe28cd8685d4ebcce19ae9008762d4df3ad210676ab7f5a868798"
+  },
+  "exclusive_test_binary": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\legacy-aa-tests-exclusive.exe",
+    "bytes": 39041024,
+    "sha256": "7dd090095d0fe28cd8685d4ebcce19ae9008762d4df3ad210676ab7f5a868798"
+  },
+  "output_root": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression",
+  "commands": [
+    {
+      "name": "science",
+      "command": [
+        "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\legacy-aa-tests-exclusive.exe",
+        "user_capture_",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "cwd": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\science",
+      "expected_tests": [
+        "backend::e2e_tests::e7_user_capture_no_crc_science_roundtrip",
+        "backend::e2e_tests::scientific_csv_tests::e8_user_capture_scientific_csv_all_modes_readback"
+      ],
+      "expected_test_count": 2,
+      "environment": {
+        "LOCALAPPDATA": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\science\\local-app-data",
+        "TEMP": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\science\\tmp",
+        "TMP": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\science\\tmp",
+        "LANGMUIR_USER_PCAP": "D:\\RUST\\langmuier\\2026102401.pcapng",
+        "LANGMUIR_RAW_TEST_PCAP": "D:\\RUST\\langmuier\\2026102401.pcapng",
+        "LANGMUIR_RAW_TEST_REFERENCE_JSONL": "D:\\RUST\\langmuier\\target\\qa\\raw-history-20261025\\2026102401-final-frames.jsonl",
+        "LANGMUIR_RAW_TEST_EXPECTED_SOURCE": "192.168.1.128:1534",
+        "LANGMUIR_RAW_TEST_BINDING": "0.0.0.0:1534",
+        "LANGMUIR_RAW_TEST_ARCHIVE": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\raw\\2026102401-current-regression.lvdsraw",
+        "LANGMUIR_USER_LVDS_TXT": "D:\\RUST\\langmuier\\lvds.txt",
+        "LANGMUIR_USER_REFERENCE_CSV": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-user\\expected.csv",
+        "TMPDIR": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\science\\tmp"
+      },
+      "log": "D:\\RUST\\langmuier\\docs\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression-science.log"
+    },
+    {
+      "name": "raw",
+      "command": [
+        "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\legacy-aa-tests-exclusive.exe",
+        "real_capture_",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "cwd": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\raw",
+      "expected_tests": [
+        "backend::raw_history_real_tests::real_capture_raw_archive_preserves_every_received_udp_record",
+        "backend::raw_history_real_tests::real_capture_recovery_matches_independent_bit_boundary_audit"
+      ],
+      "expected_test_count": 2,
+      "environment": {
+        "LOCALAPPDATA": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\raw\\local-app-data",
+        "TEMP": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\raw\\tmp",
+        "TMP": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\raw\\tmp",
+        "LANGMUIR_USER_PCAP": "D:\\RUST\\langmuier\\2026102401.pcapng",
+        "LANGMUIR_RAW_TEST_PCAP": "D:\\RUST\\langmuier\\2026102401.pcapng",
+        "LANGMUIR_RAW_TEST_REFERENCE_JSONL": "D:\\RUST\\langmuier\\target\\qa\\raw-history-20261025\\2026102401-final-frames.jsonl",
+        "LANGMUIR_RAW_TEST_EXPECTED_SOURCE": "192.168.1.128:1534",
+        "LANGMUIR_RAW_TEST_BINDING": "0.0.0.0:1534",
+        "LANGMUIR_RAW_TEST_ARCHIVE": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\raw\\2026102401-current-regression.lvdsraw",
+        "LANGMUIR_USER_LVDS_TXT": "D:\\RUST\\langmuier\\lvds.txt",
+        "LANGMUIR_USER_REFERENCE_CSV": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-user\\expected.csv",
+        "TMPDIR": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\raw\\tmp"
+      },
+      "log": "D:\\RUST\\langmuier\\docs\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression-raw.log"
+    },
+    {
+      "name": "txt",
+      "command": [
+        "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\legacy-aa-tests-exclusive.exe",
+        "final55_original_txt_decoder_and_address_gate_contract",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "cwd": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\txt",
+      "expected_tests": [
+        "backend::protocol_10bit_tests::final55_original_txt_decoder_and_address_gate_contract"
+      ],
+      "expected_test_count": 1,
+      "environment": {
+        "LOCALAPPDATA": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\txt\\local-app-data",
+        "TEMP": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\txt\\tmp",
+        "TMP": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\txt\\tmp",
+        "LANGMUIR_USER_PCAP": "D:\\RUST\\langmuier\\2026102401.pcapng",
+        "LANGMUIR_RAW_TEST_PCAP": "D:\\RUST\\langmuier\\2026102401.pcapng",
+        "LANGMUIR_RAW_TEST_REFERENCE_JSONL": "D:\\RUST\\langmuier\\target\\qa\\raw-history-20261025\\2026102401-final-frames.jsonl",
+        "LANGMUIR_RAW_TEST_EXPECTED_SOURCE": "192.168.1.128:1534",
+        "LANGMUIR_RAW_TEST_BINDING": "0.0.0.0:1534",
+        "LANGMUIR_RAW_TEST_ARCHIVE": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\raw\\2026102401-current-regression.lvdsraw",
+        "LANGMUIR_USER_LVDS_TXT": "D:\\RUST\\langmuier\\lvds.txt",
+        "LANGMUIR_USER_REFERENCE_CSV": "D:\\RUST\\langmuier\\target\\qa\\lvds-55aa-user\\expected.csv",
+        "TMPDIR": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\txt\\tmp"
+      },
+      "log": "D:\\RUST\\langmuier\\docs\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression-txt.log"
+    }
+  ]
+}

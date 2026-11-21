@@ -4,12 +4,15 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::lvds::decode_scientific_data_prefix;
+use crate::lvds_common::COMMON_HEADER;
 use crate::{
-    LVDS_CRC_CALC_END, LVDS_CRC_CALC_START, LVDS_FRAME_LEN, ScientificFrame, crc16_ccitt_false,
-    decode_scientific_frame,
+    FRAME_HEADER, LVDS_CRC_CALC_END, LVDS_CRC_CALC_START, LVDS_FRAME_LEN, LvdsPacketType,
+    ScientificFrame, crc16_ccitt_false, decode_scientific_frame, parse_common_frame,
 };
 
-const HEADER: [u8; 7] = [0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07, 0xAA];
+// Bit recovery remains science-specific; the common byte scanner below also
+// recognizes auxiliary frames before any attempt to inspect their DATA.
+const SCIENCE_HEADER: [u8; 7] = [0xEB, 0x90, 0x55, 0xAA, 0x01, 0x07, 0xAA];
 
 pub const MAX_RECOVERY_PAYLOAD_BYTES: usize = 4096;
 
@@ -116,22 +119,61 @@ impl LvdsBitAlignmentRecoverer {
         if payload.len() > MAX_RECOVERY_PAYLOAD_BYTES {
             return rejected("payload exceeds the 4096-byte synchronization bound", 0);
         }
+        if let Ok(frame) = parse_common_frame(payload)
+            && frame.packet_type() != LvdsPacketType::Science
+        {
+            return rejected(
+                "a complete non-science frame cannot enter science recovery",
+                0,
+            );
+        }
         if let Ok(frame) = decode_scientific_frame(payload) {
             return native(payload, frame, 0);
         }
         let mut found = None;
+        let mut common_candidates = 0;
+        let mut auxiliary = false;
         for (offset, bytes) in payload.windows(LVDS_FRAME_LEN).enumerate() {
-            if bytes.starts_with(&HEADER)
-                && let Ok(frame) = decode_scientific_frame(bytes)
-            {
-                if found.is_some() {
-                    return rejected("multiple complete byte synchronization candidates", 2);
-                }
+            if !bytes.starts_with(&COMMON_HEADER) {
+                continue;
+            }
+            let Ok(common) = parse_common_frame(bytes) else {
+                continue;
+            };
+            if matches!(common.packet_type(), LvdsPacketType::Unknown(_)) {
+                continue;
+            }
+            common_candidates += 1;
+            if common_candidates > 1 {
+                return rejected("multiple complete byte synchronization candidates", 2);
+            }
+            if common.packet_type() != LvdsPacketType::Science {
+                auxiliary = true;
+            } else if let Ok(frame) = decode_scientific_frame(bytes) {
                 found = Some(native(bytes, frame, offset * 8));
             }
         }
+        if auxiliary {
+            return rejected(
+                "an auxiliary byte synchronization candidate cannot enter science recovery",
+                0,
+            );
+        }
         if let Some(result) = found {
             return result;
+        }
+        // This is only a conservative bit-recovery exclusion, never acceptance
+        // or type dispatch. A malformed auxiliary prefix must not suppress a
+        // genuine complete byte-aligned frame found by the checks above.
+        if payload.starts_with(&FRAME_HEADER)
+            && payload
+                .get(6)
+                .is_some_and(|&code| matches!(code, 0xAB | 0xAC))
+        {
+            return rejected(
+                "an auxiliary TYPE prefix cannot enter science bit recovery",
+                0,
+            );
         }
         if !enabled {
             return rejected("no complete native frame; bit recovery is disabled", 0);
@@ -188,7 +230,7 @@ fn native(bytes: &[u8], frame: ScientificFrame, bit_offset: usize) -> RecoveryRe
 
 fn search_bits(payload: &[u8], context: RecoveryContext) -> RecoveryResult {
     let mut found = None;
-    let Some(last_header) = (payload.len() * 8).checked_sub(HEADER.len() * 8) else {
+    let Some(last_header) = (payload.len() * 8).checked_sub(SCIENCE_HEADER.len() * 8) else {
         return rejected("not enough received bits for the fixed science header", 0);
     };
     for bit_offset in 0..=last_header {
@@ -225,7 +267,7 @@ fn search_bits(payload: &[u8], context: RecoveryContext) -> RecoveryResult {
 }
 
 fn matches_header(payload: &[u8], bit_offset: usize) -> bool {
-    HEADER
+    SCIENCE_HEADER
         .iter()
         .enumerate()
         .all(|(index, &expected)| aligned_byte(payload, bit_offset + index * 8) == expected)

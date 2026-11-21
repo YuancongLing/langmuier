@@ -1,0 +1,14 @@
+﻿    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.42s
+     Running unittests src\main.rs (target\debug\deps\langmuier-a0a2119bee5495dc.exe)
+
+running 2 tests
+USER_CAPTURE independent total=467 target=467 complete=466 structure=237 parsed=237 accepted=237 duplicates=0 conflicts=0
+USER_CAPTURE crc_check=disabled total=467 target=467 stats=LvdsReceiveStats { udp_packets: 467, source_rejected_packets: 0, outer_valid: 467, complete_frames: 466, science_frames: 237, excitation_frames: 0, gnss_attitude_frames: 0, unknown_type_frames: 0, structure_errors: 230, auxiliary_duplicates: 0, auxiliary_conflicts: 0, type_events_dropped: 0, structure_valid_frames: 237, parsed_frames: 237, parse_failures: 229, header_errors: 229, length_errors: 0, field_errors: 0, timestamp_errors: 0, adc_errors: 0, accepted_frames: 237, duplicates: 0, conflicts: 0 } plot_events=237 points=[23700, 23700] enqueued=237 sink_written=237 closed=true file_frames=237 file_bytes=96973
+test backend::e2e_tests::e7_user_capture_no_crc_science_roundtrip ... ok
+CSV_ACCEPTANCE format=Csv total=467 target=467 accepted=237 rows=23700 lines=23701 bytes=1636896 closed=true path=data\scientific-20261118-005825.405.csv
+CSV_ACCEPTANCE format=LpdAndCsv total=467 target=467 accepted=237 rows=23700 lines=23701 bytes=1636896 closed=true path=data\scientific-20261118-005825.742.csv
+CSV_INDEPENDENT_READBACK frames=237 rows=23700 ADC_pairs=23700 rollback_indexes=[] first=Some((68, Timestamp { utc_seconds: 348, microseconds: 999964 })) random_middle=Some((155, Timestamp { utc_seconds: 353, microseconds: 349964 })) last=Some((22, Timestamp { utc_seconds: 372, microseconds: 299964 }))
+test backend::e2e_tests::scientific_csv_tests::e8_user_capture_scientific_csv_all_modes_readback ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 229 filtered out; finished in 0.54s
+

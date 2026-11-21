@@ -1,0 +1,47 @@
+{
+  "scope": "S02-REAL-02 core and excitation CSV local fix; backend, UI and hardware checks are separate",
+  "result": "PASS",
+  "capture_sha256_unchanged": "9a5d9a73aa46fb2fb24962b2e2b7d4081646477ae5d1f62ee2ee46c375b53907",
+  "real_zero_interval_regression": {
+    "raw_record_id": 5,
+    "outer_sequence": 9407,
+    "before_core": "100 x Some(367141944)",
+    "before_csv": "100 x 367141944",
+    "after_core": "100 x None",
+    "after_csv": "100 empty sample_time_us; all raw slots preserved; NO_SAMPLE_TIME"
+  },
+  "red_logs": [
+    "core-csv-isolated-red.log",
+    "csv-isolated-red.log"
+  ],
+  "initial_green_attempt": {
+    "log": "core-csv-green.log",
+    "failure": "invalid_microseconds_and_time_underflow_do_not_wrap_or_panic",
+    "cause": "new negative predicate assertion placed in positive interval test",
+    "resolution": "corrected assertion; production change not altered"
+  },
+  "final_test_command": "cargo test -p langmuir-core -p langmuir-storage --locked --target-dir target/qa/lvds-multitype-s02-real-02/core-csv-build --no-fail-fast -- --nocapture",
+  "test_counts": {
+    "passed": 180,
+    "failed": 0,
+    "ignored": 1
+  },
+  "test_log": "core-csv-green-final.log",
+  "clippy_command": "cargo clippy -p langmuir-core -p langmuir-storage --all-targets --locked --target-dir target/qa/lvds-multitype-s02-real-02/core-csv-build -- -D warnings",
+  "clippy_exit_code": 0,
+  "clippy_log": "core-csv-clippy.log",
+  "legacy_positive_interval_golden": "original file and first 22 columns of every v2 row remain identical; all 400 times numeric",
+  "csv_v2": {
+    "columns": 25,
+    "appended": [
+      "interval_us",
+      "points",
+      "waveform_status"
+    ],
+    "timed_status": "TIMED_SAMPLES",
+    "untimed_status": "NO_SAMPLE_TIME",
+    "wave_V": "raw wave_mV / 1000, numeric even for untimed slots; status distinguishes slots from timed measurements"
+  },
+  "api": "ExcitationFrame::has_sample_timing() is interval_us > 0; sample_time_us returns None for interval_us == 0",
+  "protected_validation": "positive-interval underflow remains an error; invalid timed CSV closes the sink, counts no frame and writes no partial window; status frames retain existing mode/point/status/reserved/mV validation"
+}

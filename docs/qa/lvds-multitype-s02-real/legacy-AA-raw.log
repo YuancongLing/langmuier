@@ -1,0 +1,12 @@
+COMMAND: cargo test -p langmuir-desktop --features mock --locked real_capture_ -- --ignored --nocapture
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.42s
+     Running unittests src\main.rs (target\debug\deps\langmuier-a0a2119bee5495dc.exe)
+
+running 2 tests
+{"all_metadata_and_payload_bytes_equal":true,"archive":"D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real\\legacy-AA-regression.lvdsraw","file_bytes":183750,"normal_footer_eof":true,"status":"PASS","udp_payload_bytes":136830,"udp_records":467}
+test backend::raw_history_real_tests::real_capture_raw_archive_preserves_every_received_udp_record ... ok
+{"cross_record_bits_used":false,"preview_code10_values_checked":93200,"quality_counts":{"NATIVE":237,"RECOVERY_CANDIDATE":229,"REJECTED":1},"status":"PASS","udp_records":467}
+test backend::raw_history_real_tests::real_capture_recovery_matches_independent_bit_boundary_audit ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 265 filtered out; finished in 0.27s
+

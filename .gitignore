@@ -11,3 +11,20 @@ __pycache__/
 *.lpd
 *.lvdsraw
 .DS_Store
+
+# Build and delivery artifacts stay local; the repository carries source and fixtures.
+*.exe
+*.dll
+*.pdb
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tgz
+
+# Full-capture expanded references and local verification snapshots are reproducible.
+/docs/qa/lvds-multitype-s02-real/independent-manifest.json
+/docs/qa/lvds-multitype-s02-real-02/independent-manifest.json
+/docs/qa/lvds-multitype-s02-real-02/cumulative-worktree-tracked.patch
+/docs/qa/star-simulator/*.png

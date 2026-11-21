@@ -1,0 +1,47 @@
+{
+  "result": "PASS",
+  "capture": {
+    "path": "D:\\RUST\\2026102401.pcapng",
+    "bytes": 172292,
+    "sha256": "1bfe2ff956ad4e372bb15c2da04910c3d6a469b85d772ccbf83e4da4e48cca07"
+  },
+  "packets": 467,
+  "udp_records": 467,
+  "packet_diagnostics": [],
+  "clean_pcap_eof": true,
+  "udp_payload_bytes": 136830,
+  "outer_errors": {},
+  "inner_length_counts": {
+    "269": 466,
+    "268": 1
+  },
+  "native_exact_public_frames": {
+    "AA": 237,
+    "STRUCTURE_INVALID": 230
+  },
+  "complete_byte_sync_frames_at_positive_offsets": {},
+  "unvalidated_offset6_byte_counts_not_packet_types": {
+    "AA": 238,
+    "7A": 228,
+    "D5": 1
+  },
+  "existing_AA_diagnostic_quality_counts": {
+    "NATIVE": 237,
+    "REJECTED": 1,
+    "RECOVERY_CANDIDATE": 229
+  },
+  "existing_AA_candidate_shift_counts": {
+    "0": 1,
+    "4": 228,
+    "1": 1
+  },
+  "existing_AA_candidate_missing_tail_bits": {
+    "8": 1,
+    "4": 228,
+    "1": 1
+  },
+  "production_crc_policy": "CRC_NOT_CHECKED",
+  "cross_record_bits_used": false,
+  "scope": "Independent original-PCAP software audit. Bit-shift candidates are not native auxiliary frames.",
+  "real_mixed_FPGA_acceptance": "BLOCKED: requires real AB/AC mixed capture or device input"
+}

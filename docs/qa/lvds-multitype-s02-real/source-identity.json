@@ -1,0 +1,393 @@
+{
+  "files": [
+    {
+      "path": "Cargo.lock",
+      "sha256": "8fa816695e2a882143bf4885e05a1b6e05c059260b3ff0d1063196ce179a0ef8"
+    },
+    {
+      "path": "Cargo.toml",
+      "sha256": "286ed8e8170a3126c996e457ba2842de68d47321a9c6cdafc1948af2ca0e7aac"
+    },
+    {
+      "path": "apps/desktop/Cargo.toml",
+      "sha256": "fb047b2f7a654e6d7165ef61fa1e919be886cca8b987091ade472a143b5904a5"
+    },
+    {
+      "path": "apps/desktop/src/app.rs",
+      "sha256": "5719f828912296e79934dc025d9dd5d29fad7528e4de0a9bbf814ebcdb7c1e82"
+    },
+    {
+      "path": "apps/desktop/src/app_excitation.rs",
+      "sha256": "4bcfa262f2265c184c3aed3caf14fe033674d8cad44e2e5f86f112cb46f21503"
+    },
+    {
+      "path": "apps/desktop/src/app_excitation_tests.rs",
+      "sha256": "bb0f410b5637ccc4abad76acfa5793da1a9c7ed67a09932a44c5158f23becc28"
+    },
+    {
+      "path": "apps/desktop/src/app_history.rs",
+      "sha256": "c90d03d79f4a37ca1616229386a65fd3bfe581745aac76dab34f7e2ce72364af"
+    },
+    {
+      "path": "apps/desktop/src/app_layout_tests.rs",
+      "sha256": "60520b1031da58647327d2066788f4d4722b2040394a225b90ca3f77e6a8f975"
+    },
+    {
+      "path": "apps/desktop/src/app_parameter_tests.rs",
+      "sha256": "ea35b0d275d1d2093ce94490064fea9824a42fa612acf6069543bf0d7280f985"
+    },
+    {
+      "path": "apps/desktop/src/app_plot_tests.rs",
+      "sha256": "89d605381bedc97b719d2827284abd0fb1539b7499a37e1736ce8a966b523425"
+    },
+    {
+      "path": "apps/desktop/src/app_s02_real_tests.rs",
+      "sha256": "f4067d607aeeb3d551091c90da4dd860eaf938d216590db083f19a222fbed39e"
+    },
+    {
+      "path": "apps/desktop/src/app_star_simulator.rs",
+      "sha256": "0c508695cb340abf950e9aa494360b46074dac983a799d85bb248c86a5e888f0"
+    },
+    {
+      "path": "apps/desktop/src/app_star_simulator_tests.rs",
+      "sha256": "f8d0294d434042e63025783365c410d27755d5c402cb3968ca110470c749cee8"
+    },
+    {
+      "path": "apps/desktop/src/backend.rs",
+      "sha256": "7d993522b272dd092ae3c7aef625a828d8d27f8e87cdca067c8dd795a8a92a99"
+    },
+    {
+      "path": "apps/desktop/src/backend_10bit_tests.rs",
+      "sha256": "8244435e15f460f6e9914bc5cd5180cf0a658b68e4d43c257debf177bafea82f"
+    },
+    {
+      "path": "apps/desktop/src/backend_capture_history_tests.rs",
+      "sha256": "3c58b8e4606ebea0055858afaaff8a12e01481d9976b9d40c213a0ba6f99ed93"
+    },
+    {
+      "path": "apps/desktop/src/backend_e2e_tests.rs",
+      "sha256": "b3a7ae487413e8cc8cce4d6829255574e437262e231196f7322e234c85f30ba3"
+    },
+    {
+      "path": "apps/desktop/src/backend_excitation.rs",
+      "sha256": "bd5a12741729b3d3b719f85dd666cea28e7cb32d69b20edecba4a91c36a9f1c3"
+    },
+    {
+      "path": "apps/desktop/src/backend_excitation_history.rs",
+      "sha256": "08c7a3c3cc600de6f7525b2104b219cc59fe71a940d03b45024ff6fb8a62ce3e"
+    },
+    {
+      "path": "apps/desktop/src/backend_excitation_history_tests.rs",
+      "sha256": "c65e3901c49598fa5aac9b51901539c9aaf9007bcee4a43693d766614444b9e4"
+    },
+    {
+      "path": "apps/desktop/src/backend_excitation_tests.rs",
+      "sha256": "aaae819ef56ac708313341b5b23a2c64d9fb14752a2ed1688138af3136043f19"
+    },
+    {
+      "path": "apps/desktop/src/backend_history.rs",
+      "sha256": "d0afc5924dbb1043e97d268c0d24d629d7b72fa9520a6197c36cecf7551be2f9"
+    },
+    {
+      "path": "apps/desktop/src/backend_multitype_history_tests.rs",
+      "sha256": "a6448799201f636e83d003de3113cb782cd415e35afff66b29be74a1b4f3e2d1"
+    },
+    {
+      "path": "apps/desktop/src/backend_multitype_tests.rs",
+      "sha256": "53eafe99865206418ee54750fca9cb250000b2082d6acef0986c636a1ff0f1ae"
+    },
+    {
+      "path": "apps/desktop/src/backend_raw_history_real_tests.rs",
+      "sha256": "ac0171398fdf9b17910c71d7744dfe47bd0015e7402aae11e556fb30dc3cecbf"
+    },
+    {
+      "path": "apps/desktop/src/backend_raw_storage.rs",
+      "sha256": "303f89a63cc2c206bf25fe792bb91b322226d95d36217b259f242ce47696a36e"
+    },
+    {
+      "path": "apps/desktop/src/backend_recovery_audit.rs",
+      "sha256": "bb9ac2e805b76245974285269971d57e83afae41ca9fb9c3eec497c7f4f2436e"
+    },
+    {
+      "path": "apps/desktop/src/backend_replay_tests.rs",
+      "sha256": "1cdcf8c010740918930e4a8da94991a1020cafc09b4a49cd203b3cfc0595f748"
+    },
+    {
+      "path": "apps/desktop/src/backend_s02_real_tests.rs",
+      "sha256": "267cfb5900e1eadbb30809fdf35256728c8bcba7920c291f105f7d4bae953bf9"
+    },
+    {
+      "path": "apps/desktop/src/backend_scientific_csv_tests.rs",
+      "sha256": "a0388b458e0659c03b7413a977c470aaa414506d32a3bc276706188bfa56b31a"
+    },
+    {
+      "path": "apps/desktop/src/backend_scientific_storage.rs",
+      "sha256": "7cba35f04bc624c29f95839a1d75bedff52910dd8f09504d593782d9b15c0303"
+    },
+    {
+      "path": "apps/desktop/src/backend_star_simulator.rs",
+      "sha256": "91f9cb10d80e51ad695cf3461a206c4454c0b0300e16d0b1226e57df6a80faa0"
+    },
+    {
+      "path": "apps/desktop/src/backend_star_simulator_tests.rs",
+      "sha256": "f8819c16639db8fce45a48e519a75ed807b56cc8ac0d1242b4ef05c77fd96ca6"
+    },
+    {
+      "path": "apps/desktop/src/bridge.rs",
+      "sha256": "122e6e5df4f4592be258cc4662093a71045ea46080507bb32854bbd5d49e6135"
+    },
+    {
+      "path": "apps/desktop/src/buffer.rs",
+      "sha256": "25b4ea5ece81342a54f042f32125d8f468b2b561b7da9678b80701943a2075d2"
+    },
+    {
+      "path": "apps/desktop/src/main.rs",
+      "sha256": "d81497bc8e9579d3fc8c17d456380e5f93fb634dc494384713be266b69edc657"
+    },
+    {
+      "path": "apps/desktop/src/mock.rs",
+      "sha256": "633cde4102733c573e017b20606d42f4840edc3b14071d86432f7152f95b75e9"
+    },
+    {
+      "path": "apps/desktop/src/perf.rs",
+      "sha256": "0b285a25da39b619dc66db2b906983909951eb10fd0cf114ca312e9f5aa0eaad"
+    },
+    {
+      "path": "apps/desktop/src/star_simulator.rs",
+      "sha256": "b48eee874dbc4b1e728acf94c317c01dfa655f135eb8851a85ad847cc59df1cd"
+    },
+    {
+      "path": "apps/desktop/src/ui/fonts.rs",
+      "sha256": "f7dd0a3bf183818c14e9ff89bee6aec2ab0b8230d0decc4325731422b812ff70"
+    },
+    {
+      "path": "apps/desktop/src/ui/mod.rs",
+      "sha256": "a1278f1d4664c7675626e609efb5ded1aef284fe14c7d1ff6073a6fb88ed5173"
+    },
+    {
+      "path": "apps/desktop/src/ui/theme.rs",
+      "sha256": "b0131346fea924b311bf00d446640cc32e9bf31d5df6fe4c9e48e9dc5611c08c"
+    },
+    {
+      "path": "apps/desktop/src/voltage.rs",
+      "sha256": "ff1e8422f2c2ac005ba9dfc187f92e1067372fa22443ca76c91030a5af49f452"
+    },
+    {
+      "path": "crates/langmuir-core/Cargo.toml",
+      "sha256": "fe52d9f3c81e6f3543bfef4b8048ca7ddfe5c310e4b95ca104affaeafe3cab72"
+    },
+    {
+      "path": "crates/langmuir-core/src/checksum.rs",
+      "sha256": "ffff9a274c98efdc190f00f3437f3a7271f17f0b774fa1376002d260b6639ccb"
+    },
+    {
+      "path": "crates/langmuir-core/src/command.rs",
+      "sha256": "df18a4dd061f8ff6ea267e2319e1af92227584eaa6f1db45bf1a6065b4170d1b"
+    },
+    {
+      "path": "crates/langmuir-core/src/error.rs",
+      "sha256": "87380c11325a648e0607fd5776a438239cc9df94b0c2a71ad8984205ea74d288"
+    },
+    {
+      "path": "crates/langmuir-core/src/excitation.rs",
+      "sha256": "d723e6712590477ad69dbb5699c403ee61ca9d294200eab1a8a8f1d8e0abdaf4"
+    },
+    {
+      "path": "crates/langmuir-core/src/framing.rs",
+      "sha256": "a44d90a2318c57ea53699e4eeb0310e8b643ec271f5166d9ec1e4f424dfc8ae9"
+    },
+    {
+      "path": "crates/langmuir-core/src/lib.rs",
+      "sha256": "697f4d60d5dbaec3a48a39c1f90a54d697345eb67bd5b5095b44b04018965853"
+    },
+    {
+      "path": "crates/langmuir-core/src/lvds.rs",
+      "sha256": "4f03b954e55a4aca31eaf56eb270a9014726bec940e4e815a5908d50537561b2"
+    },
+    {
+      "path": "crates/langmuir-core/src/lvds_common.rs",
+      "sha256": "986e407577524c7350ec751d53a81a31d9b2c72cc124cbb91b73f809e61871e3"
+    },
+    {
+      "path": "crates/langmuir-core/src/lvds_protocol_tests.rs",
+      "sha256": "2457a0a8a3750b246ddd15924102e4a9056a9d98a115bc72bd644fa5618516f7"
+    },
+    {
+      "path": "crates/langmuir-core/src/lvds_recovery.rs",
+      "sha256": "4124a5afa8d7bcb6e492370bfcc07afc6026dd59df344c0d6bfde784afb0d2a8"
+    },
+    {
+      "path": "crates/langmuir-core/src/lvds_recovery_perf_tests.rs",
+      "sha256": "343a56b927b697fc4ea9135692deea22107796080d323982d7577095d76957ed"
+    },
+    {
+      "path": "crates/langmuir-core/src/lvds_recovery_tests.rs",
+      "sha256": "e16c3fdad38758dfa8c3dafb6123591873a1db9048350456cd7db0db0ae92606"
+    },
+    {
+      "path": "crates/langmuir-core/src/lvds_test_support.rs",
+      "sha256": "9ae7871f256bf518a75ec06ab39f0669bd84230cd6b75a886440f249f18132ac"
+    },
+    {
+      "path": "crates/langmuir-core/src/model.rs",
+      "sha256": "c243c68e46b15f3203125af226332cc31360a178cc90285628fc73fad918c80d"
+    },
+    {
+      "path": "crates/langmuir-core/src/rs422.rs",
+      "sha256": "828a9a5dc4fd402bdbf93ec3c72408fb37bff91676ccc4c8e7ff026fb8ffc6e0"
+    },
+    {
+      "path": "crates/langmuir-core/src/star_broadcast.rs",
+      "sha256": "7a22eeda8a1736d495dd48108c4c53f170e3fbd9b9708cd8a0cca6dfcbe075e0"
+    },
+    {
+      "path": "crates/langmuir-core/src/udp_lvds.rs",
+      "sha256": "fb268768d894c67dcb8f8bbfe4b83f10dec3c75b39ada1e1b5d87c18723b107f"
+    },
+    {
+      "path": "crates/langmuir-core/src/udp_lvds_dedup.rs",
+      "sha256": "8d62af6db578ac9d4f0d9fe09a68ffba6d82f19353760eb18d6bd50834e76163"
+    },
+    {
+      "path": "crates/langmuir-core/src/udp_lvds_frame_gate.rs",
+      "sha256": "906ba66253c984160f61dd71ab83b605a5d619814e5034d74d47a689bdaf3ee8"
+    },
+    {
+      "path": "crates/langmuir-core/src/udp_lvds_sequence.rs",
+      "sha256": "07d37a71b27e5a613f1df1b35d47653123a3e5d1d0c75a21fa528e584f305f4d"
+    },
+    {
+      "path": "crates/langmuir-core/tests/excitation_vectors.rs",
+      "sha256": "1e64d6ccd2ce71e8c5f85154e2048da3c7d6e45735a999392efe54be995146d4"
+    },
+    {
+      "path": "crates/langmuir-core/tests/lvds_multitype.rs",
+      "sha256": "a8ff208eeec012c611b6f1d3fa385a574666ca48d865e1b48445758123760dac"
+    },
+    {
+      "path": "crates/langmuir-core/tests/star_broadcast_vectors.rs",
+      "sha256": "0bbce7da9db3146def940b7dd01467ba1d75be985faa60d2a500e9031e90b43d"
+    },
+    {
+      "path": "crates/langmuir-storage/Cargo.toml",
+      "sha256": "1c87336c57135d1ecc95f3e97f4f9a99b40d2f1c4eb10b28441266bf771ab6c5"
+    },
+    {
+      "path": "crates/langmuir-storage/src/binary.rs",
+      "sha256": "d5ae9abf20e160af0e248377c6c473bd43676df5cfe6d4f8f339e1ddbacfd99a"
+    },
+    {
+      "path": "crates/langmuir-storage/src/binary_v3.rs",
+      "sha256": "83fff5cefb8a837e3b1e14d9376dfe1db342086a3f846e7b79b7673ae0d1c9c2"
+    },
+    {
+      "path": "crates/langmuir-storage/src/error.rs",
+      "sha256": "0b957430608daddd67d67c74b83265099c9d1810624e1e9ccb72727a965d4bfd"
+    },
+    {
+      "path": "crates/langmuir-storage/src/excitation_csv.rs",
+      "sha256": "915fa455c7673f58b9f0459ed6ed5e6d7bd527ca01e005ef14daa2811d1c7461"
+    },
+    {
+      "path": "crates/langmuir-storage/src/hdf5.rs",
+      "sha256": "804699b1d68b0c945b010c864c4596f4cea5fe27d35aac2d89273346a67a2889"
+    },
+    {
+      "path": "crates/langmuir-storage/src/legacy.rs",
+      "sha256": "d8ae90bf2e8a06b3a066a5446c4fb6e974b777744a8a019082285c3db9b0f336"
+    },
+    {
+      "path": "crates/langmuir-storage/src/lib.rs",
+      "sha256": "e27bcdb90407e0f20465741469bd7ccd5050d21889c0457f5e6cffdcb0a6c3f1"
+    },
+    {
+      "path": "crates/langmuir-storage/src/memory.rs",
+      "sha256": "937c6a9f63d93eec735d8a9365ace2074d953595a5b7223958751f94fb058d63"
+    },
+    {
+      "path": "crates/langmuir-storage/src/metrics.rs",
+      "sha256": "fb8aa9fdf9942be3b74b6a9ea1a73b080985d655f93fc0691b0320cf0726951f"
+    },
+    {
+      "path": "crates/langmuir-storage/src/raw.rs",
+      "sha256": "34336484255f4e891fd67d488108e7f047d0ab4b2cce1fd822dbadf529f896b7"
+    },
+    {
+      "path": "crates/langmuir-storage/src/raw_tests.rs",
+      "sha256": "df533851cbb5264259caedfb95d231e04cae30b938fa8fd18755b18ed68e4d85"
+    },
+    {
+      "path": "crates/langmuir-storage/src/scientific_csv.rs",
+      "sha256": "da0fd2a73ea5d70193c7bb3a9536d496b7032b3ad6488f6e5aae52e01d8a3e61"
+    },
+    {
+      "path": "crates/langmuir-storage/src/service.rs",
+      "sha256": "4e36a8ae890bad47852799177ae20a5792ffb944d6164abd47251e9d40dbf63b"
+    },
+    {
+      "path": "crates/langmuir-transport/Cargo.toml",
+      "sha256": "1243f4d19c23734a110f93ecf1e4a40e16c064417b2df00192e42d864221e932"
+    },
+    {
+      "path": "crates/langmuir-transport/examples/replay_bench.rs",
+      "sha256": "3a90256ae9999fe7e7198965f8e98bb2c0bf5e7e582d57a47a7f827f7d4f393d"
+    },
+    {
+      "path": "crates/langmuir-transport/src/core_adapter.rs",
+      "sha256": "77651804063823a55ab8cd34dcb4d4344859dae6df347235d73c10ad38b8f4c6"
+    },
+    {
+      "path": "crates/langmuir-transport/src/error.rs",
+      "sha256": "43f0e8680147ca76411c10e9a6023df1eea0cf4985eb8b468e7add32d9290990"
+    },
+    {
+      "path": "crates/langmuir-transport/src/lib.rs",
+      "sha256": "d1777620711214a469581503209dd1d42896ceac6da91f2e16e0b2fc15e6f9ac"
+    },
+    {
+      "path": "crates/langmuir-transport/src/metrics.rs",
+      "sha256": "2edc300841badd8a1039f9646d52985ba654ca1e71f8b209326fcfcb8c7e929c"
+    },
+    {
+      "path": "crates/langmuir-transport/src/mock.rs",
+      "sha256": "e6e209ca0e8a94be61b7e0ccdd8a291814d4360377ee97d64ddf5def0cdec4c2"
+    },
+    {
+      "path": "crates/langmuir-transport/src/pcapng.rs",
+      "sha256": "d094e5e4b6bb118a28e83ba32a17f6abf4cc4e754fd75d36e9d4f2fd16e7fe83"
+    },
+    {
+      "path": "crates/langmuir-transport/src/pipeline_test.rs",
+      "sha256": "ad8b4c623bd23bbcc91a7c925fc35ce82930d8ed2b65970420bad57646445389"
+    },
+    {
+      "path": "crates/langmuir-transport/src/serial.rs",
+      "sha256": "a6b9bb0fcbb7929e5b2ab3c0bf60ffe0b9fa9965e13de5f1cc0b338294ba4d13"
+    },
+    {
+      "path": "crates/langmuir-transport/src/transport.rs",
+      "sha256": "1ee783f0356e81c3099f5302bb4227e49e8b14459679b0d2d432a7534a72dd4e"
+    },
+    {
+      "path": "crates/langmuir-transport/src/udp.rs",
+      "sha256": "7d28eb94fea0efc5ef5da05b25086363543e036ae6681dfd9edd1ff00a4cfb0c"
+    },
+    {
+      "path": "crates/langmuir-transport/src/worker.rs",
+      "sha256": "71ba54065925273ab486a7a2261b698a7b0ceb6eb9e46637543379245b11bb10"
+    },
+    {
+      "path": "crates/langmuir-transport/src/worker_broadcast_tests.rs",
+      "sha256": "cc5157ca5a1521051b6f697cdc2b1210b98580d4f20d3dd04f0a568148534c6e"
+    },
+    {
+      "path": "tools/protocol-cli/Cargo.toml",
+      "sha256": "f8cc37a2c104c16f3e0b5b4018ef08834f34ed5c852be772a821b933a362ba77"
+    },
+    {
+      "path": "tools/protocol-cli/src/main.rs",
+      "sha256": "7c7b5661e38921c221fbfb4719b8ecf75bfb96531ac149b5c6a9bca890f2055f"
+    }
+  ],
+  "sha256_of_sorted_manifest": "34261db55bce87a06347c675db98a542304e16308deb8b4800096a9ae2f8da73"
+}

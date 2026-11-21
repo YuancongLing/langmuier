@@ -1,0 +1,38 @@
+{
+  "result": "PASS",
+  "capture": {
+    "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s01\\SYNTHETIC-20AA-1AB-1AC.pcapng",
+    "bytes": 8144,
+    "sha256": "6727eec810e191b1ca93431a433d1194eda13fe27098619719082b8ae562d9e8"
+  },
+  "packets": 22,
+  "udp_records": 22,
+  "packet_diagnostics": [],
+  "clean_pcap_eof": true,
+  "udp_payload_bytes": 6446,
+  "outer_errors": {},
+  "inner_length_counts": {
+    "269": 22
+  },
+  "native_exact_public_frames": {
+    "AA": 20,
+    "AB": 1,
+    "AC": 1
+  },
+  "complete_byte_sync_frames_at_positive_offsets": {},
+  "unvalidated_offset6_byte_counts_not_packet_types": {
+    "AA": 20,
+    "AB": 1,
+    "AC": 1
+  },
+  "existing_AA_diagnostic_quality_counts": {
+    "NATIVE": 20,
+    "REJECTED": 2
+  },
+  "existing_AA_candidate_shift_counts": {},
+  "existing_AA_candidate_missing_tail_bits": {},
+  "production_crc_policy": "CRC_NOT_CHECKED",
+  "cross_record_bits_used": false,
+  "scope": "Independent original-PCAP software audit. Bit-shift candidates are not native auxiliary frames.",
+  "real_mixed_FPGA_acceptance": "BLOCKED: requires real AB/AC mixed capture or device input"
+}

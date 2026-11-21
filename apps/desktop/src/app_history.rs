@@ -137,6 +137,7 @@ impl LangmuirDesktopApp {
     }
 
     fn apply_history_status(&mut self, status: HistoryStatus) {
+        let previous = self.lvds_view.history.status.clone();
         let history = &mut self.lvds_view.history;
         if status.generation < history.status.generation {
             return;
@@ -153,6 +154,7 @@ impl LangmuirDesktopApp {
             history.seek = status.position_fraction;
         }
         history.status = status;
+        self.sync_excitation_history(&previous);
         if changed {
             self.reset_plot_interaction();
         }
@@ -366,14 +368,7 @@ impl LangmuirDesktopApp {
     }
 
     pub(super) fn history_open_button(&mut self, ui: &mut Ui, short: bool) {
-        if ui
-            .button(if short {
-                "历史"
-            } else {
-                "打开历史数据"
-            })
-            .clicked()
-        {
+        if ui.button(if short { "历史" } else { "打开历史" }).clicked() {
             self.lvds_view.history.dialog_open = true;
         }
     }
@@ -436,6 +431,13 @@ impl LangmuirDesktopApp {
             ui.menu_button("数据", |ui| {
                 self.raw_record_button(ui, request, true);
                 self.recovery_controls(ui, request);
+                ui.collapsing("接收详情", |ui| {
+                    super::lvds_type_details(ui, &self.lvds_view.history.status.receive_stats);
+                    ui.label(format!(
+                        "辅助原始帧：保留最近 {} 条",
+                        self.lvds_view.history.status.auxiliary_frames.len()
+                    ));
+                });
             });
         });
         self.history_progress(ui, request);
@@ -564,6 +566,9 @@ impl LangmuirDesktopApp {
                     self.history_progress(ui, &mut request);
                     self.history_file_details(ui, &mut request);
                     self.history_export_controls(ui, &mut request);
+                    ui.separator();
+                    self.excitation_history_controls(ui, &mut request);
+                    self.excitation_csv_controls(ui, &mut request);
                     self.history_anomalies(ui);
                 }
                 ui.separator();
@@ -577,7 +582,7 @@ impl LangmuirDesktopApp {
     }
 
     fn history_source_controls(&mut self, ui: &mut Ui, request: &mut Option<UiRequest>) {
-        ui.label("打开 LVDSRAW、LPD v3、PCAPNG 查看双通道历史波形。");
+        ui.label("打开 LVDSRAW、LPD v3、PCAPNG 查看 AA 科学波形与 AB 激励波形。");
         ui.horizontal(|ui| {
             ui.add_sized(
                 [ui.available_width() - 125.0, 28.0],
@@ -1197,10 +1202,7 @@ mod tests {
                 }
             })
             .collect();
-        assert!(
-            labels.iter().any(|text| text == "打开历史数据"),
-            "{labels:?}"
-        );
+        assert!(labels.iter().any(|text| text == "打开历史"), "{labels:?}");
         assert!(
             labels.iter().any(|text| text == "开始原始录制"),
             "{labels:?}"

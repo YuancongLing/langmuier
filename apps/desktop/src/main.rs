@@ -5,6 +5,7 @@ mod buffer;
 #[cfg(feature = "mock")]
 mod mock;
 mod perf;
+mod star_simulator;
 mod ui;
 mod voltage;
 
@@ -12,7 +13,8 @@ use app::LangmuirDesktopApp;
 use backend::RealBackendBridge;
 use bridge::BackendBridge;
 
-const APP_NAME: &str = "Langmuier Probe Ground Control";
+const APP_VERSION: &str = "S02-REAL-02 (20261121)";
+const APP_NAME: &str = "Langmuier Probe Ground Control · S02-REAL-02 (20261121)";
 
 fn main() -> eframe::Result<()> {
     let arguments: Vec<String> = std::env::args().collect();

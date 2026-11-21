@@ -1,0 +1,9 @@
+{
+  "scope": "Approximate 1-second process samples during normal-paced non-Mock backend test; excludes later history checks; not GUI benchmark",
+  "paced_wall_seconds": 174.5007969,
+  "samples": 174,
+  "cpu_seconds_delta": 0.578125,
+  "peak_working_set_bytes": 90464256,
+  "peak_private_bytes": 73527296,
+  "total_test_wall_seconds": 401.485176499933
+}

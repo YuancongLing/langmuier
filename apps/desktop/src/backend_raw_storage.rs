@@ -159,6 +159,7 @@ impl PcapRawTask {
                                             RawDestination::Captured(udp.destination),
                                             &udp.payload,
                                             at,
+                                            packet.timestamp,
                                             receipt.id,
                                             |_| {},
                                         );

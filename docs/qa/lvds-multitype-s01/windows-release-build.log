@@ -1,0 +1,5 @@
+﻿   Compiling langmuir-core v0.1.0 (D:\RUST\langmuier\crates\langmuir-core)
+   Compiling langmuir-storage v0.1.0 (D:\RUST\langmuier\crates\langmuir-storage)
+   Compiling langmuir-transport v0.1.0 (D:\RUST\langmuier\crates\langmuir-transport)
+   Compiling langmuir-desktop v0.1.0 (D:\RUST\langmuier\apps\desktop)
+    Finished `release` profile [optimized] target(s) in 41.50s

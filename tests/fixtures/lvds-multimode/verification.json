@@ -1,0 +1,42 @@
+{
+  "result": "PASS",
+  "fixture_sha256": "3ed428dee322ebc06e7a2aef431c802bb03555476b9b3f4659528d12245cfd03",
+  "packets": 53,
+  "type_counts": {
+    "AA": 26,
+    "AB": 13,
+    "AC": 13
+  },
+  "other_udp": 1,
+  "AA_samples_per_channel": 2600,
+  "AB_stages": 11,
+  "AB_timed_frames": 8,
+  "AB_no_sample_time_frames": 5,
+  "AB_wave_slots": 1300,
+  "AB_timed_samples": 800,
+  "AB_null_sample_times": 500,
+  "PA0_wrap_subset_AB_indexes": [
+    6,
+    7
+  ],
+  "original_udp_payload_and_endpoints_and_timestamps_equal": true,
+  "if_tsresol": 9,
+  "reference_crc_matches": 52,
+  "all_reference_crc_match": true,
+  "production_crc_policy": "CRC_NOT_CHECKED",
+  "independent_reader": "tools/qa/lvds_s02_real02_reference.py + tools/qa/lvds_raw_recovery_reference.py",
+  "production_readback": {
+    "exe_version": "S02-REAL-02 (20261121)",
+    "exe_sha256": "c0f0cbdf7dd515de182ec96f0cd7b3f9a43cf2932ca005f48f49a2ba114cb38c",
+    "command_arguments": [
+      "--audit-pcap",
+      "tests/fixtures/lvds-multimode/REAL-SUBSET-202611212141.pcapng"
+    ],
+    "exit_code": 0,
+    "counts_and_no_business_errors_match": true,
+    "scope": "CLI decode only; no claim of GUI interaction or storage"
+  },
+  "deterministic_regeneration_byte_equal": true,
+  "existing_output_overwrite_refused": true,
+  "original_source_unchanged_sha256": "9a5d9a73aa46fb2fb24962b2e2b7d4081646477ae5d1f62ee2ee46c375b53907"
+}

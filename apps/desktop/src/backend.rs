@@ -16,11 +16,12 @@ use std::{
 use chrono::Local;
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TrySendError, bounded};
 use langmuir_core::{
-    Command, DEPLOYED_LVDS_RAW_FRAME_LEN, FrameError, FrameQuality, LvdsBitAlignmentRecoverer,
-    LvdsStreamDecoder, ReassembledLvdsFrame, RecoveryAnchor, RecoveryContext, RecoveryResult,
-    Rs422StreamDecoder, Rs422Telemetry, SAMPLE_INTERVAL_MICROS, ScientificFrame,
-    UdpLvdsDisposition, UdpLvdsError, UdpLvdsReassembler, UdpLvdsScienceGate,
-    UdpLvdsSequenceMetrics, UdpLvdsSequenceMonitor, parse_udp_lvds_datagram, reconstruct_adc16,
+    Command, DEPLOYED_LVDS_RAW_FRAME_LEN, ExcitationRecord, FrameError, FrameQuality,
+    LvdsBitAlignmentRecoverer, LvdsPacketType, LvdsStreamDecoder, ReassembledLvdsFrame,
+    RecoveryAnchor, RecoveryContext, RecoveryResult, Rs422StreamDecoder, Rs422Telemetry,
+    SAMPLE_INTERVAL_MICROS, ScientificFrame, UdpLvdsDisposition, UdpLvdsError, UdpLvdsFrameGate,
+    UdpLvdsReassembler, UdpLvdsScienceGate, UdpLvdsSequenceMetrics, UdpLvdsSequenceMonitor,
+    find_common_frame, parse_common_frame, parse_udp_lvds_datagram, reconstruct_adc16,
 };
 use langmuir_storage::{BatchWriter, RawDestination, StorageEvent, StorageServiceConfig};
 use langmuir_transport::ReaderMetricsSnapshot;
@@ -31,10 +32,11 @@ use langmuir_transport::{
 use langmuir_transport::{CapturePacket, PcapNgReader};
 
 use crate::bridge::{
-    BackendBridge, BackendEvent, BackendStateSnapshot, BridgeError, LinkKind, LinkMetricsSnapshot,
-    LogLevel, LvdsReceiveStats, LvdsStatusSnapshot, ReplayProgress, ScientificSaveFormat,
-    ScientificStorageStatus, TELEMETRY_POLL_INTERVAL_MAX_MILLIS,
-    TELEMETRY_POLL_INTERVAL_MIN_MILLIS, TelemetrySnapshot, UiRequest,
+    BackendBridge, BackendEvent, BackendStateSnapshot, BridgeError, ExcitationDecodeFailure,
+    LinkKind, LinkMetricsSnapshot, LogLevel, LvdsPacketObservation, LvdsReceiveStats,
+    LvdsStatusSnapshot, ReplayProgress, ScientificSaveFormat, ScientificStorageStatus,
+    TELEMETRY_POLL_INTERVAL_MAX_MILLIS, TELEMETRY_POLL_INTERVAL_MIN_MILLIS, TelemetrySnapshot,
+    UiRequest,
 };
 
 const BRIDGE_REQUEST_CAPACITY: usize = 128;
@@ -56,12 +58,37 @@ static NEXT_LVDS_SOURCE: AtomicU64 = AtomicU64::new(1);
 mod scientific_storage;
 use scientific_storage::{CaptureProgress, ScientificCaptureSink};
 
+#[path = "backend_excitation.rs"]
+mod excitation;
+
 #[path = "backend_history.rs"]
 mod history;
 #[path = "backend_raw_storage.rs"]
 mod raw_storage;
 #[path = "backend_recovery_audit.rs"]
 mod recovery_audit;
+
+#[path = "backend_star_simulator.rs"]
+mod star_simulator;
+
+#[cfg(test)]
+#[path = "backend_star_simulator_tests.rs"]
+mod star_simulator_tests;
+
+#[cfg(test)]
+#[path = "backend_multitype_tests.rs"]
+mod multitype_tests;
+
+#[cfg(test)]
+#[path = "backend_excitation_tests.rs"]
+mod excitation_tests;
+
+#[cfg(test)]
+#[path = "backend_s02_real02_tests.rs"]
+mod s02_real02_tests;
+#[cfg(test)]
+#[path = "backend_s02_real_tests.rs"]
+mod s02_real_tests;
 
 fn hex_bytes(bytes: &[u8]) -> String {
     let mut output = String::with_capacity(bytes.len() * 2);
@@ -258,6 +285,7 @@ impl PcapReplay {
                     RawDestination::Captured(udp.destination),
                     &udp.payload,
                     protocol_now,
+                    packet.timestamp,
                     raw_id,
                     |delivery| {
                         deliveries.push(delivery);
@@ -278,7 +306,10 @@ impl PcapReplay {
     }
     fn empty_science_error(&self) -> Option<String> {
         let stats = &self.ingress.receive_stats;
-        if stats.accepted_frames > 0 {
+        if stats.accepted_frames > 0
+            || stats.excitation_frames > 0
+            || stats.gnss_attitude_frames > 0
+        {
             return None;
         }
         let reason = if self.progress.target_udp_packets == 0 {
@@ -346,6 +377,7 @@ pub fn audit_pcap(path: &str) -> Result<String, String> {
                 RawDestination::Captured(udp.destination),
                 &udp.payload,
                 at,
+                packet.timestamp,
                 ingress.record_id,
                 |_| {
                     formal = formal.saturating_add(1);
@@ -353,6 +385,8 @@ pub fn audit_pcap(path: &str) -> Result<String, String> {
             );
         }
         ingress.expire_at(at);
+        ingress.excitation_records.clear();
+        ingress.excitation_errors.clear();
     }
     Ok(format!(
         "crc_validation=disabled total_packets={total} target_udp_packets={target} formal_science={formal} file_frames=NOT_RUN\nstats={:?}\nprotocol={:?}",
@@ -425,6 +459,9 @@ struct UdpLvdsIngress {
     reassembler: UdpLvdsReassembler,
     science_gate: UdpLvdsScienceGate,
     recovery_gate: UdpLvdsScienceGate,
+    frame_gate: UdpLvdsFrameGate,
+    outer_sequence_gate: UdpLvdsFrameGate,
+    science_stream_suppressed: u64,
     flow: Option<(SocketAddr, RawDestination)>,
     reassembly_prior: langmuir_core::UdpLvdsReassemblyMetrics,
     sequence_monitor: UdpLvdsSequenceMonitor,
@@ -441,6 +478,10 @@ struct UdpLvdsIngress {
     anchor_bytes: Vec<u8>,
     recovery_high_water: Option<RecoveryAnchor>,
     observations: VecDeque<ScienceObservation>,
+    packet_observations: VecDeque<LvdsPacketObservation>,
+    excitation_records: VecDeque<ExcitationRecord>,
+    excitation_errors: VecDeque<ExcitationDecodeFailure>,
+    excitation_latest: Option<ExcitationRecord>,
     audit_rows: VecDeque<serde_json::Value>,
     record_id: u64,
     dependencies: BTreeMap<u32, (Instant, Vec<u64>)>,
@@ -487,26 +528,27 @@ impl UdpLvdsReceiver {
             };
             self.ingress.record_id = self.ingress.record_id.saturating_add(1);
             let mut id = self.ingress.record_id;
-            if let Some(raw) = raw.as_deref_mut() {
-                let timestamp = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default();
-                if let Some(receipt) = raw.record(
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default();
+            if let Some(raw) = raw.as_deref_mut()
+                && let Some(receipt) = raw.record(
                     timestamp,
                     source,
                     langmuir_storage::RawDestination::SocketBinding(self.socket.local_addr()?),
                     source == self.ingress.expected_source,
                     None,
                     &self.buffer[..bytes],
-                ) {
-                    id = receipt.id;
-                }
+                )
+            {
+                id = receipt.id;
             }
             self.ingress.push_observed_at(
                 source,
                 RawDestination::SocketBinding(self.socket.local_addr()?),
                 &self.buffer[..bytes],
                 Instant::now(),
+                timestamp,
                 id,
                 &mut on_delivery,
             );
@@ -527,6 +569,9 @@ impl UdpLvdsIngress {
             reassembler: UdpLvdsReassembler::default(),
             science_gate: UdpLvdsScienceGate::default(),
             recovery_gate: UdpLvdsScienceGate::default(),
+            frame_gate: UdpLvdsFrameGate::default(),
+            outer_sequence_gate: UdpLvdsFrameGate::default(),
+            science_stream_suppressed: 0,
             flow: None,
             reassembly_prior: langmuir_core::UdpLvdsReassemblyMetrics::default(),
             sequence_monitor: UdpLvdsSequenceMonitor::default(),
@@ -542,6 +587,10 @@ impl UdpLvdsIngress {
             anchor_bytes: Vec::new(),
             recovery_high_water: None,
             observations: VecDeque::new(),
+            packet_observations: VecDeque::new(),
+            excitation_records: VecDeque::new(),
+            excitation_errors: VecDeque::new(),
+            excitation_latest: None,
             audit_rows: VecDeque::new(),
             record_id: 0,
             dependencies: BTreeMap::new(),
@@ -570,19 +619,21 @@ impl UdpLvdsIngress {
             RawDestination::SocketBinding("0.0.0.0:1534".parse().expect("synthetic binding")),
             bytes,
             now,
+            Duration::ZERO,
             self.record_id,
             &mut on_frame,
         );
     }
 
     // Admission, deduplication and its provenance must describe one observation.
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
     fn push_observed_at(
         &mut self,
         source: SocketAddr,
         destination: RawDestination,
         bytes: &[u8],
         now: Instant,
+        timestamp: Duration,
         record_id: u64,
         mut on_frame: impl FnMut(ScientificFrame),
     ) {
@@ -594,12 +645,16 @@ impl UdpLvdsIngress {
             self.audit_rows.push_back(
                 serde_json::json!({"kind":"RAW_INPUT","raw_record_id":record_id,
                 "source":source.to_string(),"source_matches":source == self.expected_source,"destination":format!("{destination:?}"),
-                "payload_hex":hex_bytes(bytes),"payload_sha256":langmuir_core::sha256_hex(bytes),"context":self.audit_context}),
+                "payload_hex":hex_bytes(bytes),"payload_sha256":langmuir_core::sha256_hex(bytes),
+                "received_unix_nanos":u64::try_from(timestamp.as_nanos()).unwrap_or(u64::MAX),"context":self.audit_context}),
             );
         }
         if source != self.expected_source {
+            self.receive_stats.source_rejected_packets =
+                self.receive_stats.source_rejected_packets.saturating_add(1);
             return;
         }
+        self.receive_stats.udp_packets = self.receive_stats.udp_packets.saturating_add(1);
         if self.flow.is_some_and(|flow| flow != (source, destination)) {
             let prior = self.reassembler.metrics();
             self.reassembly_prior.completed_frames = self
@@ -623,7 +678,6 @@ impl UdpLvdsIngress {
         }
         self.flow = Some((source, destination));
         self.last_datagram = Some(now);
-        self.receive_stats.udp_packets = self.receive_stats.udp_packets.saturating_add(1);
         self.metrics.read_calls = self.metrics.read_calls.saturating_add(1);
         self.metrics.bytes_read = self
             .metrics
@@ -698,6 +752,126 @@ impl UdpLvdsIngress {
                 {
                     self.wrong_address_frames = self.wrong_address_frames.saturating_add(1);
                 }
+                // Dispatch complete common frames before any AA field decoding
+                // or bit recovery. Auxiliary DATA is opaque at this stage.
+                if let Some((offset, common)) = find_common_frame(&frame.bytes) {
+                    self.observe_outer_sequence(frame.frame_sequence, common.raw_bytes(), now);
+                    match common.packet_type() {
+                        LvdsPacketType::Science => {
+                            self.receive_stats.science_frames =
+                                self.receive_stats.science_frames.saturating_add(1);
+                        }
+                        packet_type => {
+                            let stats = &mut self.receive_stats;
+                            stats.complete_frames = stats.complete_frames.saturating_add(1);
+                            stats.structure_valid_frames =
+                                stats.structure_valid_frames.saturating_add(1);
+                            let counter = match packet_type {
+                                LvdsPacketType::Excitation => &mut stats.excitation_frames,
+                                LvdsPacketType::GnssAttitude => &mut stats.gnss_attitude_frames,
+                                LvdsPacketType::Unknown(_) => &mut stats.unknown_type_frames,
+                                LvdsPacketType::Science => unreachable!(),
+                            };
+                            *counter = counter.saturating_add(1);
+                            let disposition = self.frame_gate.observe_at(
+                                frame.frame_sequence,
+                                common.raw_bytes(),
+                                now,
+                            );
+                            match disposition {
+                                UdpLvdsDisposition::Accepted => {}
+                                UdpLvdsDisposition::Duplicate => {
+                                    stats.auxiliary_duplicates =
+                                        stats.auxiliary_duplicates.saturating_add(1);
+                                }
+                                UdpLvdsDisposition::SequenceConflict => {
+                                    stats.auxiliary_conflicts =
+                                        stats.auxiliary_conflicts.saturating_add(1);
+                                }
+                            }
+                            let ids = self
+                                .dependencies
+                                .remove(&frame.frame_sequence)
+                                .map_or_else(|| vec![record_id], |(_, ids)| ids);
+                            let observation = LvdsPacketObservation {
+                                frame: common,
+                                outer_sequence: frame.frame_sequence,
+                                record_id,
+                                raw_record_dependencies: ids,
+                                received_unix_nanos: u64::try_from(timestamp.as_nanos())
+                                    .unwrap_or(u64::MAX),
+                                source: source.to_string(),
+                                destination: format!("{destination:?}"),
+                                byte_offset: offset,
+                                disposition,
+                            };
+                            self.observe_excitation(&observation);
+                            if self.audit_rows.len() < 2048 {
+                                self.audit_rows.push_back(serde_json::json!({
+                                    "kind":"LVDS_PACKET", "raw_record_id":record_id,
+                                    "raw_record_dependencies":observation.raw_record_dependencies,
+                                    "outer_sequence":frame.frame_sequence,
+                                    "received_unix_nanos":observation.received_unix_nanos,
+                                    "source":observation.source, "destination":observation.destination,
+                                    "type":observation.frame.packet_type().code(), "byte_offset":offset,
+                                    "raw_frame_hex":hex_bytes(observation.frame.raw_bytes()),
+                                    "data_hex":hex_bytes(observation.frame.data()),
+                                    "raw_crc_hex":hex_bytes(&observation.frame.raw_crc()),
+                                    "crc_status":"CRC_NOT_CHECKED", "disposition":format!("{disposition:?}"),
+                                    "context":self.audit_context,
+                                }));
+                            }
+                            if self.packet_observations.len() >= 128 {
+                                self.packet_observations.pop_front();
+                                self.receive_stats.type_events_dropped =
+                                    self.receive_stats.type_events_dropped.saturating_add(1);
+                                self.metrics.events_dropped =
+                                    self.metrics.events_dropped.saturating_add(1);
+                            }
+                            self.packet_observations.push_back(observation);
+                            self.last_parse_error = None;
+                            // Auxiliary traffic is not a science recovery anchor.
+                            // The old anchor cannot prove adjacency across it.
+                            self.clear_recovery_anchor();
+                            return;
+                        }
+                    }
+                } else if parse_common_frame(&frame.bytes).is_err() {
+                    self.receive_stats.structure_errors =
+                        self.receive_stats.structure_errors.saturating_add(1);
+                    // A recognizable malformed auxiliary frame has no AA
+                    // business fields to decode or recover.
+                    if frame.bytes.len() >= 7
+                        && frame.bytes.starts_with(&[0xEB, 0x90])
+                        && matches!(frame.bytes[6], 0xAB | 0xAC)
+                    {
+                        let error =
+                            parse_common_frame(&frame.bytes).expect_err("invalid common structure");
+                        self.receive_stats.complete_frames =
+                            self.receive_stats.complete_frames.saturating_add(1);
+                        self.last_parse_error = Some(error.clone());
+                        self.metrics.record_frame_error(&error);
+                        if self.audit_rows.len() < 2048 {
+                            self.audit_rows.push_back(serde_json::json!({
+                                "kind":"LVDS_STRUCTURE_REJECTED", "raw_record_id":record_id,
+                                "outer_sequence":frame.frame_sequence, "type":frame.bytes[6],
+                                "reassembled_payload_hex":hex_bytes(&frame.bytes), "reason":error.to_string(),
+                                "context":self.audit_context,
+                            }));
+                        }
+                        self.observe_udp_rejection(
+                            record_id,
+                            source,
+                            destination,
+                            bytes,
+                            Some(frame.frame_sequence),
+                            format!("LVDS common structure: {error}"),
+                        );
+                        self.dependencies.remove(&frame.frame_sequence);
+                        self.clear_recovery_anchor();
+                        return;
+                    }
+                }
                 let recovery = LvdsBitAlignmentRecoverer::inspect(
                     &frame.bytes,
                     self.recovery_enabled,
@@ -758,9 +932,25 @@ impl UdpLvdsIngress {
                 } else {
                     self.recovery_gate.accept_at(&normalized, now)
                 };
-                let delivered = result
+                let science_accepted = result
                     .as_ref()
                     .is_ok_and(|outcome| outcome.disposition() == UdpLvdsDisposition::Accepted);
+                let stream_disposition =
+                    if science_accepted && recovery.quality == FrameQuality::Native {
+                        self.frame_gate
+                            .observe_at(frame.frame_sequence, &normalized.bytes, now)
+                    } else {
+                        // Confirmed recovery remains independent of native science
+                        // storage eligibility, including a later intact retransmission.
+                        UdpLvdsDisposition::Accepted
+                    };
+                let delivered =
+                    science_accepted && stream_disposition == UdpLvdsDisposition::Accepted;
+                if science_accepted && !delivered {
+                    self.science_stream_suppressed =
+                        self.science_stream_suppressed.saturating_add(1);
+                    self.metrics.rejected_frames = self.metrics.rejected_frames.saturating_add(1);
+                }
                 if let Some(row) = self.audit_rows.back_mut() {
                     row["dedup_disposition"] = serde_json::json!(result.as_ref().map_or_else(
                         ToString::to_string,
@@ -802,11 +992,16 @@ impl UdpLvdsIngress {
                             self.metrics.rejected_frames =
                                 self.metrics.rejected_frames.saturating_add(1);
                         }
-                        if let Some(scientific) = outcome.into_frame() {
-                            // Observe only Accepted science, before the existing
-                            // callback, while the complete UDP u32 is available.
-                            self.sequence_monitor.observe_at(frame.frame_sequence, now);
-                            self.metrics.udp_sequence = self.sequence_monitor.metrics();
+                        if let Some(scientific) = outcome.into_frame()
+                            && delivered
+                        {
+                            // Outer continuity spans AA, AB, AC and unknown TYPE;
+                            // AA's inner seq8 remains exclusively in its model.
+                            self.observe_outer_sequence(
+                                frame.frame_sequence,
+                                &normalized.bytes,
+                                now,
+                            );
                             self.metrics.scientific_frames_delivered =
                                 self.metrics.scientific_frames_delivered.saturating_add(1);
                             self.last_science = Some(now);
@@ -885,6 +1080,16 @@ impl UdpLvdsIngress {
         self.anchor_bytes.clear();
     }
 
+    fn observe_outer_sequence(&mut self, sequence: u32, bytes: &[u8], now: Instant) {
+        // Observation does not reserve science delivery or accept its timestamp.
+        // A corrected retransmission can still enter the original science gate.
+        if self.outer_sequence_gate.observe_at(sequence, bytes, now) == UdpLvdsDisposition::Accepted
+        {
+            self.sequence_monitor.observe_at(sequence, now);
+            self.metrics.udp_sequence = self.sequence_monitor.metrics();
+        }
+    }
+
     fn update_recovery_anchor(&mut self, anchor: RecoveryAnchor, bytes: &[u8], now: Instant) {
         if self.recovery_high_water == Some(anchor) {
             return;
@@ -910,6 +1115,8 @@ impl UdpLvdsIngress {
         let expired = self.reassembler.expire_at(now);
         self.science_gate.expire_at(now);
         self.recovery_gate.expire_at(now);
+        self.frame_gate.expire_at(now);
+        self.outer_sequence_gate.expire_at(now);
         if expired > 0
             || self.previous_anchor_at.is_some_and(|accepted| {
                 now.checked_duration_since(accepted)
@@ -958,7 +1165,9 @@ impl UdpLvdsIngress {
         self.metrics.dedup_cached_frames = u64::try_from(metrics.cached_frames).unwrap_or(u64::MAX);
         self.metrics.dedup_cached_bytes =
             u64::try_from(metrics.cached_payload_bytes).unwrap_or(u64::MAX);
-        self.receive_stats.accepted_frames = metrics.accepted_frames;
+        self.receive_stats.accepted_frames = metrics
+            .accepted_frames
+            .saturating_sub(self.science_stream_suppressed);
         self.receive_stats.duplicates = metrics.duplicate_frames;
         self.receive_stats.conflicts = metrics.sequence_conflicts;
     }
@@ -1022,6 +1231,9 @@ impl UdpLvdsIngress {
             .is_some_and(|last| now.saturating_duration_since(last) < Duration::from_secs(2))
         {
             return "正在收到有效科学帧";
+        }
+        if self.receive_stats.excitation_frames > 0 || self.receive_stats.gnss_attitude_frames > 0 {
+            return "已接收辅助帧，待解码";
         }
         "正在收到 UDP 数据 / 等待完整 LVDS"
     }
@@ -1152,7 +1364,7 @@ impl BackendBridge for RealBackendBridge {
                 self.display_events.try_recv().ok()
             } else {
                 self.last_state_revision = snapshot.revision;
-                Some(BackendEvent::StateSnapshot(snapshot))
+                Some(BackendEvent::StateSnapshot(Box::new(snapshot)))
             }
         })
     }
@@ -1201,9 +1413,12 @@ struct Controller {
     last_lvds_fault: Option<String>,
     last_storage_fault: Option<String>,
     scientific_writer: Option<BatchWriter<ScientificFrame>>,
+    excitation_capture: excitation::ExcitationCapture,
+    last_excitation_fault: Option<String>,
     capture_progress: Option<CaptureProgress>,
     acquisition_running: bool,
     telemetry_polling: Option<TelemetryPolling>,
+    star_simulator: star_simulator::StarComputerSimulator,
     telemetry_rows: VecDeque<TelemetrySnapshot>,
     pending_commands: BTreeMap<u64, (WriteTicket, [u8; 12])>,
     last_rs422_metrics: Option<(bool, ReaderMetricsSnapshot)>,
@@ -1256,9 +1471,12 @@ impl Controller {
             last_lvds_fault: None,
             last_storage_fault: None,
             scientific_writer: None,
+            excitation_capture: excitation::ExcitationCapture::default(),
+            last_excitation_fault: None,
             capture_progress: None,
             acquisition_running: false,
             telemetry_polling: None,
+            star_simulator: star_simulator::StarComputerSimulator::default(),
             telemetry_rows: VecDeque::new(),
             pending_commands: BTreeMap::new(),
             last_rs422_metrics: None,
@@ -1304,8 +1522,10 @@ impl Controller {
                     }
                 }
             }
-            self.poll_telemetry_request(Instant::now());
             self.drain_rs422();
+            self.poll_reader_statuses();
+            self.poll_telemetry_request(Instant::now());
+            self.poll_star_simulator(Instant::now());
             self.drain_lvds();
             self.drain_udp_lvds();
             self.drain_replay();
@@ -1314,6 +1534,7 @@ impl Controller {
             self.sample_reader_metrics();
             self.drain_command_acks();
             self.drain_storage();
+            self.poll_excitation_storage();
             if self.last_lvds_status.elapsed() >= METRICS_INTERVAL {
                 self.publish_lvds_status();
                 self.publish_raw_status();
@@ -1324,6 +1545,7 @@ impl Controller {
         self.disconnect(LinkKind::Lvds);
         self.disconnect(LinkKind::Rs422);
         self.stop_acquisition();
+        self.stop_excitation_csv();
         self.stop_raw_recording();
         self.history.take();
         if let Some(audit) = self.recovery_audit.take() {
@@ -1333,6 +1555,13 @@ impl Controller {
 
     fn handle_request(&mut self, request: UiRequest) {
         match request {
+            UiRequest::ConfigureStarSimulator(config) => self.configure_star_simulator(config),
+            UiRequest::StartStarSimulator(config) => self.start_star_simulator(config),
+            UiRequest::StopStarSimulator => self.stop_star_simulator(),
+            UiRequest::SendStarBroadcast { kind, point } => {
+                self.log(LogLevel::Info, "用户主动发送单次星务模拟广播 · SYNTHETIC");
+                self.send_star_broadcast(kind, point, Instant::now());
+            }
             UiRequest::RefreshPorts => match available_serial_ports() {
                 Ok(ports) => {
                     if ports.is_empty() {
@@ -1348,6 +1577,9 @@ impl Controller {
             }
             UiRequest::Disconnect { link } => {
                 self.disconnect(link);
+                if link == LinkKind::Lvds {
+                    self.stop_excitation_csv();
+                }
             }
             UiRequest::StartAcquisition { format } => self.start_acquisition(format),
             UiRequest::StopAcquisition => self.stop_acquisition_at_ui_boundary(),
@@ -1356,10 +1588,13 @@ impl Controller {
                 if self.replay.is_some() {
                     self.disconnect(LinkKind::Lvds);
                 }
+                self.stop_excitation_csv();
                 self.publish_lvds_status();
             }
             UiRequest::StartRawRecording { path } => self.start_raw_recording(&path),
             UiRequest::StopRawRecording => self.stop_raw_recording(),
+            UiRequest::StartExcitationCsv { path } => self.start_excitation_csv(&path),
+            UiRequest::StopExcitationCsv => self.stop_excitation_csv(),
             UiRequest::SetRecoveryEnabled { enabled } => self.set_recovery_enabled(enabled),
             UiRequest::OpenHistory { path } => self.open_history(&path),
             UiRequest::SetHistoryPlaying { playing } => {
@@ -1381,6 +1616,12 @@ impl Controller {
                         ..crate::bridge::HistoryStatus::default()
                     },
                 )));
+            }
+            UiRequest::LoadHistoryExcitationFrame { index } => {
+                self.history_command(history::HistoryCommand::ExcitationFrame(index));
+            }
+            UiRequest::ExportHistoryExcitationCsv { path } => {
+                self.history_command(history::HistoryCommand::ExportExcitation { path });
             }
             UiRequest::ExportHistoryCsv {
                 path,
@@ -1572,7 +1813,8 @@ impl Controller {
                 Err(error) => self.fault("原始录制", error.to_string()),
             }
         } else {
-            let context = serde_json::json!({"raw_archive":path.to_string_lossy(),"source_file":null,"raw_session_id":hex_bytes(&header.session_id)});
+            let context = serde_json::json!({"raw_archive":path.to_string_lossy(),"source_file":null,
+                "raw_session_id":hex_bytes(&header.session_id),"protocol_session":hex_bytes(&header.session_id)});
             match raw_storage::RawRecording::start(path, header) {
                 Ok(recording) => {
                     if let Some(receiver) = &mut self.lvds_udp {
@@ -1745,18 +1987,33 @@ impl Controller {
         if let Some(replay) = &mut self.replay {
             replay.drain_recorded(Instant::now(), &mut deliveries, self.raw_recording.as_mut());
         }
-        let (observations, rows) = self
+        let (observations, rows, packets) = self
             .replay
             .as_mut()
             .map(|replay| {
                 (
                     replay.ingress.observations.drain(..).collect(),
                     replay.ingress.audit_rows.drain(..).collect(),
+                    replay
+                        .ingress
+                        .packet_observations
+                        .drain(..)
+                        .collect::<Vec<_>>(),
                 )
             })
             .unwrap_or_default();
         self.consume_observations(observations, rows);
+        let excitation = self
+            .replay
+            .as_mut()
+            .map(|replay| replay.ingress.excitation_records.drain(..).collect())
+            .unwrap_or_default();
+        self.consume_excitation_records(excitation);
+        for packet in packets {
+            self.emit_critical(BackendEvent::LvdsAuxiliaryFrame(Box::new(packet)));
+        }
         if !was_finished && self.replay.as_ref().is_some_and(|r| r.progress.finished) {
+            self.stop_excitation_csv();
             let error = self.replay.as_ref().and_then(|r| r.progress.error.clone());
             if let Some(error) = error {
                 self.fault("PCAP", &error);
@@ -1816,6 +2073,8 @@ impl Controller {
             stats: ingress.map_or_else(LvdsReceiveStats::default, |i| i.receive_stats),
             replay: self.replay.as_ref().map(|r| r.progress.clone()),
             storage: self.storage_status.clone(),
+            excitation_latest: ingress.and_then(|i| i.excitation_latest.clone()),
+            excitation_storage: self.excitation_storage_status(),
         }
     }
 
@@ -1959,6 +2218,7 @@ impl Controller {
     fn disconnect(&mut self, link: LinkKind) -> bool {
         let result = match link {
             LinkKind::Rs422 => {
+                self.stop_star_simulator();
                 self.stop_telemetry_polling();
                 self.rs422_connected = false;
                 self.rs422_endpoint.clear();
@@ -1966,11 +2226,20 @@ impl Controller {
                 self.rs422.take().map(ReaderWorker::shutdown)
             }
             LinkKind::Lvds => {
+                let source_active = self.lvds_connected
+                    || self.lvds_udp.is_some()
+                    || self
+                        .replay
+                        .as_ref()
+                        .is_some_and(|replay| !replay.progress.finished);
                 self.replay.take();
                 self.lvds_udp.take();
                 let result = self.stop_lvds_reader_and_drain();
                 if self.acquisition_running || self.scientific_writer.is_some() {
                     self.stop_acquisition();
+                }
+                if source_active {
+                    self.stop_excitation_csv();
                 }
                 self.lvds_connected = false;
                 self.lvds_endpoint.clear();
@@ -2261,6 +2530,10 @@ impl Controller {
     }
 
     fn set_telemetry_polling(&mut self, enabled: bool, interval_millis: u32) {
+        if self.star_simulator.status.active && (!enabled || interval_millis >= 20_000) {
+            self.fault("循环遥测", "星务模拟运行时必须保持小于 20 秒的遥测轮询");
+            return;
+        }
         if !enabled {
             self.stop_telemetry_polling();
             return;
@@ -2318,6 +2591,11 @@ impl Controller {
         }
         if !self.send_command(Command::RequestTelemetry.encode().into_bytes()) {
             self.stop_telemetry_polling();
+            if self.star_simulator.status.active {
+                self.star_simulator.status.last_error =
+                    Some("遥测请求排队失败，已停止周期星务模拟".to_owned());
+                self.stop_star_simulator();
+            }
             return;
         }
         polling.record_send(now);
@@ -2372,6 +2650,7 @@ impl Controller {
                 | ReaderEvent::WriteFailed { .. }
                 | ReaderEvent::Fault(_) => {}
                 ReaderEvent::Stopped { reason } => {
+                    self.stop_star_simulator();
                     self.stop_telemetry_polling();
                     self.rs422_connected = false;
                     self.emit_critical(BackendEvent::LinkChanged {
@@ -2399,17 +2678,31 @@ impl Controller {
                 |_| {},
             )
         });
-        let (observations, rows) = self
+        let (observations, rows, packets) = self
             .lvds_udp
             .as_mut()
             .map(|receiver| {
                 (
                     receiver.ingress.observations.drain(..).collect(),
                     receiver.ingress.audit_rows.drain(..).collect(),
+                    receiver
+                        .ingress
+                        .packet_observations
+                        .drain(..)
+                        .collect::<Vec<_>>(),
                 )
             })
             .unwrap_or_default();
         self.consume_observations(observations, rows);
+        let excitation = self
+            .lvds_udp
+            .as_mut()
+            .map(|receiver| receiver.ingress.excitation_records.drain(..).collect())
+            .unwrap_or_default();
+        self.consume_excitation_records(excitation);
+        for packet in packets {
+            self.emit_critical(BackendEvent::LvdsAuxiliaryFrame(Box::new(packet)));
+        }
         if let Some(Err(error)) = result {
             let message = error.to_string();
             if self.last_lvds_fault.as_ref() != Some(&message) {
@@ -2517,6 +2810,8 @@ impl Controller {
             if let Some(exit) = status.terminal
                 && self.rs422_connected
             {
+                self.stop_star_simulator();
+                self.stop_telemetry_polling();
                 self.rs422_connected = false;
                 self.emit_critical(BackendEvent::LinkChanged {
                     link: LinkKind::Rs422,
@@ -2525,6 +2820,9 @@ impl Controller {
                 });
             }
             if status.panicked && self.last_rs422_fault.as_deref() != Some("worker panic") {
+                self.stop_star_simulator();
+                self.stop_telemetry_polling();
+                self.rs422_connected = false;
                 self.last_rs422_fault = Some("worker panic".to_owned());
                 self.fault("RS422", "读取线程异常终止");
             }
@@ -2852,6 +3150,11 @@ impl Controller {
 
     fn emit_critical(&self, event: BackendEvent) -> bool {
         match &event {
+            BackendEvent::StarSimulatorStatus(status) => {
+                let mut state = lock_unpoisoned(&self.latest_state);
+                state.star_simulator = (**status).clone();
+                state.revision = state.revision.wrapping_add(1);
+            }
             BackendEvent::LinkChanged {
                 link,
                 connected,
@@ -3695,18 +3998,22 @@ mod tests {
             panic!("truncated frame crossed the normal data gate");
         });
         assert_eq!(ingress.metrics.frames_decoded, 0);
-        assert_eq!(ingress.metrics.rejected_frames, 7);
+        assert_eq!(ingress.metrics.rejected_frames, 6);
         assert_eq!(ingress.metrics.length_failures, 1);
         assert_eq!(ingress.metrics.udp_fragment_errors, 1);
         assert_eq!(ingress.metrics.header_failures, 1);
-        assert_eq!(ingress.metrics.field_failures, 3);
+        assert_eq!(ingress.metrics.field_failures, 2);
         assert_eq!(ingress.metrics.checksum_failures, 0);
         assert_eq!(ingress.metrics.timestamp_failures, 1);
         assert_eq!(ingress.metrics.sample_failures, 0);
         assert_eq!(ingress.metrics.last_checksum_mismatch, None);
         assert_eq!(ingress.receive_stats.complete_frames, 6);
         assert_eq!(ingress.receive_stats.parsed_frames, 0);
-        assert_eq!(ingress.receive_stats.parse_failures, 6);
+        assert_eq!(ingress.receive_stats.parse_failures, 5);
+        assert_eq!(
+            ingress.receive_stats.excitation_frames, 1,
+            "the original AB fixture is now a valid auxiliary frame"
+        );
     }
 
     #[test]

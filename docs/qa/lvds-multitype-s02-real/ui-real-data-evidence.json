@@ -1,0 +1,43 @@
+{
+  "aa_all_plot_values_compared": true,
+  "aa_frames": 1136,
+  "aa_overlay_bounds": {
+    "max": [
+      187.499982,
+      0.01050000000745058
+    ],
+    "min": [
+      127.499982,
+      -0.0005000000074505806
+    ]
+  },
+  "aa_points_per_channel": 113600,
+  "aa_split_rendered": true,
+  "ab_first_bounds": {
+    "max": [
+      128.011383,
+      1.7180000000447035
+    ],
+    "min": [
+      126.942183,
+      1.6519999999552966
+    ]
+  },
+  "ab_frames_selected_and_rendered": 57,
+  "ab_last_bounds": {
+    "max": [
+      184.011344,
+      1.7180000000447035
+    ],
+    "min": [
+      182.942144,
+      1.6519999999552966
+    ]
+  },
+  "ab_points_compared": 5700,
+  "capture": "C:/Users/Administrator/Downloads/2026112101.pcapng",
+  "freeze_and_resume_actual_history_frames": true,
+  "independent_manifest": "D:\\RUST\\langmuier\\apps\\desktop/../../docs/qa/lvds-multitype-s02-real/independent-manifest.json",
+  "native_windows_gui": "NOT_RUN",
+  "verification": "AUTOMATED_EGUI_NOT_NATIVE_WINDOWS_GUI"
+}

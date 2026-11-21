@@ -1,0 +1,13 @@
+app::s02_real02_tests::real02_all_modes_production_history_to_egui_and_zero_state_transitions: test
+app::s02_real02_tests::real02_zero_interval_actual_frame_has_no_fabricated_plot_or_cursor: test
+app::s02_real_tests::s02_real_production_history_to_egui_matches_all_aa_and_ab_points: test
+backend::e2e_tests::e7_user_capture_no_crc_science_roundtrip: test
+backend::e2e_tests::scientific_csv_tests::e8_user_capture_scientific_csv_all_modes_readback: test
+backend::protocol_10bit_tests::final55_derived_pcap_and_native_files_match_original_txt: test
+backend::protocol_10bit_tests::final55_original_txt_decoder_and_address_gate_contract: test
+backend::raw_history_real_tests::real_capture_raw_archive_preserves_every_received_udp_record: test
+backend::raw_history_real_tests::real_capture_recovery_matches_independent_bit_boundary_audit: test
+backend::s02_real02_tests::s02_real02_nonmock_paced_production_full_storage_and_history: test
+backend::s02_real_tests::s02_real_nonmock_paced_production_full_storage_and_history: test
+
+11 tests, 0 benchmarks

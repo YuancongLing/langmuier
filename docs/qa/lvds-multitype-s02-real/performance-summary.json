@@ -1,0 +1,16 @@
+{
+  "pid": 40596,
+  "samples_total": 62,
+  "samples_during_paced_replay": 56,
+  "paced_wall_seconds": 56.7559717,
+  "sampled_wall_seconds": 55.0425386,
+  "cpu_seconds_delta": 0.1875,
+  "cpu_percent_one_logical_core": 0.3406456256725049,
+  "working_set_min_bytes": 29667328,
+  "working_set_max_bytes": 30216192,
+  "private_min_bytes": 26451968,
+  "private_max_bytes": 26636288,
+  "first_private_bytes": 26451968,
+  "last_private_bytes": 26554368,
+  "scope": "Debug non-Mock production backend test only, while Release compiled concurrently; excludes native GUI and post-replay history loading."
+}

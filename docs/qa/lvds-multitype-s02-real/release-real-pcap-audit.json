@@ -1,0 +1,20 @@
+{
+  "total_packets": 1262,
+  "target_udp_packets": 1250,
+  "formal_science": 1136,
+  "science_frames": 1136,
+  "excitation_frames": 57,
+  "excitation_decoded": 57,
+  "gnss_attitude_frames": 57,
+  "structure_errors": 0,
+  "parse_failures": 0,
+  "excitation_decode_errors": 0,
+  "excitation_business_dropped": 0,
+  "gap_candidates": 0,
+  "sequence_anomalies": 0,
+  "bytes_written": 0,
+  "write_calls": 0,
+  "result": "PASS",
+  "file_saving": "NOT_RUN_BY_CLI",
+  "scope": "CLI prefilters source before ingress; its source_rejected_packets=0 is not the full-replay rejection counter."
+}

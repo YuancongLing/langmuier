@@ -22,6 +22,39 @@ const VIEWPORTS: [(Vec2, f32); 3] = [
 ];
 
 #[test]
+fn excitation_live_and_history_views_preserve_the_fixed_docks() {
+    for (physical, scale) in VIEWPORTS {
+        for history in [false, true] {
+            let (mut app, _endpoint) = test_app();
+            app.lvds_view.waveform = super::excitation_ui::WaveformView::Excitation;
+            app.handle_backend_event(crate::bridge::BackendEvent::ExcitationFrame(Box::new(
+                super::excitation_tests::record(1, 2),
+            )));
+            if history {
+                app.handle_backend_event(crate::bridge::BackendEvent::HistoryStatus(Box::new(
+                    crate::bridge::HistoryStatus {
+                        generation: 1,
+                        active: true,
+                        excitation: crate::bridge::ExcitationHistoryStatus {
+                            frames: 10_000_000,
+                            selected_index: Some(5),
+                            selected: Some(super::excitation_tests::record(6, 7)),
+                            ..crate::bridge::ExcitationHistoryStatus::default()
+                        },
+                        ..crate::bridge::HistoryStatus::default()
+                    },
+                )));
+            }
+            let logical = physical / scale;
+            let context = context_at_scale(scale);
+            let _ = render_central(&mut app, &context, logical);
+            let (_output, measured) = render_central(&mut app, &context, logical);
+            assert_central_bounds(measured, logical, physical, scale);
+        }
+    }
+}
+
+#[test]
 fn historical_controls_keep_the_fixed_docks_inside_the_requested_viewports() {
     for (physical, scale) in VIEWPORTS {
         let (mut app, _endpoint) = test_app();
@@ -357,11 +390,20 @@ fn central_controls_use_uniform_heights_and_painted_text_alignment() {
                 (painted_control_rect(&output, text).height() - theme::CONTROL_HEIGHT).abs() <= 0.1
             );
         }
-        let channel_one = controls_named(&texts, &["通道 1", "通1"]);
-        let channel_two = controls_named(&texts, &["通道 2", "通2"]);
-        let display_mode = controls_named(&texts, &["叠加", "显示模式"]);
-        assert_same_baseline(&[channel_one, channel_two, display_mode], 0.5);
-        assert!(toolbar_actions[0].visible.top() > channel_one.visible.bottom());
+        let science = text_named(&texts, "科学波形 AA");
+        let excitation = text_named(&texts, "激励波形 AB");
+        let history = texts
+            .iter()
+            .find(|text| {
+                ["历史", "打开历史"].contains(&text.text.as_str())
+                    && (text.baseline - science.baseline).abs() < 1.0
+            })
+            .expect("history action in waveform toolbar");
+        let csv = text_named(&texts, "AB CSV");
+        assert_same_baseline(&[science, excitation, history, csv], 0.5);
+        assert!(toolbar_actions[0].visible.top() > science.visible.bottom());
+        let display = text_named(&texts, "显示");
+        assert_same_baseline(&[toolbar_actions[0], display], 0.5);
         eprintln!(
             "central glyph geometry {physical:?}/{scale}: IP baseline {:.2}, listen baseline {:.2}, save baseline {:.2}; control height {}",
             address.baseline,

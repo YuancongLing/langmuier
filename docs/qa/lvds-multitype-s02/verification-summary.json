@@ -1,0 +1,56 @@
+{
+  "workspace": {
+    "passed": 469,
+    "failed": 0,
+    "ignored": 7
+  },
+  "commands": [
+    {
+      "command": "cargo fmt --all -- --check",
+      "exit_code": 0
+    },
+    {
+      "command": "cargo check --workspace --locked",
+      "exit_code": 0
+    },
+    {
+      "command": "cargo test --workspace --features langmuir-desktop/mock --locked",
+      "exit_code": 0
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+      "exit_code": 0
+    }
+  ],
+  "additional_real_AA_tests": {
+    "passed": 5,
+    "failed": 0
+  },
+  "release_build": {
+    "target": "x86_64-pc-windows-msvc",
+    "crt_static": true,
+    "mock": false,
+    "exit_code": 0
+  },
+  "release_mixed_cli": {
+    "udp": 22,
+    "AA": 20,
+    "AB_decoded": 1,
+    "AC": 1,
+    "false_gaps": 0
+  },
+  "native_GUI": "NOT_RUN: no node_repl / Computer Use tool exposed",
+  "real_AB_device": "BLOCKED: no real AB input provided",
+  "final_nonmock_mixed_replay": {
+    "passed": 1,
+    "failed": 0,
+    "CSV_data_rows": 100,
+    "independent_python_readback": "PASS",
+    "log": "nonmock-mixed-replay-final.log"
+  },
+  "delivery_exe": {
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s02-20261118\\LangmuierProbeGroundControl.exe",
+    "bytes": 10787328,
+    "sha256": "8ab70f1d12991deedcea554e0f20f749160046ec1074a5e637fb7b79b29ec419"
+  }
+}

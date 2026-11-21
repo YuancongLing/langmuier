@@ -1,0 +1,50 @@
+{
+  "result": "PASS",
+  "delivery": {
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s02-real-20261121\\LangmuierProbeGroundControl.exe",
+    "bytes": 10786304,
+    "sha256": "a9f87471646dea0af2bed44d6758925652ab6ba0485bde123b963b016a31479b"
+  },
+  "built": {
+    "path": "D:\\RUST\\langmuier\\target\\x86_64-pc-windows-msvc\\release\\langmuier.exe",
+    "bytes": 10786304,
+    "sha256": "a9f87471646dea0af2bed44d6758925652ab6ba0485bde123b963b016a31479b"
+  },
+  "identical_to_build": true,
+  "architecture": "Windows x64 PE32+ AMD64",
+  "no_dynamic_crt_imports": true,
+  "imports": [
+    "advapi32.dll",
+    "api-ms-win-core-synch-l1-2-0.dll",
+    "bcryptprimitives.dll",
+    "cfgmgr32.dll",
+    "combase.dll",
+    "dwmapi.dll",
+    "gdi32.dll",
+    "imm32.dll",
+    "kernel32.dll",
+    "ntdll.dll",
+    "ole32.dll",
+    "opengl32.dll",
+    "setupapi.dll",
+    "shell32.dll",
+    "shlwapi.dll",
+    "user32.dll",
+    "uxtheme.dll",
+    "ws2_32.dll"
+  ],
+  "mock_feature": false,
+  "build_evidence": "release-build.json",
+  "source_manifest_sha256": "34261db55bce87a06347c675db98a542304e16308deb8b4800096a9ae2f8da73",
+  "executed_cli": {
+    "pid": 36452,
+    "path": "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s02-real-20261121\\LangmuierProbeGroundControl.exe",
+    "command": "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s02-real-20261121\\LangmuierProbeGroundControl.exe --audit-pcap C:\\Users\\Administrator\\Downloads\\2026112101.pcapng",
+    "working_directory": "D:\\RUST\\langmuier",
+    "exit_code": 0,
+    "elapsed_seconds": 0.12384280003607273,
+    "utc": "2026-11-21T14:05:10.060355+00:00"
+  },
+  "native_GUI": "NOT_RUN",
+  "archive_created": false
+}

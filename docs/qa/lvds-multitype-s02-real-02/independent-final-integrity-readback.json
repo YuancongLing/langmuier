@@ -1,0 +1,155 @@
+{
+  "result": "PASS",
+  "frozen_original_and_baseline_identities_unchanged": 7,
+  "old_frozen_manifest_unchanged": {
+    "path": "D:\\RUST\\langmuier\\docs\\qa\\lvds-multitype-s02-real\\independent-manifest.json",
+    "bytes": 7482972,
+    "sha256": "61732f287d7b32378c4f313d3641501e874bf7be2f9aa243b5fa6b0fcf770f53"
+  },
+  "original_workbook_unchanged": {
+    "path": "D:\\RUST\\langmuier\\协议 (PH20261115).xlsx",
+    "bytes": 40138,
+    "sha256": "916a0f154ad71e2325a5484cb1345de0fbe18319133282c83c7b73ea3368c11f"
+  },
+  "reference_tools": [
+    {
+      "path": "D:\\RUST\\langmuier\\tools\\qa\\lvds_s02_real02_reference.py",
+      "bytes": 19855,
+      "sha256": "b7f0d7ff97d9f99f83c7639cba0d40394602768822dc716ac2f2274a35254902"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\tools\\qa\\lvds_s02_real_reference.py",
+      "bytes": 25156,
+      "sha256": "b9c43af8cca405f9a3990ff4e8d55d3893ac0c012b1813c746ffdee9186583a3"
+    },
+    {
+      "path": "D:\\RUST\\langmuier\\tools\\qa\\lvds_raw_recovery_reference.py",
+      "bytes": 29817,
+      "sha256": "e83d04f25432854916854e2bcaceec8bd89bcfd6806a3672db4f6d43d4f60eba"
+    }
+  ],
+  "readbacks": [
+    {
+      "result": "PASS",
+      "readback": {
+        "path": "D:\\RUST\\langmuier\\docs\\qa\\lvds-multitype-s02-real-02\\independent-full-storage-readback-real02-run01.json",
+        "bytes": 8415,
+        "sha256": "c5012a8fa064a3c5621a4a4d09d5b286c4eb7f5415c25535af4d359bf0a8e54e"
+      },
+      "full_log": {
+        "path": "D:\\RUST\\langmuier\\docs\\qa\\lvds-multitype-s02-real-02\\independent-full-storage-readback-real02-run01.log",
+        "bytes": 8695,
+        "sha256": "c71db0581fdc63f6219f4c2b6e668747ed2585578d02468eeb8711224e88f27e"
+      },
+      "original_input_unchanged": {
+        "path": "D:\\RUST\\langmuier\\202611212141.pcapng",
+        "bytes": 1416044,
+        "sha256": "9a5d9a73aa46fb2fb24962b2e2b7d4081646477ae5d1f62ee2ee46c375b53907"
+      },
+      "production_outputs_unchanged_after_readback": [
+        {
+          "kind": "raw",
+          "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01\\capture.lvdsraw",
+          "bytes": 1512619,
+          "sha256": "06859d85b391fb4ebba8fdb462f1b0c9f79437d50f5b0da16412184d7a2aa38e"
+        },
+        {
+          "kind": "science_csv",
+          "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01\\science.csv",
+          "bytes": 21205769,
+          "sha256": "e49190aee633bfd1510838db17c1f2c53abe905ddc7144e4a51244f5efeb2b36"
+        },
+        {
+          "kind": "science_lpd",
+          "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01\\science.lpd",
+          "bytes": 1427041,
+          "sha256": "2ce6049466de98efc80a77419ebbbb0e78e55f6cdafa3f8bf1f4e414df1ee88c"
+        },
+        {
+          "kind": "excitation_csv",
+          "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01\\excitation.csv",
+          "bytes": 3104158,
+          "sha256": "2e3aaf5fa118883a3b6b002b2e75f06fe15e11a75ee9cf54095b26f8d59cdae2"
+        },
+        {
+          "kind": "ui_entry_raw",
+          "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01\\ui-entry-full.lvdsraw",
+          "bytes": 1512619,
+          "sha256": "5c168cc11f2b1b7499b971ddb2f732aa412ea2b2bb55440f11bf649605e2fe39"
+        },
+        {
+          "kind": "history_pcapng",
+          "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01\\history-pcap-ab.csv",
+          "bytes": 3524158,
+          "sha256": "407c354c728f89e3c1eea36ed6ea63ad6db1071f8021bd596558aadc6d5b070e"
+        },
+        {
+          "kind": "history_lvdsraw",
+          "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01\\history-raw-ab.csv",
+          "bytes": 3226658,
+          "sha256": "f46e9af30c9ac0887872ed338d2c6c5eec32c75eddb6c96d81ad6fddb06746c1"
+        }
+      ],
+      "raw_exact_eof": true,
+      "science_lpd_exact_eof": true,
+      "AB_all_fields_exact_eof": true,
+      "history_csv_scope": "FULL_PCAP_AND_RAW_EXPORTS"
+    },
+    {
+      "result": "PASS",
+      "readback": {
+        "path": "D:\\RUST\\langmuier\\docs\\qa\\lvds-multitype-s02-real-02\\independent-previous-real-csv-v2-readback-run02.json",
+        "bytes": 5624,
+        "sha256": "488bb8b65249a1a1104bcadc9de506a3a17fd252141d40ba3de5f845a1187ebb"
+      },
+      "full_log": {
+        "path": "D:\\RUST\\langmuier\\docs\\qa\\lvds-multitype-s02-real-02\\independent-previous-real-csv-v2-readback-run02.log",
+        "bytes": 5811,
+        "sha256": "8041a0f85b47ebe8b162827ae1bc318213c1f4ca930b3545eaf24c56fdf5d7ef"
+      },
+      "original_input_unchanged": {
+        "path": "C:\\Users\\Administrator\\Downloads\\2026112101.pcapng",
+        "bytes": 461444,
+        "sha256": "22ec9d91789eb674f6b3cddf9bf5935bd81ea7d92030c0a1941e8f2becec4b77"
+      },
+      "production_outputs_unchanged_after_readback": [
+        {
+          "kind": "raw",
+          "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\previous-real-run-02\\capture.lvdsraw",
+          "bytes": 492766,
+          "sha256": "14cb57365b6aee2b041e892bcfeca96290fa528c4a9dc6ea94eef4b4505f28a0"
+        },
+        {
+          "kind": "science_csv",
+          "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\previous-real-run-02\\science.csv",
+          "bytes": 6858337,
+          "sha256": "96d7c2435056a1310618294eb7c8446fc1ee46abce1522e4603586b9cd4a926e"
+        },
+        {
+          "kind": "science_lpd",
+          "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\previous-real-run-02\\science.lpd",
+          "bytes": 464664,
+          "sha256": "83625ab77b67af5fd8d56c22250c50fd9ee6144c53936078bb39f06959182781"
+        },
+        {
+          "kind": "excitation_csv",
+          "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\previous-real-run-02\\excitation.csv",
+          "bytes": 1034338,
+          "sha256": "eb5e4dfae79d6fc8dbb20761037c8e1cb4bb7db19e1f666ea512db3c9f970f6d"
+        },
+        {
+          "kind": "ui_entry_raw",
+          "path": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\previous-real-run-02\\ui-entry-full.lvdsraw",
+          "bytes": 492766,
+          "sha256": "edf4664207f090ae2e6cc8bed7de31c586caf2d33e3b33f9580ac6788df66b45"
+        }
+      ],
+      "raw_exact_eof": true,
+      "science_lpd_exact_eof": true,
+      "AB_all_fields_exact_eof": true,
+      "history_csv_scope": "NOT_PRODUCED_BY_LEGACY_SUMMARY; direct storage outputs only"
+    }
+  ],
+  "native_GUI": "NOT_RUN",
+  "real_hardware_live": "NOT_RUN"
+}

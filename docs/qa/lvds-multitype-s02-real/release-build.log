@@ -1,0 +1,4 @@
+RUSTFLAGS=-C target-feature=+crt-static
+COMMAND: cargo +stable-x86_64-pc-windows-msvc build --release -p langmuir-desktop --target x86_64-pc-windows-msvc --target-dir target --no-default-features --locked
+   Compiling langmuir-desktop v0.1.0 (D:\RUST\langmuier\apps\desktop)
+    Finished `release` profile [optimized] target(s) in 35.05s

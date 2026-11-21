@@ -1,0 +1,9 @@
+{
+  "pid": 36452,
+  "path": "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s02-real-20261121\\LangmuierProbeGroundControl.exe",
+  "command": "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s02-real-20261121\\LangmuierProbeGroundControl.exe --audit-pcap C:\\Users\\Administrator\\Downloads\\2026112101.pcapng",
+  "working_directory": "D:\\RUST\\langmuier",
+  "exit_code": 0,
+  "elapsed_seconds": 0.12384280003607273,
+  "utc": "2026-11-21T14:05:10.060355+00:00"
+}

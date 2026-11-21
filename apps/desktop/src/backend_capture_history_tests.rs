@@ -261,16 +261,31 @@ fn destination_change_cannot_join_fragments_from_different_flows() {
     let second = RawDestination::Captured("192.0.2.101:1534".parse().unwrap());
     let mut ingress = UdpLvdsIngress::new(source);
     ingress.recovery_enabled = true;
-    ingress.push_observed_at(source, first, &envelope(100, &wire(10, 0)), now, 1, |_| {});
+    ingress.push_observed_at(
+        source,
+        first,
+        &envelope(100, &wire(10, 0)),
+        now,
+        Duration::ZERO,
+        1,
+        |_| {},
+    );
     let shifted = shift_four(&wire(11, 1));
-    ingress.push_observed_at(source, first, &partial(101, &shifted, true), now, 2, |_| {
-        panic!("partial")
-    });
+    ingress.push_observed_at(
+        source,
+        first,
+        &partial(101, &shifted, true),
+        now,
+        Duration::ZERO,
+        2,
+        |_| panic!("partial"),
+    );
     ingress.push_observed_at(
         source,
         second,
         &partial(101, &shifted, false),
         now,
+        Duration::ZERO,
         3,
         |_| panic!("cross-flow partial"),
     );
@@ -285,6 +300,7 @@ fn destination_change_cannot_join_fragments_from_different_flows() {
         second,
         &partial(101, &shifted, true),
         now,
+        Duration::ZERO,
         4,
         |_| panic!("recovery is not native"),
     );
@@ -699,6 +715,7 @@ fn history_envelope_rejection_does_not_erase_pending_fragment_provenance() {
             destination,
             datagram,
             Instant::now(),
+            Duration::ZERO,
             u64::try_from(index + 1).unwrap(),
             |_| delivered += 1,
         );

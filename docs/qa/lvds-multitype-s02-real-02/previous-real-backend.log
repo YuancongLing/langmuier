@@ -1,0 +1,15 @@
+
+running 1 test
+test backend::s02_real_tests::s02_real_nonmock_paced_production_full_storage_and_history ... 
+thread 'backend::s02_real_tests::s02_real_nonmock_paced_production_full_storage_and_history' (2236) panicked at apps\desktop\src\backend_s02_real_tests.rs:297:10:
+called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "系统找不到指定的文件。" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    backend::s02_real_tests::s02_real_nonmock_paced_production_full_storage_and_history
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 260 filtered out; finished in 0.22s
+

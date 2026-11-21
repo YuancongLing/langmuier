@@ -1,0 +1,544 @@
+   Compiling langmuir-desktop v0.1.0 (D:\RUST\langmuier\apps\desktop)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.55s
+     Running unittests src\lib.rs (target\debug\deps\langmuir_core-6e5fadf1ccfbc74d.exe)
+
+running 105 tests
+test checksum::tests::additive_checksum_wraps_at_eight_bits ... ok
+test checksum::tests::crc_matches_the_lower_computer_ccitt_reference_algorithm ... ok
+test checksum::tests::crc_matches_independent_manufacturer_c_vectors ... ok
+test command::tests::command_modes_have_distinct_frames ... ok
+test command::tests::raw_checksum_error_is_visible_until_explicit_recalculation ... ok
+test command::tests::raw_validation_rejects_structure_and_data_errors ... ok
+test framing::tests::clear_buffer_accounts_for_discarded_partial_frame ... ok
+test command::tests::encoded_frames_pass_raw_frame_validation ... ok
+test command::tests::encodes_dc_voltage_as_big_endian_without_inventing_a_unit_conversion ... ok
+test command::tests::raw_data_change_with_stale_checksum_is_rejected ... ok
+test command::tests::encodes_all_protocol_golden_vectors ... ok
+test command::tests::validates_scan_frequency_boundaries ... ok
+test framing::tests::final_addresses_stream_rejects_04ff_and_recovers_literal_55aa ... ok
+test framing::tests::lvds_accepts_single_byte_chunks ... ok
+test framing::tests::lvds_accepts_decodable_crc_mismatch_and_preserves_next_frame_across_noise ... ok
+test framing::tests::rs422_recovers_valid_header_embedded_in_bad_candidate ... ok
+test framing::tests::rs422_resynchronizes_after_corrupt_frame_and_noise ... ok
+test framing::tests::rs422_accepts_every_chunk_size_and_multiple_frames ... ok
+test framing::tests::lvds_recovers_after_bad_candidate_containing_valid_frame ... ok
+test framing::tests::split_header_is_retained_and_noise_does_not_grow_buffer ... ok
+test lvds::migration_golden_tests::literal_unpack_vectors_and_signed_reconstruction_preserve_extremes ... ok
+test lvds::migration_golden_tests::manufacturer_10bit_literal_groups_decode_distinct_channel_boundaries ... ok
+test lvds::tests::device_time_rollback_is_preserved_without_inserting_or_deleting_samples ... ok
+test lvds::tests::different_first_middle_and_final_groups_keep_their_exact_positions ... ok
+test lvds::tests::final_addresses_decode_literal_55aa_without_fixture_constants ... ok
+test lvds::tests::final_addresses_gate_rejection_does_not_poison_later_55aa_same_sequence ... ok
+test lvds::tests::final_addresses_reject_04ff_and_each_wrong_address_independently ... ok
+test lvds::tests::fixed_structure_rejects_wrong_addresses_reserved_type_and_lengths ... ok
+test framing::tests::deterministic_noise_and_fragmentation_never_lose_embedded_frames ... ok
+test lvds::tests::inner_sequence_wrap_preserves_samples_and_transmitted_device_time ... ok
+test lvds::tests::integer_sample_time_starts_at_timestamp_and_crosses_seconds_without_extra_center_offset ... ok
+test lvds::tests::maximum_device_seconds_use_wide_integer_time_and_invalid_microseconds_are_rejected ... ok
+test lvds_recovery::perf_tests::synthetic_production_recovery_cpu_measurements ... ignored, SYNTHETIC local CPU benchmark; run explicitly, preferably --release
+test lvds::tests::offline_crc_reference_stays_separate_from_production_acceptance ... ok
+test lvds::tests::uniform_channels_cover_zero_and_maximum_without_cross_talk ... ok
+test lvds::tests::unchecked_crc_trailers_do_not_change_accepted_science_or_received_bytes ... ok
+test lvds::tests::offline_diagnosis_never_previews_invalid_time_or_reserved_structure ... ok
+test lvds_recovery::tests::byte_sync_accepts_one_complete_frame_but_rejects_ambiguous_payloads ... ok
+test lvds_recovery::tests::native_crc_mismatch_remains_native_without_running_recovery_reference ... ok
+test lvds_recovery::tests::raw_and_normalized_hashes_use_standard_sha256 ... ok
+test lvds_recovery::tests::incomplete_tail_is_diagnostic_only_and_is_never_padded ... ok
+test lvds_recovery::tests::synthetic_auxiliary_frames_never_offer_embedded_science_recovery_candidates ... ok
+test lvds_recovery::tests::synthetic_common_byte_sync_rejects_mixed_science_auxiliary_ambiguity ... ok
+test lvds::tests::hundred_new_frames_produce_ten_thousand_samples_per_channel ... ok
+test lvds_recovery::tests::synthetic_malformed_auxiliary_frames_never_enter_science_bit_recovery ... ok
+test lvds_recovery::tests::synthetic_malformed_auxiliary_prefix_does_not_hide_a_complete_byte_aligned_science_frame ... ok
+test lvds_recovery::tests::synthetic_prefixed_auxiliary_frames_never_offer_science_bit_candidates ... ok
+test lvds_recovery::tests::confirmation_needs_crc_and_independent_sequence_time_evidence ... ok
+test model::tests::aggregate_metrics_saturate_and_count_both_channels ... ok
+test lvds_recovery::tests::full_real_bits_restore_both_one_bit_phases_and_four_bit_alignment ... ok
+test model::tests::telemetry_updates_latest_value_and_counters_atomically ... ok
+test rs422::tests::decodes_protocol_v2_telemetry ... ok
+test rs422::tests::rejects_invalid_length_and_fields ... ok
+test rs422::tests::rejects_telemetry_data_change_with_stale_checksum ... ok
+test udp_lvds::tests::parses_the_observed_single_segment_wrapper ... ok
+test udp_lvds::tests::accepts_identical_duplicate_before_completion ... ok
+test udp_lvds::tests::reassembles_out_of_order_fragments_by_offset ... ok
+test udp_lvds::tests::rejects_conflicting_duplicate_and_drops_partial_frame ... ok
+test udp_lvds::tests::rejects_incomplete_ranges_when_every_segment_index_arrived ... ok
+test udp_lvds::tests::ttl_t10_duplicates_are_idempotent_and_conflicts_release_the_frame ... ok
+test udp_lvds::tests::ttl_t11_unchecked_science_trailer_survives_reassembly_and_decoding ... ok
+test udp_lvds::tests::ttl_t1_single_fragment_preserves_bytes_without_pending_state ... ok
+test lvds_recovery::tests::disabled_recovery_noise_wrong_fields_and_resource_limit_never_make_science ... ok
+test udp_lvds::tests::ttl_t2_multiple_fragments_reassemble_in_order ... ok
+test udp_lvds::tests::ttl_t3_interleaved_sequences_reassemble_reversed_fragments ... ok
+test udp_lvds::tests::ttl_t4_incomplete_frame_expires_once_and_releases_its_buffers ... ok
+test udp_lvds::tests::ttl_t5_boundary_uses_first_fragment_and_handles_earlier_times ... ok
+test udp_lvds::tests::ttl_t8_late_fragment_cannot_reuse_expired_bytes_or_pollute_other_sequences ... ok
+test udp_lvds::tests::ttl_cleanup_precedes_bad_datagram_parsing_and_counters_saturate ... ok
+test udp_lvds_dedup::tests::capacity_evicts_oldest_acceptance_and_duplicates_do_not_refresh_fifo ... ok
+test udp_lvds_dedup::tests::configuration_requires_nonzero_capacity_and_ttl_and_counters_saturate ... ok
+test udp_lvds_dedup::tests::earlier_time_is_safe_and_expiry_does_not_assume_timestamp_order ... ok
+test udp_lvds_dedup::tests::equal_content_with_distinct_full_u32_sequences_is_not_a_duplicate ... ok
+test udp_lvds::tests::ttl_t6_full_capacity_rejects_new_sequence_without_evicting_live_frames ... ok
+test udp_lvds_dedup::tests::first_valid_frame_is_delivered_and_exact_repeats_are_suppressed ... ok
+test udp_lvds::tests::ttl_t7_full_capacity_automatically_recovers_on_next_datagram ... ok
+test udp_lvds_dedup::tests::inner_sequence_wrap_is_independent_of_full_outer_u32_keys ... ok
+test udp_lvds_dedup::tests::fresh_sessions_sequence_reset_and_u32_wrap_allow_new_science ... ok
+test udp_lvds_dedup::tests::invalid_structure_time_and_reserved_byte_never_poison_the_cache ... ok
+test udp_lvds_dedup::tests::legal_sequence_conflict_keeps_the_original_record_without_refreshing_it ... ok
+test udp_lvds_dedup::tests::ttl_boundary_is_exact_and_duplicate_does_not_extend_lifetime ... ok
+test udp_lvds_dedup::tests::unchecked_crc_trailer_is_accepted_and_raw_bytes_still_define_deduplication ... ok
+test udp_lvds_sequence::tests::advancing_traffic_and_repeated_values_do_not_extend_candidate_lifetime ... ok
+test udp_lvds_sequence::tests::ambiguous_half_range_and_large_backward_change_close_bounded_records ... ok
+test udp_lvds_sequence::tests::cumulative_counters_saturate_without_overflowing_state ... ok
+test udp_lvds_sequence::tests::earlier_injected_time_does_not_expire_or_revert_expired_records ... ok
+test udp_lvds_sequence::tests::capacity_bound_includes_expired_history_and_reanchors_without_partial_gaps ... ok
+test udp_lvds_sequence::tests::expired_history_forgets_records_at_the_exact_limit_without_claiming_loss ... ok
+test udp_lvds_sequence::tests::forward_jump_records_an_unconfirmed_candidate_then_late_fill_resolves_it ... ok
+test udp_lvds_sequence::tests::four_hundred_frames_at_twenty_hertz_have_no_false_quality_events ... ok
+test udp_lvds_sequence::tests::full_u32_wrap_is_contiguous_and_counts_once ... ok
+test udp_lvds_sequence::tests::local_backward_frames_are_out_of_order_without_inventing_gaps ... ok
+test udp_lvds_sequence::tests::jump_across_zero_tracks_wrapped_candidates_and_late_fills_them ... ok
+test udp_lvds_sequence::tests::new_receiver_session_has_independent_frontier_counters_and_candidates ... ok
+test udp_lvds_sequence::tests::repeated_frontier_is_anomaly_without_clearing_or_refilling_gaps ... ok
+test udp_lvds_sequence::tests::reversed_late_frames_resolve_each_gap_without_moving_the_frontier_backward ... ok
+test udp_lvds_sequence::tests::same_low_sixteen_bits_are_not_a_repeat_and_large_change_only_reanchors ... ok
+test udp_lvds_sequence::tests::sequential_frames_count_only_steps_after_the_initial_anchor ... ok
+test udp_lvds_sequence::tests::waiting_deadline_is_exact_and_expiration_events_are_not_permanent_missing ... ok
+test lvds::tests::arbitrary_candidates_and_all_packed_bit_patterns_remain_bounded_without_panics ... ok
+test udp_lvds_dedup::tests::four_hundred_frames_at_fifty_millisecond_intervals_are_all_delivered ... ok
+test udp_lvds::tests::ttl_t9_twenty_hertz_reception_is_lossless_and_has_no_residual_growth ... ok
+test udp_lvds_dedup::tests::default_capacity_remains_bounded_under_repeated_eviction ... ok
+test udp_lvds_sequence::tests::repeated_capacity_pressure_stays_bounded_and_new_contiguous_data_recovers ... ok
+test udp_lvds::tests::ttl_t12_repeated_capacity_pressure_keeps_resources_bounded_and_recovers ... ok
+
+test result: ok. 104 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests\excitation_vectors.rs (target\debug\deps\excitation_vectors-3b21e2fc2f1a3adf.exe)
+
+running 9 tests
+test independent_sequence_wrap_modes_status_and_dc_setpoint_are_preserved ... ok
+test latest_point_timestamp_subtracts_99_variable_intervals_across_second_boundary ... ok
+test mode_scan_setpoint_and_status_constraints_follow_workbook ... ok
+test python_triangle_preserves_every_big_endian_mv_and_metadata ... ok
+test other_public_frame_types_are_not_decoded_as_excitation ... ok
+test invalid_points_reserved_and_mv_are_classified ... ok
+test zero_wave_and_frequency_and_arbitrary_crc_remain_accepted ... ok
+test invalid_microseconds_and_time_underflow_do_not_wrap_or_panic ... ok
+test zero_interval_is_not_rejected_without_a_workbook_minimum ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\lvds_multitype.rs (target\debug\deps\lvds_multitype-3f8434448e116b9f.exe)
+
+running 10 tests
+test synthetic_common_gate_compares_full_u32_and_every_original_wire_byte ... ok
+test synthetic_common_gate_duplicates_and_conflicts_do_not_extend_the_five_second_ttl ... ok
+test synthetic_common_protocol_preserves_all_three_types_without_science_or_crc_checks ... ok
+test synthetic_common_protocol_rejects_wrong_lengths_marker_addresses_and_declared_length ... ok
+test synthetic_common_sync_accepts_unknown_only_at_the_exact_native_boundary ... ok
+test synthetic_common_sync_finds_each_known_type_after_noise_and_false_markers ... ok
+test synthetic_common_sync_honors_the_payload_bound_and_requires_a_complete_frame ... ok
+test synthetic_common_sync_never_guesses_between_two_complete_known_frames ... ok
+test synthetic_unknown_common_type_retains_original_data_and_trailer ... ok
+test synthetic_common_gate_evicts_oldest_when_256_frame_capacity_is_full ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\star_broadcast_vectors.rs (target\debug\deps\star_broadcast_vectors-8226c766139f1354.exe)
+
+running 10 tests
+test attitude_matches_independent_golden_and_all_field_offsets ... ok
+test coordinate_conversion_is_consistent_and_rejects_invalid_or_unrepresentable_points ... ok
+test dispatch_uses_same_complete_formats ... ok
+test attitude_rejects_quantization_overflow_nonfinite_and_reserved_rotation ... ok
+test gnss_sequence_wraps_at_fourteen_bits ... ok
+test gnss_status_modes_validity_and_signed_velocity_are_encoded ... ok
+test fixed_utc_time_matches_independent_python_golden ... ok
+test orbit_status_enables_orbit_and_explicit_leap_history_adjusts_epoch_seconds ... ok
+test three_complete_gnss_points_match_independent_python_golden ... ok
+test time_quantization_floors_and_preserves_second_boundary ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\main.rs (target\debug\deps\langmuier-f13e905a74a42626.exe)
+
+running 264 tests
+test app::excitation_tests::excitation_manual_view_keeps_its_frame_and_does_not_change_aa_interaction ... ok
+test app::excitation_tests::excitation_uses_mv_and_latest_sample_time_without_joining_overlapping_frames ... ok
+test app::excitation_tests::excitation_late_old_display_event_cannot_replace_authoritative_new_session ... ok
+test app::excitation_tests::excitation_zero_interval_keeps_all_points_at_the_device_time ... ok
+test app::excitation_tests::excitation_late_display_event_cannot_resurrect_a_disconnected_source ... ok
+test app::excitation_tests::excitation_history_selection_resets_only_ab_and_rejects_stale_generations ... ok
+test app::excitation_tests::excitation_unsolicited_history_updates_preserve_manual_and_frozen_frame ... ok
+test app::history_ui::tests::confirmed_recovery_refreshes_the_scientific_display_cadence ... ok
+test app::excitation_tests::excitation_freeze_retains_snapshot_while_latest_status_recovers_visual_updates ... ok
+test app::history_ui::tests::history_events_keep_file_mode_separate_from_live_connection ... ok
+test app::history_ui::tests::historical_window_rejects_stale_file_generations ... ok
+test app::history_ui::tests::historical_diagnostic_merge_keeps_a_real_native_clock_restart_visible ... ok
+test app::history_ui::tests::historical_diagnostic_candidates_fill_gaps_without_erasing_reliable_points ... ok
+test app::history_ui::tests::late_same_epoch_candidate_remains_diagnostic_without_reordering_reliable_frames ... ok
+test app::history_ui::tests::live_source_changes_do_not_reset_the_historical_view_or_freeze ... ok
+test app::history_ui::tests::raw_loss_and_close_status_remain_independent_of_scientific_saving ... ok
+test app::history_ui::tests::selected_quality_and_freeze_preserve_both_historical_channels ... ok
+test app::history_ui::tests::overlap_live_native_promotion_preserves_prior_and_later_frames_after_rebuild ... ok
+test app::history_ui::tests::overlap_history_native_promotion_wins_at_each_sample_without_sorting_clock_restarts ... ok
+test app::history_ui::tests::clicking_start_of_history_moves_the_view_to_the_returned_window ... ok
+test app::history_ui::tests::an_already_queued_window_cannot_consume_a_new_seek_target ... ok
+test app::history_ui::tests::candidate_clock_cannot_clear_or_age_out_reliable_live_samples ... ok
+test app::history_ui::tests::diagnostic_quality_stays_visible_when_the_settings_window_is_closed ... ok
+test app::history_ui::tests::operators_can_open_history_and_record_raw_without_enabling_scientific_save ... ok
+test app::parameter_tests::parameter_dc_rail_has_parent_width_and_visible_track_at_all_control_widths ... ok
+test app::excitation_tests::excitation_plain_wheel_zooms_and_cursor_reports_mv_as_volts ... ok
+test app::excitation_tests::excitation_left_drag_preserves_frame_and_both_manual_axes_until_reset ... ok
+test app::excitation_tests::excitation_plot_paints_real_mode_frequency_raw_status_and_zero_semantics ... ok
+test app::parameter_tests::parameter_exact_text_keeps_draft_until_enter_and_commits_without_rounding ... ok
+test app::parameter_tests::parameter_frequency_drag_selects_37_and_does_not_snap_to_a_tens_preset ... ok
+test app::parameter_tests::parameter_dc_exact_value_is_not_rounded_and_keeps_big_endian_encoding ... ok
+test app::parameter_tests::parameter_dc_and_frequency_rows_stay_inside_the_parent_card ... ok
+test app::parameter_tests::parameter_polling_default_five_seconds_survives_render_without_input ... ok
+test app::parameter_tests::parameter_invalid_or_pending_frequency_cannot_generate_or_send_a_command ... ok
+test app::plot_tests::migration_device_axis_is_numeric_seconds_and_resolves_500_microseconds ... ok
+test app::parameter_tests::parameter_sine_37_preview_checksum_and_clicked_send_match_golden_bytes ... ok
+test app::parameter_tests::parameter_frequency_presets_change_the_value_only_when_clicked ... ok
+test app::parameter_tests::parameter_polling_active_render_never_submits_a_period_change_without_user_input ... ok
+test app::parameter_tests::parameter_polling_exact_presets_survive_later_rendering ... ok
+test app::layout_tests::themed_parameter_cards_and_horizontal_rails_fit_requested_sidebar_widths ... ok
+test app::plot_tests::voltage_all_live_qualities_and_history_rebuilds_use_one_conversion ... ok
+test app::plot_tests::plot_plain_wheel_zooms_and_hover_updates ... ok
+test app::plot_tests::voltage_ingress_converts_adc_once_and_keeps_first_sample_device_time ... ok
+test app::plot_tests::plot_left_drag_enters_manual_and_incoming_samples_do_not_steal_view ... ok
+test app::plot_tests::plot_normalization_refits_y_without_losing_manual_time_range ... ok
+test app::excitation_tests::excitation_details_show_all_modes_millihertz_and_actual_provenance ... ok
+test app::plot_tests::plot_split_synchronizes_time_and_freeze_keeps_entire_snapshot ... ok
+test app::layout_tests::historical_controls_keep_the_fixed_docks_inside_the_requested_viewports ... ok
+test app::star_simulator_tests::periodic_backend_snapshot_preserves_unstarted_local_edits ... ok
+test app::plot_tests::voltage_legal_55aa_frame_keeps_all_100_codes_and_both_sample_times ... ok
+test app::star_simulator_tests::reliable_simulator_snapshot_repairs_status_and_disconnect_never_resumes_broadcasts ... ok
+test app::layout_tests::empty_state_is_one_centered_pair_below_the_cursor_row ... ok
+test app::plot_tests::voltage_mouse_hover_formats_volts_and_marks_normalized_amplitude_unitless ... ok
+test app::tests::bind_address_error_summary_preserves_other_failure_meanings ... ok
+test app::tests::central_layout_rects_cover_requested_viewport_matrix ... ok
+test app::layout_tests::central_controls_use_uniform_heights_and_painted_text_alignment ... ok
+test app::tests::central_layout_rects_geometry_is_content_independent ... ok
+test app::tests::central_layout_rects_remain_inside_tiny_workspace ... ok
+test app::parameter_tests::parameter_triangle_and_sine_exact_values_survive_idle_slider_frames_and_match_bytes ... ok
+test app::tests::compact_layout_keeps_a_usable_central_region ... ok
+test app::plot_tests::voltage_plot_labels_and_cursor_use_volts_with_two_decimals ... ok
+test app::tests::central_layout_rects_partition_normal_workspace_without_overlap ... ok
+test app::tests::entering_raw_mode_starts_from_the_typed_command ... ok
+test app::plot_tests::voltage_normalization_labels_unitless_axes_but_preserves_actual_cursor ... ok
+test app::tests::frequency_slider_uses_the_parent_width_without_forcing_overflow ... ok
+test app::tests::injected_command_is_rendered_as_hex_bytes ... ok
+test app::tests::overlay_normalization_keeps_each_channel_in_its_own_scale ... ok
+test app::tests::mock_acquisition_confirmation_does_not_claim_real_scientific_files ... ok
+test app::tests::raw_validation_rejects_bad_sum_and_accepts_recalculated_frame ... ok
+test app::plot_tests::voltage_auto_y_fits_visible_channels_and_manual_y_survives_until_reset ... ok
+test app::star_simulator_tests::disabling_the_last_running_broadcast_requests_stop_instead_of_leaving_old_frames_enabled ... ok
+test app::tests::raw_checksum_recalculation_only_updates_sum_byte ... ok
+test app::tests::raw_validation_checks_frequency_range_and_protocol_fields ... ok
+test app::tests::polling_slider_has_a_visible_minimum_track_width ... ok
+test app::tests::responsive_regions_have_safe_size_ordering ... ok
+test app::tests::real_time_science_updates_without_saving_and_preserves_device_sample_times ... ok
+test app::tests::saturated_or_disconnected_request_queue_reports_error_without_false_saving ... ok
+test app::tests::scientific_frames_share_one_plot_without_crc_mode ... ok
+test app::tests::receive_status_omits_engineering_notices_before_during_and_after_saving ... ok
+test app::tests::scientific_400_frame_stream_uses_one_bounded_dual_channel_plot ... ok
+test app::star_simulator_tests::mock_connection_cannot_enable_real_broadcast_buttons ... ok
+test app::tests::replay_offers_saving_before_the_first_frame ... ok
+test app::star_simulator_tests::star_simulator_requires_connection_and_an_explicit_start_click ... ok
+test app::tests::pcap_replay_starts_directly_without_a_mode_or_plot_source_selection ... ok
+test app::tests::scientific_storage_summary_uses_actual_csv_rows_and_retains_errors ... ok
+test app::tests::telemetry_preset_highlight_tracks_the_actual_interval ... ok
+test app::tests::source_switch_clears_both_histories_but_status_refresh_keeps_display_freeze ... ok
+test app::tests::waveform_history_freeze_clear_and_clock_restart_remain_independent ... ok
+test app::tests::ui_scale_selection_stays_within_the_supported_range ... ok
+test app::tests::work_modes_use_protocol_values ... ok
+test backend::capture_history_tests::destination_change_cannot_join_fragments_from_different_flows ... ok
+test backend::capture_history_tests::history_envelope_rejection_does_not_erase_pending_fragment_provenance ... ok
+test app::tests::failed_replay_shows_the_reason_and_allows_a_new_capture_to_start ... ok
+test app::tests::scientific_save_format_is_available_before_starting ... ok
+test backend::capture_history_tests::pcap_destination_change_cannot_confirm_recovery_or_duplicate_native_delivery ... ok
+test app::tests::replay_dialog_renders_without_starting_science_or_saving ... ok
+test backend::capture_history_tests::recovery_joint_gates_keep_repeated_fragments_and_sequence_wrap_continuous ... ok
+test backend::capture_history_tests::history_envelope_pcap_rejections_keep_provenance_and_native_dedup ... ok
+test backend::capture_history_tests::confirmed_recovery_cannot_consume_a_later_native_frame_storage_eligibility ... ok
+test backend::capture_history_tests::mixed_native_recovered_native_display_keeps_order_and_native_storage_isolation ... ok
+test backend::capture_history_tests::recovery_joint_gates_preserve_duplicates_and_expire_the_anchor_at_exact_ttl ... ok
+test backend::e2e_tests::e10_udp_receive_state_uses_data_and_exact_timeout_instead_of_bind_success ... ok
+test backend::capture_history_tests::recovery_joint_gates_break_on_conflicts_gaps_expiry_and_late_native_then_recover ... ok
+test backend::e2e_tests::e7_user_capture_no_crc_science_roundtrip ... ignored, requires user capture
+test backend::capture_history_tests::localhost_raw_hook_records_every_udp_before_source_parser_and_duplicate_filters ... ok
+test backend::e2e_tests::e1_e5_e6_real_file_round_trip_keeps_only_decodable_deduplicated_science ... ok
+test backend::capture_history_tests::history_envelope_raw_rejections_keep_provenance_and_native_dedup ... ok
+test backend::e2e_tests::e3_science_acceptance_requires_structure_time_and_reserved_byte ... ok
+test app::tests::replay_scientific_save_is_requested_before_replay_starts ... ok
+test backend::e2e_tests::e10_saving_blocks_source_changes_and_preserves_the_current_science_writer ... ok
+test backend::e2e_tests::e8_no_crc_gate_keeps_ttl_recovery_dedup_and_full_sequence_monitoring_unchanged ... ok
+test backend::e2e_tests::scientific_csv_tests::e8_user_capture_scientific_csv_all_modes_readback ... ignored, requires new-protocol capture; set LANGMUIR_USER_PCAP (synthetic fixtures must be labeled)
+test backend::excitation_tests::ab_fragments_expire_and_flow_changes_cannot_mix_partial_waveforms ... ok
+test backend::excitation_tests::accepted_ab_uses_business_queue_and_preserves_latest_point_time ... ok
+test backend::e2e_tests::storage_failure_is_reported_without_rolling_back_science_acceptance ... ok
+test backend::e2e_tests::t3_legal_frame_plots_and_saves_through_the_single_science_route ... ok
+test backend::e2e_tests::e2_tail_and_decodable_science_changes_plot_and_save_without_crc_recalculation ... ok
+test backend::excitation::tests::bounded_storage_overload_reports_rejected_record_without_waiting_for_sink ... ok
+test backend::e2e_tests::scientific_csv_tests::csv_keeps_accepted_order_and_raw_samples_with_display_backpressure ... ok
+test backend::excitation_tests::source_disconnect_closes_active_ab_csv_but_idle_preparation_survives ... ok
+test app::tests::selected_scientific_format_is_sent_and_locked_during_capture ... ok
+test backend::excitation_tests::live_ab_csv_provenance_uses_the_actual_raw_archive_session ... ok
+test backend::excitation::tests::shutdown_timeout_keeps_pending_records_uncertain_until_worker_finishes ... ok
+test backend::history::excitation::tests::excitation_history_cancelled_and_superseded_selection_skips_file_io ... ok
+test app::layout_tests::save_buttons_wait_for_backend_state_and_bind_error_keeps_original_hover_detail ... ok
+test backend::history::excitation::tests::excitation_history_cancelled_export_does_not_create_an_output ... ok
+test backend::excitation_tests::valid_twenty_aa_ab_ac_variants_keep_science_and_outer_sequence_independent ... ok
+test backend::excitation_tests::non_mock_synthetic_pcap_replay_closes_ab_and_preserves_aa_files ... ok
+test backend::history::excitation_tests::excitation_history_rejected_queue_request_does_not_cancel_an_admitted_selection ... ok
+test app::layout_tests::quality_grid_is_fixed_across_digit_counts_long_errors_and_saving_states ... ok
+test backend::history::excitation_tests::excitation_history_raw_and_pcap_count_only_admitted_valid_frames_and_keep_error_raw_id ... ok
+test backend::history::excitation_tests::excitation_history_mixed_twenty_science_frames_keep_their_science_window ... ok
+test backend::e2e_tests::e4_four_hundred_live_frames_keep_all_points_and_device_time_without_saving ... ok
+test app::layout_tests::themed_central_widgets_fit_requested_viewports_with_live_and_frozen_data ... ok
+test backend::history::multitype_tests::synthetic_auxiliary_history_retains_duplicates_conflicts_and_unknown_types ... ok
+test backend::history::multitype_tests::synthetic_auxiliary_history_bounds_recent_frames_without_losing_type_counts ... ok
+test backend::history::multitype_tests::synthetic_auxiliary_only_history_does_not_fabricate_science ... ok
+test backend::history::multitype_tests::synthetic_localhost_raw_roundtrip_preserves_all_types_and_rejected_payloads ... ok
+test backend::history::tests::a_native_clock_restart_keeps_navigation_in_the_first_file_segment ... ok
+test app::layout_tests::excitation_live_and_history_views_preserve_the_fixed_docks ... ok
+test backend::history::excitation_tests::excitation_history_selection_and_export_preserve_fragment_and_duplicate_context ... ok
+test backend::history::tests::lpd_history_reads_actual_records_and_exports_full_samples ... ok
+test backend::history::tests::an_unreliable_candidate_clock_cannot_change_native_navigation ... ok
+test backend::history::tests::pcap_audit_record_ids_count_udp_records_and_keep_all_packet_indices_separate ... ok
+test backend::history::tests::native_range_export_clips_samples_at_both_window_edges ... ok
+test backend::excitation_tests::visual_queue_eviction_does_not_lose_ab_csv_records ... ok
+test backend::history::tests::incomplete_raw_history_keeps_the_window_and_reports_source_loss ... ok
+test backend::history::tests::malformed_or_legacy_history_is_rejected_without_fabricated_frames ... ok
+test backend::multitype_tests::synthetic_auxiliary_fragments_count_only_complete_frames_and_expire ... ok
+test backend::multitype_tests::synthetic_auxiliary_types_do_not_enter_science_or_count_as_parse_errors ... ok
+test backend::history::tests::missing_raw_footer_retains_a_stable_readable_prefix_for_window_requests ... ok
+test backend::history::tests::raw_history_destination_semantics_isolate_recovery_anchors ... ok
+test backend::multitype_tests::synthetic_auxiliary_event_overload_reports_loss_without_changing_frame_counts ... ok
+test backend::multitype_tests::synthetic_outer_continuity_is_independent_of_aa_business_validation ... ok
+test backend::protocol_10bit_tests::final55_derived_pcap_and_native_files_match_original_txt ... ignored, requires original TXT/reference, derived PCAP and complete native GUI CSV/LPD; missing env fails
+test backend::protocol_10bit_tests::final55_original_txt_decoder_and_address_gate_contract ... ignored, requires original lvds.txt and independent reference; missing required env fails
+test backend::multitype_tests::synthetic_byte_synchronized_auxiliary_and_science_share_the_dispatcher ... ok
+test backend::multitype_tests::synthetic_malformed_auxiliary_structure_never_counts_as_aa_decode_failure ... ok
+test backend::multitype_tests::synthetic_interleaved_auxiliaries_do_not_create_outer_sequence_gaps ... ok
+test backend::history::multitype_tests::synthetic_mixed_raw_and_pcap_history_keep_auxiliaries_out_of_science_errors ... ok
+test backend::multitype_tests::synthetic_unknown_and_auxiliary_duplicates_conflicts_never_generate_science ... ok
+test backend::raw_history_real_tests::real_capture_raw_archive_preserves_every_received_udp_record ... ignored, requires explicit LANGMUIR_RAW_TEST_PCAP, EXPECTED_SOURCE, BINDING and new ARCHIVE output path
+test backend::raw_history_real_tests::real_capture_recovery_matches_independent_bit_boundary_audit ... ignored, requires LANGMUIR_RAW_TEST_PCAP and independently generated LANGMUIR_RAW_TEST_REFERENCE_JSONL
+test backend::protocol_10bit_tests::new_protocol_enters_plot_and_both_files_without_crc_or_time_shift ... ok
+test backend::protocol_10bit_tests::synthetic_reference_check_detects_each_csv_column_and_missing_samples ... ok
+test backend::protocol_10bit_tests::synthetic_txt_loader_preserves_hex_bytes_and_rejects_incomplete_lines ... ok
+test backend::raw_storage::tests::raw_recording_keeps_invalid_duplicate_short_and_non_target_payloads ... ok
+test backend::protocol_10bit_tests::inner_sequence_wrap_and_device_rollback_preserve_csv_order_independently_of_udp ... ok
+test backend::recovery_audit::tests::audit_retains_reproducible_bytes_and_a_clean_close_boundary ... ok
+test backend::recovery_audit::tests::cancelled_pending_audit_record_marks_the_footer_incomplete ... ok
+test backend::raw_storage::tests::malformed_pcap_marks_both_raw_and_audit_incomplete ... ok
+test backend::replay_tests::detached_capture_progress_still_updates_closed_counts_and_retains_error ... ok
+test backend::replay_tests::capture_creation_failure_reports_error_without_starting_or_overwriting ... ok
+test backend::recovery_audit::tests::standalone_audit_enable_and_raw_stop_use_the_user_audit_directory ... ok
+test backend::recovery_audit::tests::standalone_audit_path_creates_only_the_explicit_base_and_reports_directory_errors ... ok
+test backend::replay_tests::csv_capture_closes_at_replay_eof_and_preserves_all_raw_samples ... ok
+test backend::replay_tests::replay_counts_all_packets_and_filters_original_source_without_rewriting ... ok
+test backend::replay_tests::replay_drop_requests_cancellation_without_waiting_for_a_packet ... ok
+test backend::replay_tests::background_reader_preserves_capture_bytes_and_reports_truncation ... ok
+test backend::replay_tests::replay_eof_with_invalid_new_device_time_reports_the_actual_parse_error ... ok
+test backend::excitation_tests::ab_business_queue_overflow_and_decode_errors_are_explicit_and_bounded ... ok
+test backend::replay_tests::replay_eof_without_target_udp_explains_the_source_filter ... ok
+test backend::replay_tests::mixed_replay_preserves_science_order_and_saves_all_decodable_unique_frames ... ok
+test backend::replay_tests::dual_capture_manual_stop_closes_matching_outputs_and_keeps_plotting ... ok
+test backend::replay_tests::replay_eof_with_mixed_addresses_preserves_valid_55aa_science ... ok
+test backend::replay_tests::replay_rejects_backward_timestamps_without_delivering_the_old_packet ... ok
+test backend::replay_tests::replay_eof_rejects_wrong_04ff_addresses_and_marks_empty_csv_incomplete ... ok
+test backend::history::tests::a_new_seek_cancels_the_old_window_before_it_is_published ... ok
+test backend::replay_tests::replay_reports_reader_errors_and_unexpected_disconnect_separately_from_eof ... ok
+test backend::replay_tests::replay_preserves_packet_time_pacing_and_explicit_eof ... ok
+test backend::replay_tests::replay_silence_expires_residuals_and_sequence_gaps_before_next_packet ... ok
+test backend::replay_tests::replay_read_error_closes_csv_and_marks_incomplete_capture ... ok
+test backend::star_simulator_tests::control_congestion_stops_broadcast_when_keepalive_poll_cannot_queue ... ok
+test backend::scientific_storage::tests::lpd_write_failure_still_writes_csv_and_closes_both_outputs ... ok
+test backend::scientific_storage::tests::lpd_close_failure_retains_confirmed_counts_and_closes_csv ... ok
+test backend::star_simulator_tests::scheduler_defaults_off_and_skips_missed_deadlines_without_catchup ... ok
+test backend::star_simulator_tests::scheduler_validates_all_periods_before_activating ... ok
+test backend::star_simulator_tests::disabling_all_types_stops_scheduler_and_publishes_inactive_state ... ok
+test backend::tests::coalesced_state_survives_critical_event_eviction ... ok
+test backend::tests::critical_queue_evicts_oldest_and_preserves_latest_event ... ok
+test backend::scientific_storage::tests::lpd_flush_failure_keeps_confirmed_count_zero_and_preserves_csv ... ok
+test backend::tests::drain_all_is_not_limited_to_the_per_tick_budget ... ok
+test backend::tests::full_display_queue_is_counted_separately_for_each_link ... ok
+test backend::tests::export_name_is_confined_to_data_directory ... ok
+test backend::tests::csv_export_runs_in_a_bounded_background_task ... ok
+test backend::tests::idle_expiry_releases_payload_capacity_without_rejecting_a_scientific_frame ... ok
+test backend::tests::producer_boundary_clears_old_visuals_and_keeps_fresh_frames ... ok
+test backend::tests::mixed_crc_trailers_preserve_science_order_without_coalescing ... ok
+test backend::tests::reassembly_quality_logs_are_aggregated_and_success_gauges_stay_silent ... ok
+test backend::tests::telemetry_polling_schedules_from_the_actual_send_without_a_burst ... ok
+test backend::tests::udp_envelope_and_fragment_conflicts_have_their_own_error_category ... ok
+test backend::history::excitation_tests::excitation_history_export_keeps_all_samples_overlaps_and_arrival_order ... ok
+test backend::tests::protocol_mock_recovers_full_capacity_then_delivers_only_valid_frames ... ok
+test backend::tests::udp_lvds_ingress_classifies_rejected_scientific_frames_without_double_counting ... ok
+test backend::tests::interrupted_capture_marker_records_reason_next_to_data_file ... ok
+test backend::tests::udp_lvds_ingress_accepts_only_complete_deployed_frames ... ok
+test backend::tests::udp_science_dedup_distinguishes_invalid_duplicate_conflict_and_full_sequence ... ok
+test backend::tests::udp_science_dedup_reconnect_wrap_and_expiry_do_not_permanently_block_frames ... ok
+test backend::multitype_tests::synthetic_twenty_plus_auxiliary_variants_preserve_aa_and_real_science_files ... ok
+test backend::tests::udp_sequence_quality_logs_aggregate_changes_and_leave_normal_progress_silent ... ok
+test backend::tests::udp_sequence_observes_only_accepted_science_and_retains_late_expired_fills ... ok
+test backend::tests::udp_sequence_monitor_preserves_controller_storage_and_display_arrival_order ... ok
+test buffer::tests::backwards_device_clock_starts_a_fresh_window ... ok
+test bridge::tests::channel_facade_moves_requests_and_events_without_blocking ... ok
+test buffer::tests::clear_removes_all_points ... ok
+test buffer::tests::decimation_is_bounded_ordered_and_retains_spike ... ok
+test buffer::tests::history_follows_capacity_age_clear_and_clock_restart ... ok
+test buffer::tests::ring_buffer_is_bounded_by_capacity ... ok
+test buffer::tests::ring_buffer_discards_points_outside_time_window ... ok
+test buffer::tests::viewport_invalidates_same_timestamp_replacements_and_clock_epoch_reset ... ok
+test buffer::tests::incremental_display_cache_is_bounded_retains_spikes_and_reuses_render ... ok
+test buffer::tests::viewport_reuses_borrowed_storage_and_ignores_append_outside_manual_range ... ok
+test buffer::tests::zero_budget_returns_no_points ... ok
+test mock::tests::mock_refuses_star_simulation_without_claiming_serial_writes ... ok
+test mock::tests::migration_mock_waveforms_follow_signed_100_sample_contract ... ok
+test mock::tests::mock_replay_request_is_explicitly_rejected_without_fake_packets ... ok
+test backend::history::excitation_tests::excitation_history_selection_preserves_each_overlapping_frame_in_arrival_order ... ok
+test buffer::tests::viewport_keeps_extrema_raw_hover_values_and_visible_window ... ok
+test mock::tests::mock_send_command_emits_the_exact_submitted_frame ... ok
+test mock::tests::mock_status_never_fabricates_real_packets_or_storage ... ok
+test mock::tests::overdue_mock_clock_catches_up_at_twenty_hertz ... ok
+test mock::tests::telemetry_polling_returns_a_snapshot_without_science_capture ... ok
+test star_simulator::tests::rejects_points_that_cannot_be_encoded_before_starting ... ok
+test star_simulator::tests::default_simulator_cannot_start_without_selecting_broadcasts ... ok
+test ui::fonts::tests::explicit_font_override_is_always_first ... ok
+test ui::fonts::tests::mixed_labels_use_one_proportional_face ... ok
+test ui::fonts::tests::platform_has_at_least_one_cjk_candidate ... ok
+test star_simulator::tests::rejects_unbounded_periods_and_non_finite_positions ... ok
+test ui::theme::tests::dark_theme_uses_the_industrial_palette_contract ... ok
+test ui::theme::tests::functional_controls_share_one_row_height ... ok
+test voltage::tests::hardware_voltage_cases_match_literal_values_and_two_decimal_readings ... ok
+test buffer::tests::sixty_second_history_and_frozen_copy_have_explicit_memory_bounds ... ok
+test backend::history::excitation_tests::excitation_history_drains_business_queue_per_record_and_bounds_error_page ... ok
+test ui::fonts::tests::installed_fallback_renders_required_glyphs_in_both_families ... ok
+test backend::star_simulator_tests::restarting_broadcast_session_does_not_count_idle_time_as_period ... ok
+test backend::history::tests::history_csv_export_does_not_block_a_pause_request ... ok
+test backend::tests::repeated_time_failures_are_aggregated_into_one_quality_log_per_snapshot ... ok
+test backend::replay_tests::replay_four_hundred_frames_ignore_tail_and_refresh_both_channels_without_saving ... ok
+test backend::tests::udp_science_dedup_twenty_hertz_frames_remain_lossless_and_bounded ... ok
+test app::star_simulator_tests::star_simulator_cards_fit_existing_sidebar_widths_with_large_counters_and_errors ... ok
+test backend::history::excitation_tests::excitation_history_frame_selection_can_be_superseded_without_aa_command_cancellation ... ok
+test backend::star_simulator_tests::controlled_point_switch_preserves_enqueued_snapshot_disconnect_never_resumes ... ok
+test app::layout_tests::sixty_seconds_of_scientific_updates_keep_central_docks_and_grid_stable ... ok
+test backend::star_simulator_tests::controlled_single_writer_sends_three_periodic_types_with_polling_and_control ... ok
+
+test result: ok. 258 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out; finished in 8.01s
+
+     Running unittests src\main.rs (target\debug\deps\langmuir_protocol_cli-d4014c1d359d74d5.exe)
+
+running 6 tests
+test tests::command_cli_matches_python_default ... ok
+test tests::command_cli_matches_all_golden_vectors ... ok
+test tests::parses_readable_hex_and_rejects_partial_byte ... ok
+test tests::lvds_cli_decodes_golden_frame_and_ignores_crc_trailer_changes ... ok
+test tests::validates_command_ranges ... ok
+test tests::udp_cli_capture_preserves_outer_u32_and_inner_seq8 ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src\lib.rs (target\debug\deps\langmuir_storage-96adf52fdca1cc1d.exe)
+
+running 43 tests
+test binary_v3::tests::reader_decodes_independent_v3_bytes_without_padding_or_legacy_sequence ... ok
+test binary_v3::tests::reader_rejects_v2_unknown_versions_and_every_mismatched_header_field ... ok
+test excitation_csv::tests::explicit_flush_and_close_report_error_and_discard_failed_buffer ... ok
+test raw::tests::raw_late_close_cannot_erase_a_failure_reported_while_flush_was_blocked ... ok
+test binary_v3::tests::reader_rejects_partial_header_partial_record_invalid_time_and_code10 ... ok
+test excitation_csv::tests::disk_write_and_flush_errors_retain_kind_count_nothing_and_forbid_retry ... ok
+test raw::tests::raw_reader_rejects_every_truncation_and_aligned_eof_without_footer ... ok
+test raw::tests::raw_reader_rejects_invalid_lengths_versions_flags_ids_and_accounting ... ok
+test binary::tests::never_overwrites_an_existing_file ... ok
+test raw::tests::raw_write_flush_and_close_errors_never_confirm_complete_or_retry_failed_bytes ... ok
+test binary::tests::header_and_frames_round_trip_from_documented_layout ... ok
+test binary_v3::tests::sink_preserves_seq8_wrap_and_device_time_rollback_in_supplied_order ... ok
+test excitation_csv::tests::empty_batches_and_close_do_not_create_rows_or_allow_retry ... ok
+test scientific_csv::tests::explicit_flush_and_close_failures_are_reported ... ok
+test excitation_csv::tests::exclusive_creation_and_invalid_paths_never_overwrite_existing_capture ... ok
+test binary_v3::tests::sink_writes_exact_independent_v3_layout_and_closes_readably ... ok
+test raw::tests::raw_reader_and_writer_match_independently_constructed_version_one_bytes ... ok
+test raw::tests::raw_archive_preserves_all_payloads_endpoints_order_and_full_duration_range ... ok
+test raw::tests::raw_queue_overflow_preserves_reliable_counts_and_incomplete_footer ... ok
+test scientific_csv::tests::permission_disk_full_and_other_write_errors_retain_kind_and_stop_capture ... ok
+test binary_v3::tests::sink_rejects_invalid_frames_and_never_overwrites_existing_capture ... ok
+test scientific_csv::tests::write_and_batch_flush_failures_do_not_claim_confirmed_frames_or_rows ... ok
+test raw::tests::raw_archive_preserves_ipv6_scope_and_destination_semantics ... ok
+test raw::tests::raw_archive_drop_is_abandoned_while_explicit_empty_stop_is_complete ... ok
+test service::tests::rejects_zero_capacity_configuration ... ok
+test service::tests::explicit_flush_writes_a_partial_batch ... ok
+test service::tests::batches_and_drains_every_accepted_item_on_shutdown ... ok
+test raw::tests::raw_sink_exclusively_creates_a_versioned_header ... ok
+test scientific_csv::tests::existing_file_and_invalid_destinations_report_errors_without_overwrite ... ok
+test scientific_csv::tests::empty_batches_do_not_add_rows_and_closed_sinks_reject_operations ... ok
+test raw::tests::raw_writer_rejects_invalid_records_before_any_batch_bytes_are_written ... ok
+test service::tests::shutdown_preserves_sink_failure_when_queued_request_is_not_processed ... ok
+test service::tests::sink_failure_is_returned_even_if_worker_exits_before_shutdown ... ok
+test scientific_csv::tests::single_frame_saves_100_code10_pairs_signed_reconstruction_and_integer_device_times ... ok
+test excitation_csv::tests::provenance_csv_escaping_preserves_quotes_newlines_and_unicode ... ok
+test excitation_csv::tests::preserves_arrival_order_repeated_overlapping_windows_and_independent_seq_wrap ... ok
+test scientific_csv::tests::preserves_sequence_wrap_backward_timestamps_and_supplied_frame_order ... ok
+test excitation_csv::tests::all_400_rows_match_independent_python_csv_including_latest_time_and_mv ... ok
+test service::tests::shutdown_timeout_detaches_a_blocked_sink ... ok
+test service::tests::timed_submission_returns_the_original_item ... ok
+test scientific_csv::tests::hundred_frames_stream_10000_rows_with_continuous_indices_across_batches ... ok
+test service::tests::full_queue_returns_the_original_item ... ok
+test scientific_csv::tests::long_capture_writes_bounded_batches_incrementally_before_close ... ok
+
+test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.01s
+
+     Running unittests src\lib.rs (target\debug\deps\langmuir_transport-56b4fa59bf71d4b7.exe)
+
+running 29 tests
+test mock::tests::deterministic_packets_match_protocol_layout ... ok
+test pcapng::tests::binary_resolution_and_signed_timestamp_offset_are_honored ... ok
+test pcapng::tests::vlan_non_udp_and_ipv6_udp_are_distinguished ... ok
+test pcapng::tests::endian_sections_preserve_udp_addresses_bytes_and_timestamps ... ok
+test mock::tests::protocol_mock_delivers_both_channels_without_crc_acceptance_gate ... ok
+test pcapng::tests::finite_section_lengths_and_legacy_packet_blocks_are_validated ... ok
+test pcapng::tests::truncated_blocks_bad_lengths_and_unknown_links_fail_explicitly ... ok
+test pcapng::tests::all_actual_packets_are_returned_even_when_not_udp ... ok
+test pcapng::tests::fragment_snaplen_and_timestamp_free_packets_are_not_silently_skipped ... ok
+test core_adapter::tests::core_rs422_decoder_runs_in_reader_worker ... ok
+test core_adapter::tests::core_lvds_decoder_runs_in_reader_worker_with_fragmentation ... ok
+test core_adapter::tests::reader_accepts_decodable_scientific_change_without_updating_crc ... ok
+test core_adapter::tests::reader_delivers_all_frames_when_only_the_crc_trailer_changes ... ok
+test worker::tests::drop_newest_policy_keeps_reading_and_counts_each_dropped_frame ... ok
+test worker::tests::stop_request_interrupts_timeout_driven_source ... ok
+test worker::tests::reads_fragmented_input_without_hardware ... ok
+test worker::tests::physical_write_failure_is_acknowledged_and_stops_reader ... ok
+test worker::tests::stop_policy_reports_the_first_queue_overflow ... ok
+test udp::tests::listener_delivers_large_datagram_over_multiple_reads ... ok
+test worker::broadcast_tests::cancelled_broadcast_is_never_written_and_does_not_disconnect_writer ... ok
+test worker::broadcast_tests::deferred_encoding_uses_writer_start_time_and_receipt_contains_actual_bytes ... ok
+test pipeline_test::fragmented_decodable_lvds_reaches_storage_with_unchecked_crc_and_rejects_bad_structure ... ok
+test pcapng::tests::excessive_metadata_cannot_keep_one_packet_read_scanning_without_a_bound ... ok
+test worker::broadcast_tests::bounded_broadcasts_leave_control_capacity_and_partial_writes_never_interleave ... ok
+test worker::tests::shutdown_timeout_detaches_a_non_cooperative_transport ... ok
+test worker::tests::wait_policy_times_out_and_stops_with_exact_metrics ... ok
+test worker::broadcast_tests::cancellation_waits_for_started_whole_frame_and_prevents_next_start ... ok
+test worker::tests::outbound_bytes_are_written_by_the_transport_owner ... ok
+test udp::tests::udp_payload_reaches_lvds_decoder_worker ... ok
+
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+   Doc-tests langmuir_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests langmuir_storage
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests langmuir_transport
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

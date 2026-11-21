@@ -3,7 +3,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime};
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TryRecvError, TrySendError, bounded};
 use parking_lot::Mutex;
@@ -147,16 +147,37 @@ pub struct ReaderStatusSnapshot {
     pub panicked: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WriteReceipt {
     pub id: u64,
     pub bytes: usize,
+    /// OS write/flush boundaries; these are not device execution acknowledgements.
+    pub started_at: SystemTime,
+    pub completed_at: SystemTime,
+    pub started: Instant,
+    pub completed: Instant,
+    pub frame: Vec<u8>,
+}
+
+/// Cancellation shares a gate with the sole writer. When `cancel` returns,
+/// any frame that had already started has finished and queued frames cannot start.
+#[derive(Clone, Debug, Default)]
+pub struct BroadcastCancellation {
+    cancelled: Arc<AtomicBool>,
+    gate: Arc<Mutex<()>>,
+}
+
+impl BroadcastCancellation {
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+        let _finished = self.gate.lock();
+    }
 }
 
 /// Per-request acknowledgement independent of the shared event queue.
 pub struct WriteTicket {
     id: u64,
-    acknowledgement: Receiver<Result<WriteReceipt, ReaderFault>>,
+    acknowledgement: Receiver<Result<WriteReceipt, WriteAckError>>,
 }
 
 impl WriteTicket {
@@ -174,7 +195,6 @@ impl WriteTicket {
         self.acknowledgement
             .recv()
             .map_err(|_| WriteAckError::ReaderStopped { id: self.id })?
-            .map_err(|fault| WriteAckError::Failed { id: self.id, fault })
     }
 
     /// # Errors
@@ -192,7 +212,6 @@ impl WriteTicket {
                     WriteAckError::ReaderStopped { id: self.id }
                 }
             })?
-            .map_err(|fault| WriteAckError::Failed { id: self.id, fault })
     }
 
     /// Polls physical write completion without depending on the shared event
@@ -200,9 +219,7 @@ impl WriteTicket {
     #[must_use]
     pub fn try_ack(&self) -> Option<Result<WriteReceipt, WriteAckError>> {
         match self.acknowledgement.try_recv() {
-            Ok(result) => {
-                Some(result.map_err(|fault| WriteAckError::Failed { id: self.id, fault }))
-            }
+            Ok(result) => Some(result),
             Err(TryRecvError::Empty) => None,
             Err(TryRecvError::Disconnected) => {
                 Some(Err(WriteAckError::ReaderStopped { id: self.id }))
@@ -214,6 +231,7 @@ impl WriteTicket {
 pub struct ReaderWorker<T> {
     events: Receiver<ReaderEvent<T>>,
     outbound: Sender<OutboundBytes>,
+    broadcasts: Sender<OutboundBroadcast>,
     next_command_id: AtomicU64,
     metrics: Arc<ReaderMetrics>,
     stop: Arc<AtomicBool>,
@@ -226,7 +244,16 @@ pub struct ReaderWorker<T> {
 struct OutboundBytes {
     id: u64,
     bytes: Vec<u8>,
-    acknowledgement: Sender<Result<WriteReceipt, ReaderFault>>,
+    acknowledgement: Sender<Result<WriteReceipt, WriteAckError>>,
+}
+
+type TimedEncoder = Box<dyn FnOnce(SystemTime) -> Result<Vec<u8>, String> + Send>;
+
+struct OutboundBroadcast {
+    id: u64,
+    encoder: TimedEncoder,
+    cancellation: BroadcastCancellation,
+    acknowledgement: Sender<Result<WriteReceipt, WriteAckError>>,
 }
 
 impl<T: Send + 'static> ReaderWorker<T> {
@@ -249,6 +276,7 @@ impl<T: Send + 'static> ReaderWorker<T> {
 
         let (event_tx, events) = bounded(config.event_capacity);
         let (outbound, outbound_rx) = bounded(config.command_capacity);
+        let (broadcasts, broadcast_rx) = bounded(3);
         let metrics = Arc::new(ReaderMetrics::default());
         let metrics_for_thread = Arc::clone(&metrics);
         let stop = Arc::new(AtomicBool::new(false));
@@ -269,6 +297,7 @@ impl<T: Send + 'static> ReaderWorker<T> {
                         &config,
                         &event_tx,
                         &outbound_rx,
+                        &broadcast_rx,
                         &metrics_for_thread,
                         &stop_for_thread,
                         &status_for_thread,
@@ -298,6 +327,7 @@ impl<T: Send + 'static> ReaderWorker<T> {
         Ok(Self {
             events,
             outbound,
+            broadcasts,
             next_command_id: AtomicU64::new(1),
             metrics,
             stop,
@@ -325,6 +355,63 @@ impl<T: Send + 'static> ReaderWorker<T> {
 
     pub fn request_stop(&self) {
         self.stop.store(true, Ordering::Release);
+    }
+
+    #[must_use]
+    pub fn broadcast_queue_depth(&self) -> usize {
+        self.broadcasts.len()
+    }
+
+    /// Queues a complete low-priority frame on the existing transport owner.
+    ///
+    /// # Errors
+    /// Returns an empty-command, full-queue, or stopped-worker error.
+    pub fn try_send_broadcast(
+        &self,
+        bytes: Vec<u8>,
+        cancellation: BroadcastCancellation,
+    ) -> Result<WriteTicket, CommandQueueError> {
+        if bytes.is_empty() {
+            return Err(CommandQueueError::Empty);
+        }
+        self.try_send_timed_broadcast(cancellation, move |_| Ok(bytes))
+    }
+
+    /// Defers time-sensitive encoding until the sole writer is ready to write.
+    /// Control and telemetry retain their own bounded queue and take priority.
+    ///
+    /// # Errors
+    /// Returns full-queue or stopped-worker errors. Error byte buffers are empty
+    /// because the frame has not yet been encoded.
+    pub fn try_send_timed_broadcast(
+        &self,
+        cancellation: BroadcastCancellation,
+        encoder: impl FnOnce(SystemTime) -> Result<Vec<u8>, String> + Send + 'static,
+    ) -> Result<WriteTicket, CommandQueueError> {
+        let id = self.next_command_id.fetch_add(1, Ordering::Relaxed);
+        let (acknowledgement, ack_rx) = bounded(1);
+        match self.broadcasts.try_send(OutboundBroadcast {
+            id,
+            encoder: Box::new(encoder),
+            cancellation,
+            acknowledgement,
+        }) {
+            Ok(()) => {
+                self.metrics.record_command_queued();
+                Ok(WriteTicket {
+                    id,
+                    acknowledgement: ack_rx,
+                })
+            }
+            Err(TrySendError::Full(_)) => {
+                self.metrics.record_command_rejected();
+                Err(CommandQueueError::QueueFull(Vec::new()))
+            }
+            Err(TrySendError::Disconnected(_)) => {
+                self.metrics.record_command_rejected();
+                Err(CommandQueueError::Closed(Vec::new()))
+            }
+        }
     }
 
     /// Queues bytes for the same worker that owns the full-duplex transport.
@@ -535,6 +622,7 @@ fn run_reader<T, D>(
     config: &ReaderConfig,
     event_tx: &Sender<ReaderEvent<T>>,
     outbound: &Receiver<OutboundBytes>,
+    broadcasts: &Receiver<OutboundBroadcast>,
     metrics: &ReaderMetrics,
     stop: &AtomicBool,
     status: &Mutex<ReaderStatusSnapshot>,
@@ -561,42 +649,53 @@ where
                 Ok(command) => command,
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
             };
-            if let Err(error) = transport
-                .write_all(&command.bytes)
-                .and_then(|()| transport.flush())
-            {
-                metrics.record_io_error();
-                let fault = ReaderFault::new(
-                    ReaderFaultKind::Io,
-                    format!("command {} write failed: {error}", command.id),
-                );
-                status.lock().last_fault = Some(fault.clone());
-                let _ = command.acknowledgement.send(Err(fault.clone()));
-                send_auxiliary_event(
-                    event_tx,
-                    ReaderEvent::WriteFailed {
-                        id: command.id,
-                        fault: fault.clone(),
-                    },
-                    metrics,
-                );
-                send_auxiliary_event(event_tx, ReaderEvent::Fault(fault), metrics);
+            let started = Instant::now();
+            let started_at = SystemTime::now();
+            if !write_one(
+                transport, command, started, started_at, event_tx, metrics, status,
+            ) {
                 break 'reader StopReason::IoFault;
             }
-            metrics.record_write(command.bytes.len());
-            let receipt = WriteReceipt {
-                id: command.id,
-                bytes: command.bytes.len(),
-            };
-            let _ = command.acknowledgement.send(Ok(receipt));
-            send_auxiliary_event(
-                event_tx,
-                ReaderEvent::BytesWritten {
-                    id: receipt.id,
-                    bytes: receipt.bytes,
-                },
-                metrics,
-            );
+        }
+        // A read is serviced after at most one broadcast, even under saturation.
+        if !stop.load(Ordering::Acquire)
+            && outbound.is_empty()
+            && let Ok(broadcast) = broadcasts.try_recv()
+        {
+            let _writing = broadcast.cancellation.gate.lock();
+            if broadcast.cancellation.cancelled.load(Ordering::Acquire)
+                || stop.load(Ordering::Acquire)
+            {
+                let _ = broadcast
+                    .acknowledgement
+                    .send(Err(WriteAckError::Cancelled { id: broadcast.id }));
+            } else {
+                let started = Instant::now();
+                let started_at = SystemTime::now();
+                match (broadcast.encoder)(started_at) {
+                    Ok(bytes) if !bytes.is_empty() => {
+                        let command = OutboundBytes {
+                            id: broadcast.id,
+                            bytes,
+                            acknowledgement: broadcast.acknowledgement,
+                        };
+                        if !write_one(
+                            transport, command, started, started_at, event_tx, metrics, status,
+                        ) {
+                            break 'reader StopReason::IoFault;
+                        }
+                    }
+                    result => {
+                        let message = result
+                            .err()
+                            .unwrap_or_else(|| "empty encoded frame".to_owned());
+                        let _ = broadcast.acknowledgement.send(Err(WriteAckError::Encoding {
+                            id: broadcast.id,
+                            message,
+                        }));
+                    }
+                }
+            }
         }
 
         match transport.read(&mut buffer) {
@@ -665,6 +764,61 @@ where
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn write_one<T>(
+    transport: &mut dyn Transport,
+    command: OutboundBytes,
+    started: Instant,
+    started_at: SystemTime,
+    event_tx: &Sender<ReaderEvent<T>>,
+    metrics: &ReaderMetrics,
+    status: &Mutex<ReaderStatusSnapshot>,
+) -> bool {
+    if let Err(error) = transport
+        .write_all(&command.bytes)
+        .and_then(|()| transport.flush())
+    {
+        metrics.record_io_error();
+        let fault = ReaderFault::new(
+            ReaderFaultKind::Io,
+            format!("command {} write failed: {error}", command.id),
+        );
+        status.lock().last_fault = Some(fault.clone());
+        let _ = command.acknowledgement.send(Err(WriteAckError::Failed {
+            id: command.id,
+            fault: fault.clone(),
+        }));
+        send_auxiliary_event(
+            event_tx,
+            ReaderEvent::WriteFailed {
+                id: command.id,
+                fault: fault.clone(),
+            },
+            metrics,
+        );
+        send_auxiliary_event(event_tx, ReaderEvent::Fault(fault), metrics);
+        return false;
+    }
+    metrics.record_write(command.bytes.len());
+    let receipt = WriteReceipt {
+        id: command.id,
+        bytes: command.bytes.len(),
+        started_at,
+        completed_at: SystemTime::now(),
+        started,
+        completed: Instant::now(),
+        frame: command.bytes,
+    };
+    let id = receipt.id;
+    let bytes = receipt.bytes;
+    // The RS422 protocol requires >=1 us between complete frames. Driver flush
+    // completion is our software boundary; physical UART timing needs hardware QA.
+    thread::sleep(Duration::from_micros(1));
+    let _ = command.acknowledgement.send(Ok(receipt));
+    send_auxiliary_event(event_tx, ReaderEvent::BytesWritten { id, bytes }, metrics);
+    true
+}
+
 fn send_frame<T>(
     sender: &Sender<ReaderEvent<T>>,
     item: T,
@@ -720,6 +874,10 @@ fn send_auxiliary_event<T>(
 }
 
 #[cfg(test)]
+#[path = "worker_broadcast_tests.rs"]
+mod broadcast_tests;
+
+#[cfg(test)]
 mod tests {
     use std::io::{self, Read, Write};
     use std::time::Duration;
@@ -729,7 +887,7 @@ mod tests {
     use crate::{Transport, TransportError, WriteAckError};
 
     #[derive(Default)]
-    struct ByteDecoder;
+    pub(super) struct ByteDecoder;
 
     struct FailingWriteTransport;
 
@@ -967,13 +1125,9 @@ mod tests {
             ReaderWorker::spawn(Box::new(transport), ByteDecoder, ReaderConfig::default()).unwrap();
         let ticket = worker.try_send_bytes(vec![0xEB, 0x90, 0x09, 0xD7]).unwrap();
         let command_id = ticket.id();
-        assert_eq!(
-            ticket.wait_timeout(Duration::from_secs(1)).unwrap(),
-            WriteReceipt {
-                id: command_id,
-                bytes: 4,
-            }
-        );
+        let receipt = ticket.wait_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!((receipt.id, receipt.bytes), (command_id, 4));
+        assert_eq!(receipt.frame, [0xEB, 0x90, 0x09, 0xD7]);
         let completion = worker
             .events()
             .iter()

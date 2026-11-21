@@ -56,8 +56,27 @@ recovered/candidate data stay out of standard LPD and CSV capture. See the
 [desktop workflow](apps/desktop/README.md#raw-recording-and-history) and
 [current raw/recovery/history QA](docs/LVDS_RAW_CAPTURE_RECOVERY_HISTORY_QA.md).
 
-For Windows x64 prerequisites, clone/update commands, a non-Mock Release build,
-and ZIP packaging, see [docs/WINDOWS_BUILD.md](docs/WINDOWS_BUILD.md).
+The current S02-REAL-02 desktop receives AA science, AB excitation and AC public
+frames independently. AB history shows each real 100-slot window and exports CSV
+v2; zero-interval status frames retain all raw slots with empty sample times and
+are displayed without a fabricated waveform. DC voltage is labeled as a setpoint.
+See the [Windows usage guide](docs/WINDOWS_README.md),
+[CSV compatibility notes](docs/AB_EXCITATION_CSV_V2.md), and
+[multimode acceptance report](docs/LVDS_MULTITYPE_S02_REAL_202611212141_ACCEPTANCE.md).
+AC business decoding and live hardware certification are outside that acceptance.
+
+Small, original-byte capture samples are available in
+[tests/fixtures/lvds-multimode](tests/fixtures/lvds-multimode/README.md).
+They cover all 11 AB configurations, untimed/DC states, and PA0 wraparound.
+Open the sample PCAPNG through **打开历史 → 激励波形 AB**, or inspect it without
+connecting hardware using the command in the fixture README. These files are
+explicitly labeled subsets; sampling gaps do not indicate loss in the full capture.
+Full captures, expanded reference manifests, saved acquisition files, EXEs and
+archives remain local. See [QA data scope](docs/qa/README.md) for regeneration.
+
+For Windows x64 prerequisites, clone/update commands and building a non-Mock
+Release EXE, see [docs/WINDOWS_BUILD.md](docs/WINDOWS_BUILD.md). This repository
+publishes source and small fixtures, without packaged application files.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
 [docs/PROTOCOL.md](docs/PROTOCOL.md), and [docs/TESTING.md](docs/TESTING.md).

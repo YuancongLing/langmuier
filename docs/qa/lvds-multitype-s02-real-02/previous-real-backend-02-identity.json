@@ -1,0 +1,14 @@
+{
+  "pid": 12752,
+  "command": [
+    "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\backend-run-01-tests.exe",
+    "backend::s02_real_tests::s02_real_nonmock_paced_production_full_storage_and_history",
+    "--exact",
+    "--ignored",
+    "--nocapture",
+    "--test-threads=1"
+  ],
+  "input": "C:\\Users\\Administrator\\Downloads\\2026112101.pcapng",
+  "output": "D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\previous-real-run-02",
+  "cwd": "D:\\RUST\\langmuier"
+}

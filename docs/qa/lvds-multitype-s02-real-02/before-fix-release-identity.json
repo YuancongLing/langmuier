@@ -1,0 +1,9 @@
+{
+  "path": "D:\\RUST\\langmuier\\target\\delivery\\lvds-multitype-s02-real-20261121\\LangmuierProbeGroundControl.exe",
+  "sha256": "a9f87471646dea0af2bed44d6758925652ab6ba0485bde123b963b016a31479b",
+  "pid": 26276,
+  "working_directory": "D:\\RUST\\langmuier",
+  "exit_code": 0,
+  "elapsed_seconds": 0.24174030032008886,
+  "scope": "Actual new capture on preserved previous EXE. CLI counts only, not UI or saving."
+}

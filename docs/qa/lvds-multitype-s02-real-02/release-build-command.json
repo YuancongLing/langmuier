@@ -1,0 +1,21 @@
+{
+  "command": [
+    "cargo",
+    "+stable-x86_64-pc-windows-msvc",
+    "build",
+    "--release",
+    "-p",
+    "langmuir-desktop",
+    "--target",
+    "x86_64-pc-windows-msvc",
+    "--target-dir",
+    "target",
+    "--no-default-features",
+    "--locked",
+    "-j1"
+  ],
+  "RUSTFLAGS": "-C target-feature=+crt-static",
+  "cwd": "D:\\RUST\\langmuier",
+  "pid": 9136,
+  "started_unix_ns": 1795273494597124100
+}

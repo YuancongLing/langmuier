@@ -1,0 +1,8 @@
+﻿    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.34s
+     Running unittests src\main.rs (target\debug\deps\langmuier-a0a2119bee5495dc.exe)
+
+running 1 test
+test backend::protocol_10bit_tests::final55_original_txt_decoder_and_address_gate_contract ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 230 filtered out; finished in 0.08s
+

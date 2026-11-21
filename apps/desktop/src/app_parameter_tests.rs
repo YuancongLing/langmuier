@@ -66,6 +66,58 @@ fn render_command(
     context.run_ui(input(events), |ui| app.command_panel(ui))
 }
 
+#[test]
+fn parameter_polling_default_five_seconds_survives_render_without_input() {
+    let (mut app, endpoint) = app();
+    app.command_family = CommandFamily::Telemetry;
+    let context = Context::default();
+    theme::configure(&context);
+    assert_eq!(app.telemetry_polling_edit_millis, 5_000);
+    for _ in 0..4 {
+        let _ = render_command(&mut app, &context, vec![]);
+        assert_eq!(app.telemetry_polling_edit_millis, 5_000);
+    }
+    assert!(endpoint.request_rx.is_empty());
+}
+
+#[test]
+fn parameter_polling_exact_presets_survive_later_rendering() {
+    let (mut app, endpoint) = app();
+    app.command_family = CommandFamily::Telemetry;
+    let context = Context::default();
+    theme::configure(&context);
+    for preset in [1_000, 5_000] {
+        click_command(&mut app, &context, &preset.to_string());
+        assert_eq!(app.telemetry_polling_edit_millis, preset);
+        for _ in 0..4 {
+            let _ = render_command(&mut app, &context, vec![]);
+            assert_eq!(app.telemetry_polling_edit_millis, preset);
+        }
+    }
+    assert!(endpoint.request_rx.is_empty());
+}
+
+#[test]
+fn parameter_polling_active_render_never_submits_a_period_change_without_user_input() {
+    let (mut app, endpoint) = app();
+    app.command_family = CommandFamily::Telemetry;
+    app.telemetry_polling.active = true;
+    let context = Context::default();
+    theme::configure(&context);
+    for interval in [100, 1_000, 1_234, 5_000, 60_000] {
+        app.telemetry_polling.interval_millis = interval;
+        app.telemetry_polling_edit_millis = interval;
+        for _ in 0..4 {
+            let _ = render_command(&mut app, &context, vec![]);
+            assert!(
+                endpoint.request_rx.is_empty(),
+                "rendering {interval} ms must not change the backend interval"
+            );
+            assert_eq!(app.telemetry_polling_edit_millis, interval);
+        }
+    }
+}
+
 fn text_position(output: &FullOutput, text: &str) -> Pos2 {
     output
         .shapes

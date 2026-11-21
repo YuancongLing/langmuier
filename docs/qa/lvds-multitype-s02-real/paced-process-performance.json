@@ -1,0 +1,506 @@
+{
+  "pid": 40596,
+  "exe": "D:\\RUST\\langmuier\\target\\debug\\deps\\langmuier-1a191642797fb0ff.exe",
+  "exe_sha256": "04984d6644973f7450493c025b0f1c74dcb25cd37639a370ce34c42ff1a612e5",
+  "working_directory": "D:\\RUST\\langmuier",
+  "exit_code": 0,
+  "samples": [
+    {
+      "unix_ns": 1795269658855825800,
+      "elapsed_seconds": 0.006288199685513973,
+      "cpu_seconds": 0.0,
+      "working_set_bytes": 1679360,
+      "private_bytes": 483328,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269659857770700,
+      "elapsed_seconds": 1.0082048000767827,
+      "cpu_seconds": 0.046875,
+      "working_set_bytes": 29630464,
+      "private_bytes": 26419200,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269660858082200,
+      "elapsed_seconds": 2.0085150003433228,
+      "cpu_seconds": 0.046875,
+      "working_set_bytes": 29667328,
+      "private_bytes": 26451968,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269661858374400,
+      "elapsed_seconds": 3.008807700127363,
+      "cpu_seconds": 0.046875,
+      "working_set_bytes": 30007296,
+      "private_bytes": 26468352,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269662858597400,
+      "elapsed_seconds": 4.009030300192535,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30031872,
+      "private_bytes": 26492928,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269663860958200,
+      "elapsed_seconds": 5.011392500251532,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30068736,
+      "private_bytes": 26529792,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269664861551900,
+      "elapsed_seconds": 6.011984799988568,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30097408,
+      "private_bytes": 26529792,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269665862100100,
+      "elapsed_seconds": 7.012532999739051,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30126080,
+      "private_bytes": 26558464,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269666862598200,
+      "elapsed_seconds": 8.01303100027144,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30126080,
+      "private_bytes": 26558464,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269667863090800,
+      "elapsed_seconds": 9.013523500412703,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30142464,
+      "private_bytes": 26574848,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269668863245400,
+      "elapsed_seconds": 10.013678000308573,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30142464,
+      "private_bytes": 26574848,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269669863540800,
+      "elapsed_seconds": 11.013973699882627,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30150656,
+      "private_bytes": 26595328,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269670863764700,
+      "elapsed_seconds": 12.014197699725628,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30150656,
+      "private_bytes": 26595328,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269671864020300,
+      "elapsed_seconds": 13.01445349957794,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30154752,
+      "private_bytes": 26595328,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269672864262800,
+      "elapsed_seconds": 14.014696000143886,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30154752,
+      "private_bytes": 26595328,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269673864408400,
+      "elapsed_seconds": 15.014840999618173,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30162944,
+      "private_bytes": 26595328,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269674864805000,
+      "elapsed_seconds": 16.015237799845636,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30162944,
+      "private_bytes": 26595328,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269675864961900,
+      "elapsed_seconds": 17.015394600108266,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30175232,
+      "private_bytes": 26615808,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269676865328300,
+      "elapsed_seconds": 18.015761299990118,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30175232,
+      "private_bytes": 26615808,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269677865640800,
+      "elapsed_seconds": 19.016073499806225,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30183424,
+      "private_bytes": 26615808,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269678866163400,
+      "elapsed_seconds": 20.016596700064838,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30183424,
+      "private_bytes": 26615808,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269679866565200,
+      "elapsed_seconds": 21.01699830032885,
+      "cpu_seconds": 0.0625,
+      "working_set_bytes": 30191616,
+      "private_bytes": 26615808,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269680867179600,
+      "elapsed_seconds": 22.017612800002098,
+      "cpu_seconds": 0.09375,
+      "working_set_bytes": 30191616,
+      "private_bytes": 26615808,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269681870030300,
+      "elapsed_seconds": 23.020463299937546,
+      "cpu_seconds": 0.125,
+      "working_set_bytes": 30191616,
+      "private_bytes": 26615808,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269682870658200,
+      "elapsed_seconds": 24.021091800183058,
+      "cpu_seconds": 0.140625,
+      "working_set_bytes": 30191616,
+      "private_bytes": 26615808,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269683876492600,
+      "elapsed_seconds": 25.026926799677312,
+      "cpu_seconds": 0.15625,
+      "working_set_bytes": 30199808,
+      "private_bytes": 26636288,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269684882590100,
+      "elapsed_seconds": 26.033023199997842,
+      "cpu_seconds": 0.171875,
+      "working_set_bytes": 30199808,
+      "private_bytes": 26636288,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269685886835700,
+      "elapsed_seconds": 27.037268900312483,
+      "cpu_seconds": 0.203125,
+      "working_set_bytes": 30199808,
+      "private_bytes": 26636288,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269686889187900,
+      "elapsed_seconds": 28.039622999727726,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30199808,
+      "private_bytes": 26636288,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269687889441600,
+      "elapsed_seconds": 29.039874900132418,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26636288,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269688889692900,
+      "elapsed_seconds": 30.040125999599695,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26636288,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269689890276500,
+      "elapsed_seconds": 31.040709299966693,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30175232,
+      "private_bytes": 26566656,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269690890640800,
+      "elapsed_seconds": 32.04107359983027,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30175232,
+      "private_bytes": 26566656,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269691891144000,
+      "elapsed_seconds": 33.041577300056815,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30175232,
+      "private_bytes": 26566656,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269692891374700,
+      "elapsed_seconds": 34.041807600297034,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30175232,
+      "private_bytes": 26566656,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269693891604600,
+      "elapsed_seconds": 35.0420377003029,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30183424,
+      "private_bytes": 26566656,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269694891821000,
+      "elapsed_seconds": 36.04225360043347,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30183424,
+      "private_bytes": 26566656,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269695892325000,
+      "elapsed_seconds": 37.04275800008327,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30195712,
+      "private_bytes": 26591232,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269696892948900,
+      "elapsed_seconds": 38.043382899835706,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30195712,
+      "private_bytes": 26591232,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269697893331000,
+      "elapsed_seconds": 39.04376369994134,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26607616,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269698893668800,
+      "elapsed_seconds": 40.04410170018673,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26607616,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269699894038900,
+      "elapsed_seconds": 41.04447199963033,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26607616,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269700894258200,
+      "elapsed_seconds": 42.044691200368106,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26607616,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269701894651000,
+      "elapsed_seconds": 43.04508410021663,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26607616,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269702895083900,
+      "elapsed_seconds": 44.04551689978689,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26607616,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269703895324900,
+      "elapsed_seconds": 45.0457576001063,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26607616,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269704895551800,
+      "elapsed_seconds": 46.04598479997367,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26607616,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269705896062000,
+      "elapsed_seconds": 47.04649479966611,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26607616,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269706896640100,
+      "elapsed_seconds": 48.04707270022482,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26607616,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269707896915000,
+      "elapsed_seconds": 49.047348000109196,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26607616,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269708897046600,
+      "elapsed_seconds": 50.04747929982841,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26607616,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269709897664700,
+      "elapsed_seconds": 51.0480976998806,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26607616,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269710898276000,
+      "elapsed_seconds": 52.04870910011232,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26607616,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269711898562700,
+      "elapsed_seconds": 53.04899560008198,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26607616,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269712899136600,
+      "elapsed_seconds": 54.04956990014762,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30212096,
+      "private_bytes": 26607616,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269713899595400,
+      "elapsed_seconds": 55.05002800002694,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30216192,
+      "private_bytes": 26554368,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269714900111800,
+      "elapsed_seconds": 56.05054460000247,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30216192,
+      "private_bytes": 26554368,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269715900620800,
+      "elapsed_seconds": 57.051053600385785,
+      "cpu_seconds": 0.234375,
+      "working_set_bytes": 30216192,
+      "private_bytes": 26554368,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269716900963800,
+      "elapsed_seconds": 58.05139659997076,
+      "cpu_seconds": 0.765625,
+      "working_set_bytes": 39030784,
+      "private_bytes": 32862208,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269717901061700,
+      "elapsed_seconds": 59.05149440001696,
+      "cpu_seconds": 1.03125,
+      "working_set_bytes": 39309312,
+      "private_bytes": 33177600,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269718901411400,
+      "elapsed_seconds": 60.05184660013765,
+      "cpu_seconds": 1.3125,
+      "working_set_bytes": 39776256,
+      "private_bytes": 33501184,
+      "threads_scope": "test process only"
+    },
+    {
+      "unix_ns": 1795269719902043100,
+      "elapsed_seconds": 61.052476700395346,
+      "cpu_seconds": 1.78125,
+      "working_set_bytes": 39841792,
+      "private_bytes": 33587200,
+      "threads_scope": "test process only"
+    }
+  ],
+  "scope": "Normal-paced production-backend test process. Not a native GUI benchmark."
+}

@@ -1,0 +1,12 @@
+COMMAND: D:\RUST\langmuier\target\qa\lvds-multitype-s02-real-02\legacy-aa-regression\legacy-aa-tests-exclusive.exe real_capture_ --ignored --nocapture --test-threads=1
+CWD: D:\RUST\langmuier\target\qa\lvds-multitype-s02-real-02\legacy-aa-regression\raw
+
+
+running 2 tests
+test backend::raw_history_real_tests::real_capture_raw_archive_preserves_every_received_udp_record ... {"all_metadata_and_payload_bytes_equal":true,"archive":"D:\\RUST\\langmuier\\target\\qa\\lvds-multitype-s02-real-02\\legacy-aa-regression\\raw\\2026102401-current-regression.lvdsraw","file_bytes":183750,"normal_footer_eof":true,"status":"PASS","udp_payload_bytes":136830,"udp_records":467}
+ok
+test backend::raw_history_real_tests::real_capture_recovery_matches_independent_bit_boundary_audit ... {"cross_record_bits_used":false,"preview_code10_values_checked":93200,"quality_counts":{"NATIVE":237,"RECOVERY_CANDIDATE":229,"REJECTED":1},"status":"PASS","udp_records":467}
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 268 filtered out; finished in 0.19s
+

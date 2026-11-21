@@ -229,8 +229,31 @@ impl MockBridge {
 }
 
 impl BackendBridge for MockBridge {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the mock bridge routes the complete UI request enum and explicitly rejects real serial broadcasts"
+    )]
     fn request(&mut self, request: UiRequest) -> Result<(), BridgeError> {
         match request {
+            UiRequest::ConfigureStarSimulator(_)
+            | UiRequest::StartStarSimulator(_)
+            | UiRequest::SendStarBroadcast { .. } => {
+                let message = "MOCK 科学波形模式没有真实串口；星务广播未发送，请不带 --mock 启动后明确连接 RS422 并启动星务模拟".to_owned();
+                self.events.push_back(BackendEvent::Fault {
+                    source: "星务模拟".to_owned(),
+                    message: message.clone(),
+                });
+                self.events
+                    .push_back(BackendEvent::StarSimulatorStatus(Box::new(
+                        crate::star_simulator::StarSimulatorStatus {
+                            last_error: Some(message),
+                            ..Default::default()
+                        },
+                    )));
+            }
+            UiRequest::StopStarSimulator => self
+                .events
+                .push_back(BackendEvent::StarSimulatorStatus(Box::default())),
             UiRequest::RefreshPorts => {
                 self.events.push_back(BackendEvent::PortsUpdated {
                     rs422: vec!["MOCK-RS422".to_owned()],
@@ -306,6 +329,10 @@ impl BackendBridge for MockBridge {
             | UiRequest::SeekHistory { .. }
             | UiRequest::LoadHistoryWindow { .. }
             | UiRequest::CloseHistory
+            | UiRequest::StartExcitationCsv { .. }
+            | UiRequest::StopExcitationCsv
+            | UiRequest::LoadHistoryExcitationFrame { .. }
+            | UiRequest::ExportHistoryExcitationCsv { .. }
             | UiRequest::ExportHistoryCsv { .. } => {
                 self.events.push_back(BackendEvent::Fault {
                     source: "MOCK".to_owned(),
@@ -368,6 +395,31 @@ fn unix_time_seconds() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mock_refuses_star_simulation_without_claiming_serial_writes() {
+        let mut bridge = MockBridge::new();
+        bridge.events.clear();
+        let config = crate::star_simulator::StarSimulatorConfig {
+            enabled: [true; 3],
+            ..Default::default()
+        };
+        bridge
+            .request(UiRequest::StartStarSimulator(config))
+            .unwrap();
+        assert!(bridge.events.iter().any(|event| matches!(event,
+            BackendEvent::Fault { source, message } if source == "星务模拟" && message.contains("MOCK")
+        )));
+        assert!(bridge.events.iter().any(|event| matches!(event,
+            BackendEvent::StarSimulatorStatus(status) if !status.active && status.sent == [0; 3]
+        )));
+        assert!(
+            !bridge
+                .events
+                .iter()
+                .any(|event| matches!(event, BackendEvent::CommandSent(_)))
+        );
+    }
 
     #[test]
     fn migration_mock_waveforms_follow_signed_100_sample_contract() {

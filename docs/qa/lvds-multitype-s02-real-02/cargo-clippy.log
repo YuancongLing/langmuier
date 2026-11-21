@@ -1,0 +1,48 @@
+    Blocking waiting for file lock on build directory
+    Checking langmuir-core v0.1.0 (D:\RUST\langmuier\crates\langmuir-core)
+    Checking langmuir-storage v0.1.0 (D:\RUST\langmuier\crates\langmuir-storage)
+    Checking langmuir-transport v0.1.0 (D:\RUST\langmuier\crates\langmuir-transport)
+    Checking langmuir-protocol-cli v0.1.0 (D:\RUST\langmuier\tools\protocol-cli)
+    Checking langmuir-desktop v0.1.0 (D:\RUST\langmuier\apps\desktop)
+error: used `assert!` to check that a value is empty
+   --> apps\desktop\src\app_excitation_tests.rs:329:5
+    |
+329 |     assert!(app.excitation_display_points().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+    = note: `-D clippy::assert-is-empty` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::assert_is_empty)]`
+help: use `assert_eq!` to show the value on failure
+    |
+329 -     assert!(app.excitation_display_points().is_empty());
+329 +     assert_eq!(app.excitation_display_points(), [] as [[f64; 2]; 0]);
+    |
+
+error: used `assert!` to check that a value is empty
+   --> apps\desktop\src\app_s02_real02_tests.rs:397:13
+    |
+397 |             assert!(points.is_empty());
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+397 -             assert!(points.is_empty());
+397 +             assert_eq!(points, [] as [[f64; 2]; 0]);
+    |
+
+error: used `assert!` to check that a value is empty
+   --> apps\desktop\src\app_s02_real02_tests.rs:476:5
+    |
+476 |     assert!(app.excitation_display_points().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+476 -     assert!(app.excitation_display_points().is_empty());
+476 +     assert_eq!(app.excitation_display_points(), [] as [[f64; 2]; 0]);
+    |
+
+error: could not compile `langmuir-desktop` (bin "langmuier" test) due to 3 previous errors
